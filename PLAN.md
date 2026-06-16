@@ -11,7 +11,7 @@ Important Telegram constraint: the Bot API does not provide full historical grou
 - Package manager: `uv`; app package under `src/pzp_ai_bot`.
 - Core dependencies: `aiogram==3.29.0`, `fastapi`, `uvicorn`, `pydantic-settings`, `sqlalchemy[asyncio]`, `aiosqlite`, `alembic`, `httpx`, `openai`, `numpy`, `typer`, `rich`, `structlog`, `orjson`.
 - Optional local AI extra: `sentence-transformers` for local multilingual embeddings; otherwise use cloud embeddings or deterministic fake embeddings.
-- Test/quality dependencies: `pytest`, `pytest-asyncio`, `respx`, `freezegun`, `pytest-cov`, `ruff`, `mypy`.
+- Test/quality dependencies: `pytest`, `pytest-asyncio`, `respx`, `freezegun`, `pytest-cov`, `ruff`, `ty`.
 - Suggested files:
   - `src/pzp_ai_bot/main.py`: Typer CLI entrypoint.
   - `src/pzp_ai_bot/telegram/`: aiogram routers, polling runner, webhook runner.
@@ -77,7 +77,7 @@ Important Telegram constraint: the Bot API does not provide full historical grou
   - `/ask` retrieves from `knowledge_items`, `MEMORY.md` sections, and recent raw messages; answer includes compact source references.
 
 ## Implementation Phases
-- Phase 1: Repo bootstrap with `pyproject.toml`, `uv.lock`, package layout, Ruff/Mypy/Pytest config, Dockerfile, `docker-compose.yml`, `.env.example`, and a fake AI provider.
+- Phase 1: Repo bootstrap with `pyproject.toml`, `uv.lock`, package layout, Ruff/ty/Pytest config, Dockerfile, `docker-compose.yml`, `.env.example`, and a fake AI provider.
 - Phase 2: Implement settings, DB models, repositories, migrations, Markdown memory writer/reader, and deterministic embedding/search utilities.
 - Phase 3: Implement aiogram routers for polling and webhook. Webhook must validate Telegram secret token; polling must clear webhook first because Telegram update modes are mutually exclusive.
 - Phase 4: Implement ACL/learning policy engine, admin checks, topic-aware scope handling, and message ingestion.
