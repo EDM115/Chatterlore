@@ -1,0 +1,88 @@
+[project]
+name = "pzp-ai"
+version = "0.1.0"
+description = "Telegram group memory assistant PoC with scoped RAG memory."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "aiogram==3.29.0",
+    "aiosqlite==0.22.1",
+    "alembic==1.18.4",
+    "fastapi==0.137.1",
+    "httpx==0.28.1",
+    "numpy==2.4.6",
+    "openai==2.41.1",
+    "orjson==3.11.9",
+    "pydantic-settings==2.14.1",
+    "rich==15.0.0",
+    "sqlalchemy[asyncio]==2.0.51",
+    "structlog==26.1.0",
+    "typer==0.26.7",
+    "uvicorn[standard]==0.49.0",
+]
+
+[project.optional-dependencies]
+local = [
+    "sentence-transformers==5.6.0",
+]
+dev = [
+    "freezegun==1.5.5",
+    "httpx2==2.4.0",
+    "pytest==9.1.0",
+    "pytest-asyncio==1.4.0",
+    "pytest-cov==7.1.0",
+    "respx==0.23.1",
+    "ruff==0.15.17",
+    "ty==0.0.49",
+]
+
+[project.scripts]
+pzp-bot = "pzp_ai_bot.main:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pzp_ai_bot"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.format]
+docstring-code-format = true
+line-ending = "lf"
+skip-magic-trailing-comma = true
+
+[tool.ruff.lint]
+# future-annotations = true
+select = ["E", "F", "I", "UP", "B", "ASYNC", "C4", "SIM", "RUF", "N", "S", "W"]
+ignore = ["B008", "S101"]
+
+[tool.ruff.lint.isort]
+split-on-trailing-comma = false
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "telegram_live: requires real Telegram credentials and is never run by default",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["pzp_ai_bot"]
+
+[tool.ty.environment]
+python-version = "3.12"
+
+[tool.uv]
+compile-bytecode = true
+link-mode = "copy"
+
+[tool.uv.pip]
+compile-bytecode = true
+generate-hashes = true
+link-mode = "copy"
