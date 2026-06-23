@@ -12,19 +12,27 @@ from pzp_ai_bot.memory.service import (
     AIRequestOptions,
     IncomingMessage,
     format_audit_events,
+    format_memory_item_refresh,
+    format_memory_items,
     format_memory_profiles,
+    format_memory_status,
     format_note_previews,
     format_range_summary,
     format_results,
     format_review_previews,
     format_runtime_settings,
     format_scope_settings,
+    format_scope_statuses,
+    format_settings_change_preview,
+    format_skipped_messages,
     format_summary_templates,
     format_system_prompt_templates,
     parse_bool,
     parse_memory_export_format,
+    parse_memory_item_mode,
     parse_note_create_args,
     parse_note_edit_args,
+    parse_optional_limit,
     parse_profile_sources,
     parse_runtime_settings_args,
     parse_scope_settings_args,
@@ -159,12 +167,82 @@ def build_router(context: AppContext) -> Router:
                 return
 
     @router.message(Command("stats"))
-    async def stats(message: Message) -> None:
-        counts = await context.memory.stats()
-        lines = ["Memory stats:"]
-        for key, value in counts.items():
-            lines.append(f"- {key}: {value}")
-        await safe_answer(message, "\n".join(lines))
+    async def stats(message: Message, command: CommandObject) -> None:
+        args = parse_key_values(command.args)
+        if not args:
+            counts = await context.memory.stats()
+            lines = ["Memory stats:"]
+            for key, value in counts.items():
+                lines.append(f"- {key}: {value}")
+            await safe_answer(message, "\n".join(lines))
+            return
+        if not await require_admin(message):
+            return
+        try:
+            scope = parse_scope(
+                args.get("scope", "this_topic"), current=scope_from_message(message)
+            )
+        except ValueError as exc:
+            await safe_answer(message, str(exc))
+            return
+        if scope.is_global and not context.admins.is_bot_admin(message_user_id(message)):
+            await safe_answer(message, "Only configured bot admins can view all-scope status.")
+            return
+        status = await context.memory.memory_status(None if scope.is_global else scope)
+        await safe_answer(message, format_memory_status(status)[:3900])
+
+    @router.message(Command("memory_status"))
+    async def memory_status(message: Message, command: CommandObject) -> None:
+        if not await require_admin(message):
+            return
+        args = parse_key_values(command.args)
+        try:
+            scope = parse_scope(
+                args.get("scope", "this_topic"), current=scope_from_message(message)
+            )
+        except ValueError as exc:
+            await safe_answer(message, str(exc))
+            return
+        if scope.is_global and not context.admins.is_bot_admin(message_user_id(message)):
+            await safe_answer(message, "Only configured bot admins can view all-scope status.")
+            return
+        status = await context.memory.memory_status(None if scope.is_global else scope)
+        await safe_answer(message, format_memory_status(status)[:3900])
+
+    @router.message(Command("memory_scopes"))
+    async def memory_scopes(message: Message, command: CommandObject) -> None:
+        if not await require_admin(message):
+            return
+        args = parse_key_values(command.args)
+        try:
+            scope = parse_scope(args.get("scope", "this_chat"), current=scope_from_message(message))
+        except ValueError as exc:
+            await safe_answer(message, str(exc))
+            return
+        if scope.is_global and not context.admins.is_bot_admin(message_user_id(message)):
+            await safe_answer(message, "Only configured bot admins can list all known scopes.")
+            return
+        scopes = await context.memory.known_scopes(None if scope.is_global else scope)
+        await safe_answer(message, format_scope_statuses(scopes)[:3900])
+
+    @router.message(Command("memory_debug"))
+    async def memory_debug(message: Message, command: CommandObject) -> None:
+        if not await require_admin(message):
+            return
+        args = parse_key_values(command.args)
+        try:
+            scope = parse_scope(
+                args.get("scope", "this_topic"), current=scope_from_message(message)
+            )
+            limit = parse_optional_limit(args.get("limit"), default=10, maximum=30)
+            message_id = int(args["message_id"]) if "message_id" in args else None
+        except ValueError as exc:
+            await safe_answer(message, str(exc))
+            return
+        skipped = await context.memory.skipped_messages(
+            scope, limit=limit, telegram_message_id=message_id
+        )
+        await safe_answer(message, format_skipped_messages(skipped)[:3900])
 
     @router.message(Command("audit_events"))
     async def audit_events(message: Message, command: CommandObject) -> None:
@@ -237,11 +315,11 @@ def build_router(context: AppContext) -> Router:
 
     @router.message(Command("memory_settings"))
     async def memory_settings(message: Message, command: CommandObject) -> None:
-        await _scope_settings_command(context, message, command)
+        await _scope_settings_command(context, message, command, require_confirmation=False)
 
     @router.message(Command("settings"))
     async def settings(message: Message, command: CommandObject) -> None:
-        await _scope_settings_command(context, message, command)
+        await _scope_settings_command(context, message, command, require_confirmation=True)
 
     @router.message(Command("memory_prune"))
     async def memory_prune(message: Message, command: CommandObject) -> None:
@@ -335,6 +413,94 @@ def build_router(context: AppContext) -> Router:
             source=options.get("source"),
         )
         await safe_answer(message, f"Remembered note #{item_id}.")
+
+    @router.message(Command("memory_items"))
+    async def memory_items(message: Message, command: CommandObject) -> None:
+        if not await require_admin(message):
+            return
+        args = parse_key_values(command.args)
+        try:
+            scope = parse_scope(
+                args.get("scope", "this_topic"), current=scope_from_message(message)
+            )
+            limit = parse_optional_limit(args.get("limit"), default=20, maximum=50)
+        except ValueError as exc:
+            await safe_answer(message, str(exc))
+            return
+        if scope.is_global and not context.admins.is_bot_admin(message_user_id(message)):
+            await safe_answer(message, "Only configured bot admins can browse all memory items.")
+            return
+        items = await context.memory.browse_items(
+            None if scope.is_global else scope, kind=args.get("kind"), limit=limit
+        )
+        await safe_answer(message, format_memory_items(items)[:3900])
+
+    @router.message(Command("memory_item_delete"))
+    async def memory_item_delete(message: Message, command: CommandObject) -> None:
+        if not await require_admin(message):
+            return
+        parts = (command.args or "").strip().split(None, 1)
+        if not parts:
+            await safe_answer(message, "Usage: /memory_item_delete <id> [scope=...]")
+            return
+        args = parse_key_values(parts[1] if len(parts) > 1 else None)
+        try:
+            item_id = int(parts[0])
+            scope = parse_scope(
+                args.get("scope", "this_topic"), current=scope_from_message(message)
+            )
+        except ValueError as exc:
+            await safe_answer(message, str(exc))
+            return
+        if scope.is_global and not context.admins.is_bot_admin(message_user_id(message)):
+            await safe_answer(
+                message, "Only configured bot admins can delete all-scope memory items."
+            )
+            return
+        try:
+            deleted = await context.memory.delete_memory_item(
+                scope, item_id, deleted_by=message_user_id(message)
+            )
+        except ValueError as exc:
+            await safe_answer(message, str(exc))
+            return
+        await safe_answer(
+            message, f"Deleted memory item #{deleted.id} ({deleted.kind}) from {deleted.scope.key}."
+        )
+
+    @router.message(Command("memory_item_refresh"))
+    async def memory_item_refresh(message: Message, command: CommandObject) -> None:
+        if not await require_admin(message):
+            return
+        parts = (command.args or "").strip().split(None, 1)
+        if not parts:
+            await safe_answer(
+                message, "Usage: /memory_item_refresh <id> [mode=embed|summarize|both] [scope=...]"
+            )
+            return
+        args = parse_key_values(parts[1] if len(parts) > 1 else None)
+        try:
+            item_id = int(parts[0])
+            scope = parse_scope(
+                args.get("scope", "this_topic"), current=scope_from_message(message)
+            )
+            mode = parse_memory_item_mode(args.get("mode"))
+        except ValueError as exc:
+            await safe_answer(message, str(exc))
+            return
+        if scope.is_global and not context.admins.is_bot_admin(message_user_id(message)):
+            await safe_answer(
+                message, "Only configured bot admins can refresh all-scope memory items."
+            )
+            return
+        try:
+            result = await context.memory.refresh_memory_item(
+                scope, item_id, mode=mode, updated_by=message_user_id(message)
+            )
+        except ValueError as exc:
+            await safe_answer(message, str(exc))
+            return
+        await safe_answer(message, format_memory_item_refresh(result)[:3900])
 
     @router.message(Command("memory_notes"))
     async def memory_notes(message: Message, command: CommandObject) -> None:
@@ -613,7 +779,7 @@ def build_router(context: AppContext) -> Router:
         )
         await safe_answer(message, response)
 
-    @router.message(F.text | F.caption)
+    @router.message(F.text | F.caption | F.document)
     async def ingest(message: Message) -> None:
         text = text_from_message(message)
         user_id = message_user_id(message)
@@ -643,26 +809,39 @@ def build_router(context: AppContext) -> Router:
 
 
 async def _scope_settings_command(
-    context: AppContext, message: Message, command: CommandObject
+    context: AppContext, message: Message, command: CommandObject, *, require_confirmation: bool
 ) -> None:
     user_id = message_user_id(message)
     if not await context.admins.can_administer(message.bot, int(message.chat.id), user_id):
         await safe_answer(message, "This command requires a bot admin or Telegram chat admin.")
         return
     args = parse_key_values(command.args)
+    confirm = args.pop("confirm", None)
     try:
         scope = parse_scope(args.get("scope", "this_topic"), current=scope_from_message(message))
         updates = parse_scope_settings_args(args)
     except ValueError as exc:
         await safe_answer(message, str(exc))
         return
+    if confirm:
+        try:
+            preview = await context.memory.confirm_scope_settings(
+                scope, user_id=user_id or 0, confirm=confirm
+            )
+        except ValueError as exc:
+            await safe_answer(message, str(exc))
+            return
+        await safe_answer(message, format_settings_change_preview(preview)[:3900])
+        return
     if not updates:
         settings = await context.memory.get_scope_settings(scope)
         await safe_answer(message, format_scope_settings(settings))
         return
-    settings = await context.memory.set_scope_settings(
-        scope, updates, updated_by=message_user_id(message)
-    )
+    if require_confirmation:
+        preview = await context.memory.preview_scope_settings(scope, updates, user_id=user_id or 0)
+        await safe_answer(message, format_settings_change_preview(preview)[:3900])
+        return
+    settings = await context.memory.set_scope_settings(scope, updates, updated_by=user_id)
     await safe_answer(message, "Updated memory settings:\n" + format_scope_settings(settings))
 
 

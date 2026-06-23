@@ -291,6 +291,29 @@ class ForgetChallenge(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class SettingsChallenge(Base):
+    __tablename__ = "settings_challenges"
+    __table_args__ = (
+        Index(
+            "ix_settings_challenges_scope_user",
+            "chat_id",
+            "message_thread_id",
+            "user_id",
+            "expires_at",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    chat_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    message_thread_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    updates: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class BotEvent(Base):
     __tablename__ = "bot_events"
 

@@ -16,6 +16,7 @@ from pzp_ai_bot.memory.scope import Scope, parse_scope
 from pzp_ai_bot.memory.service import (
     audit_events_jsonl,
     format_audit_events,
+    format_memory_status,
     format_runtime_settings,
     parse_memory_export_format,
     parse_runtime_settings_args,
@@ -116,6 +117,43 @@ def import_jsonl(
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
     console.print(f"Imported {count} memory items into {scope.key}.")
+
+
+@app.command("import-telegram-json")
+def import_telegram_json(
+    file: Annotated[Path, typer.Option("--file", exists=True, file_okay=True, dir_okay=False)],
+    chat_id: Annotated[int, typer.Option("--chat-id")],
+    thread_id: Annotated[int | None, typer.Option("--thread-id")] = None,
+) -> None:
+    """Import a Telegram Desktop JSON export into learned raw-message memory."""
+    settings = get_settings()
+    context = run(build_context(settings))
+    scope = Scope(chat_id, thread_id)
+    try:
+        result = run(context.memory.import_telegram_desktop_json(file, scope))
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    console.print(
+        f"Imported {result.imported} Telegram Desktop messages into {scope.key}; "
+        f"skipped {result.skipped}."
+    )
+
+
+@app.command("memory-status")
+def memory_status(
+    scope: Annotated[
+        str, typer.Option(help="Scope: all, <chat_id>, <chat_id>:<thread_id>.")
+    ] = "all",
+) -> None:
+    """Show scoped message, memory and AI usage status."""
+    try:
+        parsed = parse_scope(scope)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    settings = get_settings()
+    context = run(build_context(settings))
+    status = run(context.memory.memory_status(None if parsed.is_global else parsed))
+    console.print(format_memory_status(status))
 
 
 @app.command("doctor")

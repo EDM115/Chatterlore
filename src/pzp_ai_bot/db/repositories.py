@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, ClassVar
 
-from sqlalchemy import Select, and_, delete, func, select, update
+from sqlalchemy import Integer, Select, and_, cast, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pzp_ai_bot.db.models import (
@@ -22,6 +22,7 @@ from pzp_ai_bot.db.models import (
     RuntimeSetting,
     ScopeMetadata,
     ScopeSettings,
+    SettingsChallenge,
     SummaryTemplate,
     SystemPromptTemplate,
 )
@@ -86,6 +87,29 @@ class SourceReference:
     message_id: int
     label: str
     url: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class MessageScopeCounts:
+    scope: Scope
+    messages: int
+    learned: int
+    skipped: int
+    last_message_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class KnowledgeScopeCounts:
+    scope: Scope
+    knowledge_items: int
+
+
+@dataclass(frozen=True, slots=True)
+class AIUsageStats:
+    total: int
+    errors: int
+    average_latency_ms: int | None
+    operations: dict[str, int]
 
 
 @dataclass(frozen=True, slots=True)
@@ -254,6 +278,33 @@ class MessageRepository:
             )
         return by_message_id
 
+    async def by_telegram_ids(self, scope: Scope, telegram_message_ids: list[int]) -> list[Message]:
+        if not telegram_message_ids:
+            return []
+        stmt = (
+            select(Message)
+            .where(
+                scope_filter(Message, scope),
+                Message.telegram_message_id.in_(sorted(set(telegram_message_ids))),
+            )
+            .order_by(Message.created_at.asc(), Message.id.asc())
+        )
+        return list((await self.session.scalars(stmt)).all())
+
+    async def skipped(
+        self, scope: Scope, *, limit: int = 10, telegram_message_id: int | None = None
+    ) -> list[Message]:
+        stmt = (
+            select(Message)
+            .where(scope_filter(Message, scope), Message.learned.is_(False))
+            .order_by(Message.created_at.desc(), Message.id.desc())
+            .limit(limit)
+        )
+        if telegram_message_id is not None:
+            stmt = stmt.where(Message.telegram_message_id == telegram_message_id)
+        rows = list((await self.session.scalars(stmt)).all())
+        return list(reversed(rows))
+
     async def ids_older_than(self, scope: Scope, older_than: datetime) -> list[int]:
         stmt = select(Message.id).where(
             scope_filter(Message, scope), Message.created_at < older_than
@@ -266,19 +317,48 @@ class MessageRepository:
         await self.session.execute(delete(Message).where(Message.id.in_(ids)))
         return len(ids)
 
-    async def counts(self) -> dict[str, int]:
-        total = await self.session.scalar(select(func.count(Message.id)))
+    async def counts(self, scope: Scope | None = None) -> dict[str, int]:
+        filters = [] if scope is None else [scope_filter(Message, scope)]
+        total = await self.session.scalar(select(func.count(Message.id)).where(*filters))
         learned = await self.session.scalar(
-            select(func.count(Message.id)).where(Message.learned.is_(True))
+            select(func.count(Message.id)).where(*filters, Message.learned.is_(True))
         )
         skipped = await self.session.scalar(
-            select(func.count(Message.id)).where(Message.learned.is_(False))
+            select(func.count(Message.id)).where(*filters, Message.learned.is_(False))
         )
         return {
             "messages": int(total or 0),
             "learned": int(learned or 0),
             "skipped": int(skipped or 0),
         }
+
+    async def scope_counts(self) -> list[MessageScopeCounts]:
+        stmt = (
+            select(
+                Message.chat_id,
+                Message.message_thread_id,
+                func.count(Message.id),
+                func.sum(cast(Message.learned, Integer)),
+                func.max(Message.created_at),
+            )
+            .group_by(Message.chat_id, Message.message_thread_id)
+            .order_by(Message.chat_id.asc(), Message.message_thread_id.asc())
+        )
+        rows = (await self.session.execute(stmt)).all()
+        counts: list[MessageScopeCounts] = []
+        for chat_id, thread_id, total, learned, last_message_at in rows:
+            learned_count = int(learned or 0)
+            total_count = int(total or 0)
+            counts.append(
+                MessageScopeCounts(
+                    scope=Scope(int(chat_id), thread_id),
+                    messages=total_count,
+                    learned=learned_count,
+                    skipped=total_count - learned_count,
+                    last_message_at=last_message_at,
+                )
+            )
+        return counts
 
     async def delete_scope(self, scope: Scope) -> int:
         count = await self.session.scalar(
@@ -326,6 +406,59 @@ class KnowledgeRepository:
 
     async def get(self, item_id: int) -> KnowledgeItem | None:
         return await self.session.get(KnowledgeItem, item_id)
+
+    async def list_recent(
+        self, scope: Scope | None = None, *, kind: str | None = None, limit: int = 20
+    ) -> list[KnowledgeItem]:
+        stmt = select(KnowledgeItem).order_by(
+            KnowledgeItem.created_at.desc(), KnowledgeItem.id.desc()
+        )
+        if scope is not None:
+            stmt = stmt.where(scope_filter(KnowledgeItem, scope))
+        if kind is not None:
+            stmt = stmt.where(KnowledgeItem.kind == kind)
+        return list((await self.session.scalars(stmt.limit(limit))).all())
+
+    async def update_item(
+        self,
+        item_id: int,
+        *,
+        scope: Scope,
+        content: str | None = None,
+        metadata_updates: dict[str, Any] | None = None,
+    ) -> KnowledgeItem | None:
+        item = await self.session.scalar(
+            select(KnowledgeItem).where(
+                KnowledgeItem.id == item_id, scope_filter(KnowledgeItem, scope)
+            )
+        )
+        if item is None:
+            return None
+        if content is not None:
+            item.content = content
+        metadata = dict(item.metadata_json or {})
+        if metadata_updates:
+            for key, value in metadata_updates.items():
+                if value is None:
+                    metadata.pop(key, None)
+                else:
+                    metadata[key] = value
+        item.metadata_json = metadata
+        item.updated_at = utc_now()
+        await self.session.flush()
+        return item
+
+    async def delete_item(self, item_id: int, *, scope: Scope) -> KnowledgeItem | None:
+        item = await self.session.scalar(
+            select(KnowledgeItem).where(
+                KnowledgeItem.id == item_id, scope_filter(KnowledgeItem, scope)
+            )
+        )
+        if item is None:
+            return None
+        await self.session.delete(item)
+        await self.session.flush()
+        return item
 
     async def list_manual_notes(
         self, scope: Scope | None = None, tag: str | None = None
@@ -405,8 +538,25 @@ class KnowledgeRepository:
         await self.session.execute(delete(KnowledgeItem).where(KnowledgeItem.id.in_(ids)))
         return len(ids)
 
-    async def count(self) -> int:
-        return int(await self.session.scalar(select(func.count(KnowledgeItem.id))) or 0)
+    async def count(self, scope: Scope | None = None) -> int:
+        stmt = select(func.count(KnowledgeItem.id))
+        if scope is not None:
+            stmt = stmt.where(scope_filter(KnowledgeItem, scope))
+        return int(await self.session.scalar(stmt) or 0)
+
+    async def scope_counts(self) -> list[KnowledgeScopeCounts]:
+        stmt = (
+            select(
+                KnowledgeItem.chat_id, KnowledgeItem.message_thread_id, func.count(KnowledgeItem.id)
+            )
+            .group_by(KnowledgeItem.chat_id, KnowledgeItem.message_thread_id)
+            .order_by(KnowledgeItem.chat_id.asc(), KnowledgeItem.message_thread_id.asc())
+        )
+        rows = (await self.session.execute(stmt)).all()
+        return [
+            KnowledgeScopeCounts(scope=Scope(chat_id, thread_id), knowledge_items=int(count or 0))
+            for chat_id, thread_id, count in rows
+        ]
 
     async def delete_scope(self, scope: Scope) -> int:
         count = await self.session.scalar(
@@ -460,8 +610,11 @@ class EmbeddingRepository:
         rows = list((await self.session.scalars(stmt)).all())
         return [(row, decode_vector(row.vector)) for row in rows]
 
-    async def count(self) -> int:
-        return int(await self.session.scalar(select(func.count(Embedding.id))) or 0)
+    async def count(self, scope: Scope | None = None) -> int:
+        stmt = select(func.count(Embedding.id))
+        if scope is not None:
+            stmt = stmt.where(scope_filter(Embedding, scope))
+        return int(await self.session.scalar(stmt) or 0)
 
     async def delete_targets(self, *, target_type: str, target_ids: list[int]) -> int:
         if not target_ids:
@@ -748,13 +901,11 @@ class MemoryReviewRepository:
         item.reviewed_at = utc_now()
         await self.session.flush()
 
-    async def count_pending(self) -> int:
-        return int(
-            await self.session.scalar(
-                select(func.count(MemoryReviewItem.id)).where(MemoryReviewItem.status == "pending")
-            )
-            or 0
-        )
+    async def count_pending(self, scope: Scope | None = None) -> int:
+        stmt = select(func.count(MemoryReviewItem.id)).where(MemoryReviewItem.status == "pending")
+        if scope is not None:
+            stmt = stmt.where(scope_filter(MemoryReviewItem, scope))
+        return int(await self.session.scalar(stmt) or 0)
 
 
 class MemoryProfileRepository:
@@ -1102,6 +1253,18 @@ class ForgetChallengeView:
     created_at: datetime
 
 
+@dataclass(frozen=True, slots=True)
+class SettingsChallengeView:
+    id: int
+    scope: Scope
+    user_id: int
+    token_hash: str
+    updates: dict[str, Any]
+    expires_at: datetime
+    consumed_at: datetime | None
+    created_at: datetime
+
+
 class ForgetChallengeRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -1157,6 +1320,68 @@ class ForgetChallengeRepository:
             await self.session.flush()
 
 
+class SettingsChallengeRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def latest_active(
+        self, *, scope: Scope, user_id: int, now: datetime | None = None
+    ) -> SettingsChallengeView | None:
+        current = now or utc_now()
+        row = await self.session.scalar(
+            select(SettingsChallenge)
+            .where(
+                _nullable_eq(SettingsChallenge.chat_id, scope.chat_id),
+                _nullable_eq(SettingsChallenge.message_thread_id, scope.thread_id),
+                SettingsChallenge.user_id == user_id,
+                SettingsChallenge.consumed_at.is_(None),
+                SettingsChallenge.expires_at >= current,
+            )
+            .order_by(SettingsChallenge.created_at.desc(), SettingsChallenge.id.desc())
+        )
+        return settings_challenge_view(row) if row is not None else None
+
+    async def create(
+        self,
+        *,
+        scope: Scope,
+        user_id: int,
+        token_hash: str,
+        updates: dict[str, Any],
+        expires_at: datetime,
+    ) -> SettingsChallengeView:
+        current = utc_now()
+        await self.session.execute(
+            update(SettingsChallenge)
+            .where(
+                _nullable_eq(SettingsChallenge.chat_id, scope.chat_id),
+                _nullable_eq(SettingsChallenge.message_thread_id, scope.thread_id),
+                SettingsChallenge.user_id == user_id,
+                SettingsChallenge.consumed_at.is_(None),
+            )
+            .values(consumed_at=current)
+        )
+        row = SettingsChallenge(
+            chat_id=scope.chat_id,
+            message_thread_id=scope.thread_id,
+            user_id=user_id,
+            token_hash=token_hash,
+            updates=updates,
+            expires_at=expires_at,
+            consumed_at=None,
+            created_at=current,
+        )
+        self.session.add(row)
+        await self.session.flush()
+        return settings_challenge_view(row)
+
+    async def consume(self, challenge_id: int) -> None:
+        row = await self.session.get(SettingsChallenge, challenge_id)
+        if row is not None:
+            row.consumed_at = utc_now()
+            await self.session.flush()
+
+
 def runtime_setting_view(row: RuntimeSetting) -> RuntimeSettingView:
     return RuntimeSettingView(
         key=row.key,
@@ -1174,6 +1399,19 @@ def forget_challenge_view(row: ForgetChallenge) -> ForgetChallengeView:
         scope=Scope(row.chat_id, row.message_thread_id),
         user_id=row.user_id,
         token_hash=row.token_hash,
+        expires_at=row.expires_at,
+        consumed_at=row.consumed_at,
+        created_at=row.created_at,
+    )
+
+
+def settings_challenge_view(row: SettingsChallenge) -> SettingsChallengeView:
+    return SettingsChallengeView(
+        id=row.id,
+        scope=Scope(row.chat_id, row.message_thread_id),
+        user_id=row.user_id,
+        token_hash=row.token_hash,
+        updates=dict(row.updates),
         expires_at=row.expires_at,
         consumed_at=row.consumed_at,
         created_at=row.created_at,
@@ -1249,8 +1487,34 @@ class EventRepository:
             stmt = stmt.where(scope_filter(BotEvent, scope))
         return list((await self.session.scalars(stmt)).all())
 
-    async def count_events(self) -> int:
-        return int(await self.session.scalar(select(func.count(BotEvent.id))) or 0)
+    async def count_events(self, scope: Scope | None = None) -> int:
+        stmt = select(func.count(BotEvent.id))
+        if scope is not None:
+            stmt = stmt.where(scope_filter(BotEvent, scope))
+        return int(await self.session.scalar(stmt) or 0)
+
+    async def ai_usage_stats(self, scope: Scope | None = None) -> AIUsageStats:
+        rows = list((await self.session.scalars(select(AIUsage))).all())
+        if scope is not None:
+            rows = [
+                row
+                for row in rows
+                if isinstance(row.metadata_json, dict)
+                and row.metadata_json.get("scope") == scope.key
+            ]
+        operations: dict[str, int] = {}
+        latency_values: list[int] = []
+        errors = 0
+        for row in rows:
+            operations[row.operation] = operations.get(row.operation, 0) + 1
+            if row.latency_ms is not None:
+                latency_values.append(row.latency_ms)
+            if row.error:
+                errors += 1
+        average = int(sum(latency_values) / len(latency_values)) if latency_values else None
+        return AIUsageStats(
+            total=len(rows), errors=errors, average_latency_ms=average, operations=operations
+        )
 
 
 def build_telegram_message_url(

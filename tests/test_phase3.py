@@ -240,7 +240,8 @@ async def test_system_prompt_model_reasoning_and_one_shot_metadata(context) -> N
         ),
     )
 
-    assert answer == "recorded answer"
+    assert answer.startswith("recorded answer")
+    assert "Sources:" in answer
     assert "Use one-shot system behavior." in recorder.prompts[-1]
     assert "Reasoning level setting: low." in recorder.prompts[-1]
     async with session_scope(context.session_factory) as session:

@@ -3,6 +3,7 @@
 ## Polling
 
 Polling is the easiest runtime for development:
+
 ```powershell
 uv run pzp-bot polling
 ```
@@ -12,6 +13,7 @@ Polling clears any configured Telegram webhook first because Telegram update mod
 ## Webhook
 
 Set:
+
 ```env
 RUNTIME_MODE=webhook
 WEBHOOK_URL=https://example.com/telegram/webhook
@@ -19,6 +21,7 @@ WEBHOOK_SECRET=<random-secret>
 ```
 
 Then run:
+
 ```powershell
 uv run pzp-bot webhook
 ```

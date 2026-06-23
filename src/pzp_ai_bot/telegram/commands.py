@@ -8,6 +8,12 @@ COMMAND_DESCRIPTIONS: tuple[tuple[str, str], ...] = (
     ("ask", "Answer from current chat/topic memory"),
     ("memory_search", "Search scoped memory"),
     ("memory_export", "Export memory as Markdown or JSONL"),
+    ("memory_status", "Show scoped memory and AI usage status"),
+    ("memory_scopes", "List known chat/topic memory scopes"),
+    ("memory_debug", "Explain skipped-message reasons"),
+    ("memory_items", "Browse recent memory item IDs"),
+    ("memory_item_delete", "Delete one memory item"),
+    ("memory_item_refresh", "Refresh one memory item"),
     ("memory_settings", "View or edit scoped memory settings"),
     ("settings", "View or edit scoped AI and memory settings"),
     ("memory_prune", "Apply retention pruning for this scope"),
@@ -61,6 +67,15 @@ def command_help_text() -> str:
             "/ask [profile=name] [provider=name] [system=name] [model=name] "
             "[reasoning=low|medium|high] <question>",
             "/memory_export [md|jsonl] [scope=this_topic|this_chat|all|<chat_id>:<thread_id>]",
+            "/memory_status [scope=this_topic|this_chat|all|<chat_id>:<thread_id>]",
+            "/memory_scopes [scope=this_chat|all|<chat_id>:<thread_id>]",
+            "/memory_debug [scope=this_topic|this_chat|<chat_id>:<thread_id>] "
+            "[message_id=N] [limit=N]",
+            "/memory_items [scope=this_topic|this_chat|all|<chat_id>:<thread_id>] "
+            "[kind=name] [limit=N]",
+            "/memory_item_delete <id> [scope=this_topic|this_chat|all|<chat_id>:<thread_id>]",
+            "/memory_item_refresh <id> [mode=embed|summarize|both] "
+            "[scope=this_topic|this_chat|all|<chat_id>:<thread_id>]",
             "/memory_settings [top_k=N] [summary_batch_size=N] [summary_model=name] "
             "[provider=name] [chat_model=name] [embedding_model=name] "
             "[reasoning=low|medium|high] [system_prompt=name] "
@@ -88,6 +103,7 @@ def command_help_text() -> str:
             "[provider=name] [model=name] [prompt='one-shot instruction']",
             "/audit_events [scope=this_topic|this_chat|all] [event_type=name] [limit=N]",
             "/runtime_settings [reload=on] [key=value ...]",
+            "/settings [key=value ...] then /settings confirm=<token>",
             "/forget scope=this_topic|this_chat|all confirm=<token>",
         ]
     )

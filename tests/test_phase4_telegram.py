@@ -22,9 +22,15 @@ from pzp_ai_bot.db.session import session_scope
 from pzp_ai_bot.memory.scope import Scope
 from pzp_ai_bot.memory.service import (
     AuditEventPreview,
+    MemoryItemPreview,
+    MemoryItemRefreshResult,
     MemoryNotePreview,
+    MemoryStatusPreview,
     RangeSummaryResult,
     RuntimeSettingPreview,
+    ScopeStatusPreview,
+    SettingsChangePreview,
+    SkippedMessagePreview,
     SummaryTemplatePreview,
     SystemPromptTemplatePreview,
 )
@@ -150,6 +156,33 @@ class RouterMemoryDouble:
         self._record("stats")
         return {"messages": 0, "learned": 0, "skipped": 0}
 
+    async def memory_status(self, scope: Scope | None = None) -> MemoryStatusPreview:
+        self._record("memory_status", scope)
+        return MemoryStatusPreview(
+            scope, scope.key if scope else "all scopes", 1, 1, 0, 1, 1, 0, 0, 1, 0, 2, {"ask": 1}
+        )
+
+    async def known_scopes(self, root_scope: Scope | None = None) -> list[ScopeStatusPreview]:
+        self._record("known_scopes", root_scope)
+        now = datetime(2026, 6, 23, tzinfo=UTC)
+        scope = root_scope or Scope(-10012345, None)
+        return [ScopeStatusPreview(scope, scope.key, True, False, 1, 1, 0, 1, now)]
+
+    async def skipped_messages(
+        self, scope: Scope, *, limit: int = 10, telegram_message_id: int | None = None
+    ) -> list[SkippedMessagePreview]:
+        self._record("skipped_messages", scope)
+        now = datetime(2026, 6, 23, tzinfo=UTC)
+        return [
+            SkippedMessagePreview(
+                scope,
+                telegram_message_id or 1,
+                "command",
+                "Telegram commands are not learned as memory.",
+                now,
+            )
+        ]
+
     async def set_learning(self, scope: Scope, enabled: bool, updated_by: int | None) -> None:
         self._record("set_learning", scope)
 
@@ -166,6 +199,23 @@ class RouterMemoryDouble:
     ) -> EffectiveScopeSettings:
         self._record("set_scope_settings", scope)
         return self.settings()
+
+    async def preview_scope_settings(
+        self, scope: Scope, updates: dict[str, Any], *, user_id: int
+    ) -> SettingsChangePreview:
+        self._record("preview_scope_settings", scope)
+        now = datetime(2026, 6, 23, tzinfo=UTC)
+        return SettingsChangePreview(
+            scope, dict(updates), dict.fromkeys(updates), "token", now, False
+        )
+
+    async def confirm_scope_settings(
+        self, scope: Scope, *, user_id: int, confirm: str
+    ) -> SettingsChangePreview:
+        self._record("confirm_scope_settings", scope)
+        return SettingsChangePreview(
+            scope, {"retrieval_top_k": 7}, {"retrieval_top_k": 6}, None, None, True
+        )
 
     async def prune_retention(self, scope: Scope) -> dict[str, int]:
         self._record("prune_retention", scope)
@@ -193,6 +243,29 @@ class RouterMemoryDouble:
 
     async def delete_note(self, scope: Scope, item_id: int) -> None:
         self._record("delete_note", scope)
+
+    async def browse_items(
+        self, scope: Scope | None = None, *, kind: str | None = None, limit: int = 20
+    ) -> list[MemoryItemPreview]:
+        self._record("browse_items", scope)
+        now = datetime(2026, 6, 23, tzinfo=UTC)
+        item_scope = scope or Scope(-10012345, None)
+        return [
+            MemoryItemPreview(1, item_scope, kind or "manual_note", "memory item", [], {}, now, now)
+        ]
+
+    async def delete_memory_item(
+        self, scope: Scope, item_id: int, *, deleted_by: int | None = None
+    ) -> MemoryItemPreview:
+        self._record("delete_memory_item", scope)
+        now = datetime(2026, 6, 23, tzinfo=UTC)
+        return MemoryItemPreview(item_id, scope, "manual_note", "deleted", [], {}, now, now)
+
+    async def refresh_memory_item(
+        self, scope: Scope, item_id: int, *, mode: str = "embed", updated_by: int | None = None
+    ) -> MemoryItemRefreshResult:
+        self._record("refresh_memory_item", scope)
+        return MemoryItemRefreshResult(item_id, scope, "manual_note", mode, False, 1)
 
     async def summarize_now(self, scope: Scope, **kwargs: Any) -> int:
         self._record("summarize_now", scope)
@@ -334,6 +407,7 @@ def message_update(
     caption: str | None = None,
     reply_to_message_id: int | None = None,
     photo: bool = False,
+    document_file_name: str | None = None,
 ) -> dict[str, Any]:
     message: dict[str, Any] = {
         "message_id": message_id,
@@ -354,6 +428,12 @@ def message_update(
         message["photo"] = [
             {"file_id": "file", "file_unique_id": "unique", "width": 1, "height": 1}
         ]
+    if document_file_name:
+        message["document"] = {
+            "file_id": "doc",
+            "file_unique_id": "doc_unique",
+            "file_name": document_file_name,
+        }
     if is_topic_message:
         message["is_topic_message"] = True
         message["message_thread_id"] = thread_id or 77
@@ -380,8 +460,14 @@ def command_for(name: str) -> str:
         "ask": "/ask what happened",
         "memory_search": "/memory_search roadmap",
         "memory_export": "/memory_export md",
+        "memory_status": "/memory_status",
+        "memory_scopes": "/memory_scopes",
+        "memory_debug": "/memory_debug limit=1",
+        "memory_items": "/memory_items limit=1",
+        "memory_item_delete": "/memory_item_delete 1",
+        "memory_item_refresh": "/memory_item_refresh 1 mode=embed",
         "memory_settings": "/memory_settings",
-        "settings": "/settings",
+        "settings": "/settings top_k=7",
         "audit_events": "/audit_events limit=1",
         "runtime_settings": "/runtime_settings retrieval_top_k=6",
         "memory_prune": "/memory_prune",
@@ -616,6 +702,7 @@ async def test_ingestion_update_edges_match_scope_and_skip_rules(context: AppCon
         message_update("/unknown", update_id=5, message_id=5),
         message_update("   ", update_id=6, message_id=6),
         message_update(update_id=7, message_id=7, photo=True),
+        message_update(update_id=8, message_id=8, document_file_name="runbook.pdf"),
     ]
     for payload in updates:
         await feed(dispatcher, bot, payload)
@@ -635,9 +722,11 @@ async def test_ingestion_update_edges_match_scope_and_skip_rules(context: AppCon
         (4, None, False, "bot_message"),
         (5, None, False, "command"),
         (6, None, False, "empty_text"),
+        (8, None, True, None),
     ]
     assert rows[2].text == "caption text"
     assert rows[2].reply_to_message_id == 2
+    assert rows[6].text == "Attachment: runbook.pdf"
 
 
 @pytest.mark.asyncio
