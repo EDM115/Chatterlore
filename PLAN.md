@@ -1,6 +1,6 @@
 ---
 goal: Telegram Group Memory Assistant PoC v1
-version: 0.7
+version: 0.8
 date_created: 2026-06-16
 last_updated: 2026-06-23
 owner: PZP-AI
@@ -163,14 +163,14 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 
 ### Current Verification Baseline
 
-- **DONE**: `uv sync --extra dev --extra local` passed on 2026-06-23 after Phase 3 implementation
-- **DONE**: `uv run ruff format --check .` passed on 2026-06-23 after Phase 3 implementation
-- **DONE**: `uv run ruff check .` passed on 2026-06-23 after Phase 3 implementation
-- **DONE**: `uv run ty check` passed on 2026-06-23 after Phase 3 implementation
-- **DONE**: `uv run pytest` passed on 2026-06-23 with 33 tests after Phase 3 implementation
-- **DONE**: `uv run alembic upgrade head` passed on 2026-06-23 through `0004_phase3_provider_ai_hardening` after Phase 3 implementation
-- **DONE**: `uv run pzp-bot --help` displayed all CLI commands on 2026-06-23 after Phase 3 implementation
-- **DONE**: `uv run pzp-bot doctor` passed on 2026-06-23 with the default fake provider after Phase 3 implementation
+- **DONE**: `uv sync --extra dev --extra local` passed on 2026-06-23 after Phase 4 implementation
+- **DONE**: `uv run ruff format --check .` passed on 2026-06-23 after Phase 4 implementation
+- **DONE**: `uv run ruff check .` passed on 2026-06-23 after Phase 4 implementation
+- **DONE**: `uv run ty check` passed on 2026-06-23 after Phase 4 implementation
+- **DONE**: `uv run pytest` passed on 2026-06-23 with 83 passed and 1 skipped after Phase 4 implementation
+- **DONE**: `uv run alembic upgrade head` passed on 2026-06-23 through `0004_phase3_provider_ai_hardening` after Phase 4 implementation
+- **DONE**: `uv run pzp-bot --help` displayed all CLI commands on 2026-06-23 after Phase 4 implementation
+- **DONE**: `uv run pzp-bot doctor` passed on 2026-06-23 with the default fake provider after Phase 4 implementation
 - **TODO**: Re-run the full verification baseline after every future code or dependency change and update this section with date and result
 
 ## 4. Known Partial Implementations
@@ -181,8 +181,6 @@ These items exist but are not complete enough for production-quality v1.
 - **PARTIAL-009**: Forget confirmation tokens are in process memory only. They are lost on restart and are not audited as pending destructive operations
 - **PARTIAL-010**: Admin cache is in memory only. That is acceptable for PoC but should be tunable and observable before production
 - **PARTIAL-011**: JSONL import supports generic `content` or `text` rows. It does not import Telegram Desktop exports or rich Telegram update dumps yet
-- **PARTIAL-012**: Tests cover service behavior but not the full aiogram dispatcher command path or mocked Telegram API send calls
-- **PARTIAL-013**: Webhook tests verify bad-secret rejection only. They do not verify a valid update round trip through `Dispatcher.feed_update`
 - **PARTIAL-014**: Docker image exists but has not been validated as a complete deployed runtime with mounted data and environment
 - **PARTIAL-015**: `structlog` is installed but structured logging is not implemented
 
@@ -249,15 +247,15 @@ Goal: prove Telegram behavior without requiring live Telegram servers in default
 
 | Task     | Status | Description                                                                                           | Acceptance Criteria                                                                                   |
 | -------- | ------ | ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| TASK-035 | TODO   | Feed recorded Telegram JSON updates through aiogram `Dispatcher` in tests                             | Command and normal-message handlers are covered without network                                       |
-| TASK-036 | TODO   | Mock Bot API calls with `respx` or aiogram test utilities                                             | Tests cover `getChatAdministrators`, `sendMessage`, `sendDocument`, `setWebhook` and `deleteWebhook` |
-| TASK-037 | TODO   | Add valid webhook update test                                                                         | Correct secret plus valid update returns `{"ok": true}` and invokes dispatcher                        |
-| TASK-038 | TODO   | Add polling startup test                                                                              | Polling deletes webhook before starting and includes the router                                       |
-| TASK-039 | TODO   | Add tests for all Telegram commands                                                                   | Each command has success, invalid-args, unauthorized and scoped behavior tests                       |
-| TASK-040 | TODO   | Add tests for topic, non-topic, captions, replies, bot-authored messages, commands and empty content | Ingestion decisions match scope and skip rules                                                        |
-| TASK-041 | TODO   | Add optional `telegram_live` smoke tests                                                              | Live tests are skipped by default and document required env vars                                      |
-| TASK-042 | TODO   | Add Telegram error handling and rate-limit handling                                                   | Telegram API failures are logged and do not crash update processing                                   |
-| TASK-043 | TODO   | Add export chunking or file fallback for large Telegram responses                                     | Large memory exports always use documents and respect Telegram file limits                            |
+| TASK-035 | DONE   | Feed recorded Telegram JSON updates through aiogram `Dispatcher` in tests                             | Command and normal-message handlers are covered without network                                       |
+| TASK-036 | DONE   | Mock Bot API calls with `respx` or aiogram test utilities                                             | Tests cover `getChatAdministrators`, `sendMessage`, `sendDocument`, `setWebhook` and `deleteWebhook` |
+| TASK-037 | DONE   | Add valid webhook update test                                                                         | Correct secret plus valid update returns `{"ok": true}` and invokes dispatcher                        |
+| TASK-038 | DONE   | Add polling startup test                                                                              | Polling deletes webhook before starting and includes the router                                       |
+| TASK-039 | DONE   | Add tests for all Telegram commands                                                                   | Each command has success, invalid-args, unauthorized and scoped behavior tests                       |
+| TASK-040 | DONE   | Add tests for topic, non-topic, captions, replies, bot-authored messages, commands and empty content | Ingestion decisions match scope and skip rules                                                        |
+| TASK-041 | DONE   | Add optional `telegram_live` smoke tests                                                              | Live tests are skipped by default and document required env vars                                      |
+| TASK-042 | DONE   | Add Telegram error handling and rate-limit handling                                                   | Telegram API failures are logged and do not crash update processing                                   |
+| TASK-043 | DONE   | Add export chunking or file fallback for large Telegram responses                                     | Large memory exports always use documents and respect Telegram file limits                            |
 
 ### Phase 5 - Operations, Observability and Security
 
@@ -309,19 +307,16 @@ Goal: make the assistant useful to group admins and participants beyond the mini
 - **DONE**: `tests/test_phase2.py` verifies canonical compaction grouping/dedup/source links, per-scope settings and review approval, and retention pruning without durable-summary deletion
 - **DONE**: `tests/test_phase2_remaining.py` verifies manual note metadata/edit/delete/export, cross-chat profile permission gating, range summaries with templates and fake-provider template prompt inputs
 - **DONE**: `tests/test_phase3.py` verifies OpenAI-compatible retry/redaction payloads, local optional-dependency failure messaging, provider-profile fail-closed behavior, CLI doctor diagnostics, embedding usage metadata, insufficient-context answers and prompt/model/reasoning usage metadata
+- **DONE**: `tests/test_phase4_telegram.py` verifies aiogram dispatcher-fed command and normal-message updates, mocked Bot API methods, valid webhook dispatch, polling startup sequencing, command matrix coverage, ingestion edge cases, Telegram API failure/rate-limit handling and export document chunking
+- **DONE**: `tests/test_telegram_live.py` provides optional skipped-by-default `telegram_live` smoke coverage for real Telegram credentials
 - **DONE**: `tests/test_cli.py` verifies Alembic-backed migration and CLI validation errors for invalid export scope/format and empty JSONL import
 - **DONE**: `tests/test_telegram_commands.py` verifies command help text and mocked `set_my_commands` registration
 - **DONE**: `tests/conftest.py` builds isolated SQLite and fake-provider context
 
 ### Tests Still Required
 
-- **TEST-001**: Full aiogram dispatcher tests for every command
-- **TEST-002**: Valid webhook update test
-- **TEST-003**: Mocked Telegram Bot API tests for admin lookup, message sending, document sending, webhook setup and webhook deletion
 - **TEST-004**: Broader CLI tests for successful `summarize-now`, successful `export-memory`, successful `import-jsonl` and `show-config`
-- **TEST-012**: Large export file behavior test
 - **TEST-013**: Docker smoke test or documented manual verification
-- **TEST-014**: Optional `telegram_live` test suite, skipped by default
 - **TEST-018**: Reloadless settings tests for polling and webhook runtimes
 - **TEST-019**: `/settings` command tests for view, edit, preview, confirm, reject and unauthorized cases
 
@@ -359,7 +354,7 @@ Required before serious local dogfooding:
 
 - **DONE**: Full verification commands passed on 2026-06-23 from the current checkout
 - **DONE**: CLI migration path is aligned with Alembic
-- **TODO**: Dispatcher tests cover command behavior
+- **DONE**: Dispatcher tests cover command behavior
 - **DONE**: Scheduled idle summarization works in polling and webhook runtimes and is covered through the direct scheduler hook
 - **TODO**: `/stats` reports useful per-scope and AI usage information
 - **DONE**: Admins can inspect and update safe memory-quality settings without editing files for local dogfooding
@@ -383,8 +378,8 @@ Required before inviting a real private group:
 
 Required before calling this v1 complete:
 
-- **DONE**: All Phase 1, Phase 2 and Phase 3 tasks are complete
-- **TODO**: All Phase 4 and Phase 5 tasks are complete or explicitly deferred in this plan
+- **DONE**: All Phase 1, Phase 2, Phase 3 and Phase 4 tasks are complete
+- **TODO**: All Phase 5 tasks are complete or explicitly deferred in this plan
 - **TODO**: CI runs formatting, linting, type checking, tests and migration checks
 - **TODO**: Migration history is stable and tested from an empty database
 - **TODO**: Memory quality is acceptable on a representative imported dataset
@@ -459,12 +454,12 @@ uv run pzp-bot webhook
 
 - **PROJECT-001**: `pyproject.toml`, `uv.lock`, `.env.example`, `.gitignore`, `README.md`
 - **RUNTIME-001**: `src/pzp_ai_bot/main.py`, `src/pzp_ai_bot/app_context.py`, `src/pzp_ai_bot/config.py`
-- **TELEGRAM-001**: `src/pzp_ai_bot/telegram/admin.py`, `src/pzp_ai_bot/telegram/router.py`, `src/pzp_ai_bot/telegram/utils.py`, `src/pzp_ai_bot/telegram/polling.py`, `src/pzp_ai_bot/telegram/webhook.py`
+- **TELEGRAM-001**: `src/pzp_ai_bot/telegram/admin.py`, `src/pzp_ai_bot/telegram/commands.py`, `src/pzp_ai_bot/telegram/dispatcher.py`, `src/pzp_ai_bot/telegram/router.py`, `src/pzp_ai_bot/telegram/safe_api.py`, `src/pzp_ai_bot/telegram/utils.py`, `src/pzp_ai_bot/telegram/polling.py`, `src/pzp_ai_bot/telegram/webhook.py`
 - **MEMORY-001**: `src/pzp_ai_bot/memory/service.py`, `src/pzp_ai_bot/memory/prompts.py`, `src/pzp_ai_bot/memory/canonical.py`, `src/pzp_ai_bot/memory/policy.py`, `src/pzp_ai_bot/memory/retrieval.py`, `src/pzp_ai_bot/memory/markdown.py`, `src/pzp_ai_bot/memory/scope.py`, `src/pzp_ai_bot/memory/vector.py`
 - **AI-001**: `src/pzp_ai_bot/ai/protocols.py`, `src/pzp_ai_bot/ai/fake.py`, `src/pzp_ai_bot/ai/openai_compatible.py`, `src/pzp_ai_bot/ai/local.py`, `src/pzp_ai_bot/ai/factory.py`, `src/pzp_ai_bot/ai/redaction.py`
 - **DB-001**: `src/pzp_ai_bot/db/models.py`, `src/pzp_ai_bot/db/repositories.py`, `src/pzp_ai_bot/db/session.py`, `alembic/env.py`, `alembic/versions/0001_initial.py`, `alembic/versions/0002_phase2_memory_quality.py`, `alembic/versions/0003_phase2_remaining_memory_tools.py`, `alembic/versions/0004_phase3_provider_ai_hardening.py`
 - **DOCS-001**: `docs/setup.md`, `docs/architecture.md`, `docs/commands.md`, `docs/privacy.md`, `docs/deployment.md`, `docs/testing.md`
-- **TESTS-001**: `tests/conftest.py`, `tests/test_scope.py`, `tests/test_policy_and_ingestion.py`, `tests/test_memory_service.py`, `tests/test_phase1.py`, `tests/test_phase2.py`, `tests/test_phase2_remaining.py`, `tests/test_phase3.py`, `tests/test_cli.py`, `tests/test_telegram_commands.py`, `tests/test_webhook.py`
+- **TESTS-001**: `tests/conftest.py`, `tests/test_scope.py`, `tests/test_policy_and_ingestion.py`, `tests/test_memory_service.py`, `tests/test_phase1.py`, `tests/test_phase2.py`, `tests/test_phase2_remaining.py`, `tests/test_phase3.py`, `tests/test_phase4_telegram.py`, `tests/test_cli.py`, `tests/test_telegram_commands.py`, `tests/test_telegram_live.py`, `tests/test_webhook.py`
 
 ## 10. Risks And Assumptions
 
@@ -507,3 +502,4 @@ uv run pzp-bot webhook
 - **2026-06-23 / v0.5**: Implemented Phase 2 memory-quality work: canonical categorized compaction, deterministic deduplication, source links and scope metadata, per-scope memory settings, retention pruning, review-before-compact approval flow and 24-test verification baseline
 - **2026-06-23 / v0.6**: Finished remaining Phase 2 TODOs: rich manual note metadata/edit/delete, named cross-chat profiles with explicit source-scope permissions, bounded message-range summaries, reusable summary templates and focused Phase 2 remaining tests
 - **2026-06-23 / v0.7**: Implemented Phase 3 provider and AI hardening: OpenAI-compatible retries, embedding usage telemetry, `doctor`, stronger redaction, versioned prompts, insufficient-context answers, system prompt templates, one-shot AI overrides, provider profiles and scoped model/reasoning settings
+- **2026-06-23 / v0.8**: Implemented Phase 4 Telegram integration coverage: dispatcher-fed updates, mocked Bot API calls, valid webhook and polling startup tests, full command matrix coverage, ingestion edge cases, optional live smoke test, Telegram send failure/rate-limit handling and export document chunking

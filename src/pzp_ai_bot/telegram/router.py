@@ -26,6 +26,7 @@ from pzp_ai_bot.memory.service import (
     parse_scope_settings_args,
 )
 from pzp_ai_bot.telegram.commands import command_help_text
+from pzp_ai_bot.telegram.safe_api import safe_answer, safe_answer_document
 from pzp_ai_bot.telegram.utils import (
     is_command_text,
     message_chat_title,
@@ -41,6 +42,9 @@ from pzp_ai_bot.telegram.utils import (
     text_from_message,
 )
 
+TELEGRAM_DOCUMENT_MAX_BYTES = 50 * 1024 * 1024
+EXPORT_DOCUMENT_CHUNK_BYTES = 45 * 1024 * 1024
+
 
 def build_router(context: AppContext) -> Router:
     router = Router(name="pzp-memory")
@@ -49,7 +53,7 @@ def build_router(context: AppContext) -> Router:
         user_id = message_user_id(message)
         ok = await context.admins.can_administer(message.bot, int(message.chat.id), user_id)
         if not ok:
-            await message.answer("This command requires a bot admin or Telegram chat admin.")
+            await safe_answer(message, "This command requires a bot admin or Telegram chat admin.")
         return ok
 
     @router.message(Command("ask"))
@@ -59,12 +63,13 @@ def build_router(context: AppContext) -> Router:
                 command.args, prompt_target="system"
             )
         except ValueError as exc:
-            await message.answer(str(exc))
+            await safe_answer(message, str(exc))
             return
         if not question:
-            await message.answer(
+            await safe_answer(
+                message,
                 "Usage: /ask [profile=name] [provider=name] [system=name] [model=name] "
-                "[reasoning=low|medium|high] [prompt='one-shot system prompt'] <question>"
+                "[reasoning=low|medium|high] [prompt='one-shot system prompt'] <question>",
             )
             return
         if admin_override and not await require_admin(message):
@@ -77,9 +82,9 @@ def build_router(context: AppContext) -> Router:
                 ai_options=ai_options,
             )
         except ValueError as exc:
-            await message.answer(str(exc))
+            await safe_answer(message, str(exc))
             return
-        await message.answer(answer[:3900])
+        await safe_answer(message, answer[:3900])
 
     @router.message(Command("memory_search"))
     async def memory_search(message: Message, command: CommandObject) -> None:
@@ -88,10 +93,12 @@ def build_router(context: AppContext) -> Router:
                 command.args, prompt_target="none"
             )
         except ValueError as exc:
-            await message.answer(str(exc))
+            await safe_answer(message, str(exc))
             return
         if not query:
-            await message.answer("Usage: /memory_search [profile=name] [provider=name] <query>")
+            await safe_answer(
+                message, "Usage: /memory_search [profile=name] [provider=name] <query>"
+            )
             return
         if admin_override and not await require_admin(message):
             return
@@ -100,13 +107,13 @@ def build_router(context: AppContext) -> Router:
                 scope_from_message(message), query, profile_name=profile_name, ai_options=ai_options
             )
         except ValueError as exc:
-            await message.answer(str(exc))
+            await safe_answer(message, str(exc))
             return
-        await message.answer(format_results(results)[:3900])
+        await safe_answer(message, format_results(results)[:3900])
 
     @router.message(Command("help"))
     async def help_command(message: Message) -> None:
-        await message.answer(command_help_text()[:3900])
+        await safe_answer(message, command_help_text()[:3900])
 
     @router.message(Command("memory_export"))
     async def memory_export(message: Message, command: CommandObject) -> None:
@@ -119,25 +126,33 @@ def build_router(context: AppContext) -> Router:
             elif token.startswith("scope="):
                 raw_scope = token.removeprefix("scope=")
             else:
-                await message.answer("Usage: /memory_export [md|jsonl] [scope=...]")
+                await safe_answer(message, "Usage: /memory_export [md|jsonl] [scope=...]")
                 return
         fmt = parse_memory_export_format(raw_format)
         try:
             scope = parse_scope(raw_scope, current=scope_from_message(message))
         except ValueError as exc:
-            await message.answer(str(exc))
+            await safe_answer(message, str(exc))
             return
         if scope.is_global and not context.admins.is_bot_admin(message_user_id(message)):
-            await message.answer("Only configured bot admins can export all memory.")
+            await safe_answer(message, "Only configured bot admins can export all memory.")
             return
         payload = await context.memory.export_memory(
             scope if not scope.is_global else None, fmt=fmt
         )
         suffix = "jsonl" if fmt == "jsonl" else "md"
-        document = BufferedInputFile(
-            payload.encode("utf-8"), filename=f"memory_{scope.filename_stem}.{suffix}"
-        )
-        await message.answer_document(document=document, caption=f"Memory export for {scope.key}")
+        documents = export_documents(payload, filename=f"memory_{scope.filename_stem}.{suffix}")
+        for index, document in enumerate(documents, start=1):
+            caption = f"Memory export for {scope.key}"
+            if len(documents) > 1:
+                caption = f"{caption} ({index}/{len(documents)})"
+            if not await safe_answer_document(message, document=document, caption=caption):
+                await safe_answer(
+                    message,
+                    "Memory export could not be sent through Telegram. Try a narrower scope "
+                    "or run the CLI export locally.",
+                )
+                return
 
     @router.message(Command("stats"))
     async def stats(message: Message) -> None:
@@ -145,7 +160,7 @@ def build_router(context: AppContext) -> Router:
         lines = ["Memory stats:"]
         for key, value in counts.items():
             lines.append(f"- {key}: {value}")
-        await message.answer("\n".join(lines))
+        await safe_answer(message, "\n".join(lines))
 
     @router.message(Command("learn_on"))
     async def learn_on(message: Message) -> None:
@@ -153,7 +168,7 @@ def build_router(context: AppContext) -> Router:
             return
         scope = scope_from_message(message)
         await context.memory.set_learning(scope, True, message_user_id(message))
-        await message.answer(f"Learning enabled for {scope.key}.")
+        await safe_answer(message, f"Learning enabled for {scope.key}.")
 
     @router.message(Command("learn_off"))
     async def learn_off(message: Message) -> None:
@@ -161,12 +176,12 @@ def build_router(context: AppContext) -> Router:
             return
         scope = scope_from_message(message)
         await context.memory.set_learning(scope, False, message_user_id(message))
-        await message.answer(f"Learning disabled for {scope.key}.")
+        await safe_answer(message, f"Learning disabled for {scope.key}.")
 
     @router.message(Command("learn_status"))
     async def learn_status(message: Message) -> None:
         status = await context.memory.learn_status(scope_from_message(message))
-        await message.answer("\n".join(f"{key}: {value}" for key, value in status.items()))
+        await safe_answer(message, "\n".join(f"{key}: {value}" for key, value in status.items()))
 
     @router.message(Command("memory_settings"))
     async def memory_settings(message: Message, command: CommandObject) -> None:
@@ -186,12 +201,13 @@ def build_router(context: AppContext) -> Router:
                 args.get("scope", "this_topic"), current=scope_from_message(message)
             )
         except ValueError as exc:
-            await message.answer(str(exc))
+            await safe_answer(message, str(exc))
             return
         result = await context.memory.prune_retention(scope)
-        await message.answer(
+        await safe_answer(
+            message,
             "Pruned memory retention:\n"
-            + "\n".join(f"{key}: {value}" for key, value in result.items())
+            + "\n".join(f"{key}: {value}" for key, value in result.items()),
         )
 
     @router.message(Command("allow_chat"))
@@ -200,7 +216,7 @@ def build_router(context: AppContext) -> Router:
             return
         scope = Scope(int(message.chat.id), None)
         await context.memory.set_learning(scope, True, message_user_id(message))
-        await message.answer(f"Chat allowed: {scope.key}")
+        await safe_answer(message, f"Chat allowed: {scope.key}")
 
     @router.message(Command("deny_chat"))
     async def deny_chat(message: Message) -> None:
@@ -208,7 +224,7 @@ def build_router(context: AppContext) -> Router:
             return
         scope = Scope(int(message.chat.id), None)
         await context.memory.set_learning(scope, False, message_user_id(message))
-        await message.answer(f"Chat denied: {scope.key}")
+        await safe_answer(message, f"Chat denied: {scope.key}")
 
     @router.message(Command("allow_topic"))
     async def allow_topic(message: Message) -> None:
@@ -216,7 +232,7 @@ def build_router(context: AppContext) -> Router:
             return
         scope = scope_from_message(message)
         await context.memory.set_learning(scope, True, message_user_id(message))
-        await message.answer(f"Topic allowed: {scope.key}")
+        await safe_answer(message, f"Topic allowed: {scope.key}")
 
     @router.message(Command("deny_topic"))
     async def deny_topic(message: Message) -> None:
@@ -226,7 +242,7 @@ def build_router(context: AppContext) -> Router:
         await context.memory.set_learning(
             scope_from_message(message), False, message_user_id(message)
         )
-        await message.answer(f"Topic denied: {scope.key}")
+        await safe_answer(message, f"Topic denied: {scope.key}")
 
     @router.message(Command("allow_user"))
     async def allow_user(message: Message, command: CommandObject) -> None:
@@ -245,8 +261,8 @@ def build_router(context: AppContext) -> Router:
         await context.memory.set_allow_admins(
             scope_from_message(message), enabled, message_user_id(message)
         )
-        await message.answer(
-            f"Admin learning allowance is {'on' if enabled else 'off'} for this scope."
+        await safe_answer(
+            message, f"Admin learning allowance is {'on' if enabled else 'off'} for this scope."
         )
 
     @router.message(Command("remember"))
@@ -256,7 +272,7 @@ def build_router(context: AppContext) -> Router:
         try:
             options, text = parse_note_create_args(command.args)
         except ValueError as exc:
-            await message.answer(str(exc))
+            await safe_answer(message, str(exc))
             return
         item_id = await context.memory.remember(
             scope_from_message(message),
@@ -266,7 +282,7 @@ def build_router(context: AppContext) -> Router:
             priority=options.get("priority"),
             source=options.get("source"),
         )
-        await message.answer(f"Remembered note #{item_id}.")
+        await safe_answer(message, f"Remembered note #{item_id}.")
 
     @router.message(Command("memory_notes"))
     async def memory_notes(message: Message, command: CommandObject) -> None:
@@ -278,10 +294,10 @@ def build_router(context: AppContext) -> Router:
                 args.get("scope", "this_topic"), current=scope_from_message(message)
             )
         except ValueError as exc:
-            await message.answer(str(exc))
+            await safe_answer(message, str(exc))
             return
         notes = await context.memory.list_notes(scope, tag=args.get("tag"))
-        await message.answer(format_note_previews(notes)[:3900])
+        await safe_answer(message, format_note_previews(notes)[:3900])
 
     @router.message(Command("memory_note_edit"))
     async def memory_note_edit(message: Message, command: CommandObject) -> None:
@@ -300,9 +316,9 @@ def build_router(context: AppContext) -> Router:
                 clear_source=bool(updates.get("clear_source")),
             )
         except ValueError as exc:
-            await message.answer(str(exc))
+            await safe_answer(message, str(exc))
             return
-        await message.answer(f"Updated manual note #{note.id}.")
+        await safe_answer(message, f"Updated manual note #{note.id}.")
 
     @router.message(Command("memory_note_delete"))
     async def memory_note_delete(message: Message, command: CommandObject) -> None:
@@ -312,9 +328,9 @@ def build_router(context: AppContext) -> Router:
             item_id = int((command.args or "").strip().split()[0])
             await context.memory.delete_note(scope_from_message(message), item_id)
         except (IndexError, ValueError) as exc:
-            await message.answer(str(exc) if str(exc) else "Usage: /memory_note_delete <id>")
+            await safe_answer(message, str(exc) if str(exc) else "Usage: /memory_note_delete <id>")
             return
-        await message.answer(f"Deleted manual note #{item_id}.")
+        await safe_answer(message, f"Deleted manual note #{item_id}.")
 
     @router.message(Command("summarize_now"))
     async def summarize_now(message: Message, command: CommandObject) -> None:
@@ -328,9 +344,9 @@ def build_router(context: AppContext) -> Router:
                 ai_options=ai_options,
             )
         except ValueError as exc:
-            await message.answer(str(exc))
+            await safe_answer(message, str(exc))
             return
-        await message.answer(f"Summarized {count} pending messages.")
+        await safe_answer(message, f"Summarized {count} pending messages.")
 
     @router.message(Command("memory_reviews"))
     async def memory_reviews(message: Message, command: CommandObject) -> None:
@@ -342,10 +358,10 @@ def build_router(context: AppContext) -> Router:
                 args.get("scope", "this_topic"), current=scope_from_message(message)
             )
         except ValueError as exc:
-            await message.answer(str(exc))
+            await safe_answer(message, str(exc))
             return
         reviews = await context.memory.pending_reviews(scope)
-        await message.answer(format_review_previews(reviews)[:3900])
+        await safe_answer(message, format_review_previews(reviews)[:3900])
 
     @router.message(Command("memory_approve"))
     async def memory_approve(message: Message, command: CommandObject) -> None:
@@ -357,9 +373,11 @@ def build_router(context: AppContext) -> Router:
                 review_id, reviewed_by=message_user_id(message)
             )
         except (IndexError, ValueError) as exc:
-            await message.answer(str(exc) if str(exc) else "Usage: /memory_approve <review_id>")
+            await safe_answer(
+                message, str(exc) if str(exc) else "Usage: /memory_approve <review_id>"
+            )
             return
-        await message.answer(f"Approved memory review #{review_id} as item #{item_id}.")
+        await safe_answer(message, f"Approved memory review #{review_id} as item #{item_id}.")
 
     @router.message(Command("memory_reject"))
     async def memory_reject(message: Message, command: CommandObject) -> None:
@@ -369,16 +387,18 @@ def build_router(context: AppContext) -> Router:
             review_id = int((command.args or "").strip().split()[0])
             await context.memory.reject_review(review_id, reviewed_by=message_user_id(message))
         except (IndexError, ValueError) as exc:
-            await message.answer(str(exc) if str(exc) else "Usage: /memory_reject <review_id>")
+            await safe_answer(
+                message, str(exc) if str(exc) else "Usage: /memory_reject <review_id>"
+            )
             return
-        await message.answer(f"Rejected memory review #{review_id}.")
+        await safe_answer(message, f"Rejected memory review #{review_id}.")
 
     @router.message(Command("memory_profiles"))
     async def memory_profiles(message: Message) -> None:
         if not await require_admin(message):
             return
         profiles = await context.memory.list_memory_profiles()
-        await message.answer(format_memory_profiles(profiles)[:3900])
+        await safe_answer(message, format_memory_profiles(profiles)[:3900])
 
     @router.message(Command("memory_profile_set"))
     async def memory_profile_set(message: Message, command: CommandObject) -> None:
@@ -386,15 +406,17 @@ def build_router(context: AppContext) -> Router:
             return
         parts = (command.args or "").strip().split(None, 1)
         if len(parts) < 2:
-            await message.answer(
-                "Usage: /memory_profile_set <name> sources=<scope,scope> [description=text]"
+            await safe_answer(
+                message,
+                "Usage: /memory_profile_set <name> sources=<scope,scope> [description=text]",
             )
             return
         name, rest = parts
         args = parse_key_values(rest)
         if "sources" not in args:
-            await message.answer(
-                "Usage: /memory_profile_set <name> sources=<scope,scope> [description=text]"
+            await safe_answer(
+                message,
+                "Usage: /memory_profile_set <name> sources=<scope,scope> [description=text]",
             )
             return
         try:
@@ -406,9 +428,9 @@ def build_router(context: AppContext) -> Router:
                 updated_by=message_user_id(message),
             )
         except ValueError as exc:
-            await message.answer(str(exc))
+            await safe_answer(message, str(exc))
             return
-        await message.answer(format_memory_profiles([profile])[:3900])
+        await safe_answer(message, format_memory_profiles([profile])[:3900])
 
     @router.message(Command("memory_profile_allow"))
     async def memory_profile_allow(message: Message, command: CommandObject) -> None:
@@ -416,8 +438,9 @@ def build_router(context: AppContext) -> Router:
             return
         parts = (command.args or "").strip().split(None, 1)
         if not parts or not parts[0]:
-            await message.answer(
-                "Usage: /memory_profile_allow <name> [scope=...] [enabled=on|off] [learn=on|off]"
+            await safe_answer(
+                message,
+                "Usage: /memory_profile_allow <name> [scope=...] [enabled=on|off] [learn=on|off]",
             )
             return
         name = parts[0]
@@ -436,11 +459,12 @@ def build_router(context: AppContext) -> Router:
                 updated_by=message_user_id(message),
             )
         except ValueError as exc:
-            await message.answer(str(exc))
+            await safe_answer(message, str(exc))
             return
-        await message.answer(
+        await safe_answer(
+            message,
             f"Profile {profile.name} query permission is {'on' if enabled else 'off'} "
-            f"for {destination.key}."
+            f"for {destination.key}.",
         )
 
     @router.message(Command("memory_templates"))
@@ -448,7 +472,7 @@ def build_router(context: AppContext) -> Router:
         if not await require_admin(message):
             return
         templates = await context.memory.list_summary_templates()
-        await message.answer(format_summary_templates(templates)[:3900])
+        await safe_answer(message, format_summary_templates(templates)[:3900])
 
     @router.message(Command("memory_template_set"))
     async def memory_template_set(message: Message, command: CommandObject) -> None:
@@ -456,23 +480,23 @@ def build_router(context: AppContext) -> Router:
             return
         parts = (command.args or "").strip().split(None, 1)
         if len(parts) < 2:
-            await message.answer("Usage: /memory_template_set <name> <prompt>")
+            await safe_answer(message, "Usage: /memory_template_set <name> <prompt>")
             return
         try:
             template = await context.memory.set_summary_template(
                 parts[0], parts[1], updated_by=message_user_id(message)
             )
         except ValueError as exc:
-            await message.answer(str(exc))
+            await safe_answer(message, str(exc))
             return
-        await message.answer(format_summary_templates([template])[:3900])
+        await safe_answer(message, format_summary_templates([template])[:3900])
 
     @router.message(Command("system_prompts"))
     async def system_prompts(message: Message) -> None:
         if not await require_admin(message):
             return
         templates = await context.memory.list_system_prompt_templates()
-        await message.answer(format_system_prompt_templates(templates)[:3900])
+        await safe_answer(message, format_system_prompt_templates(templates)[:3900])
 
     @router.message(Command("system_prompt_set"))
     async def system_prompt_set(message: Message, command: CommandObject) -> None:
@@ -480,16 +504,16 @@ def build_router(context: AppContext) -> Router:
             return
         parts = (command.args or "").strip().split(None, 1)
         if len(parts) < 2:
-            await message.answer("Usage: /system_prompt_set <name> <prompt>")
+            await safe_answer(message, "Usage: /system_prompt_set <name> <prompt>")
             return
         try:
             template = await context.memory.set_system_prompt_template(
                 parts[0], parts[1], updated_by=message_user_id(message)
             )
         except ValueError as exc:
-            await message.answer(str(exc))
+            await safe_answer(message, str(exc))
             return
-        await message.answer(format_system_prompt_templates([template])[:3900])
+        await safe_answer(message, format_system_prompt_templates([template])[:3900])
 
     @router.message(Command("summarize_range"))
     async def summarize_range(message: Message, command: CommandObject) -> None:
@@ -507,14 +531,15 @@ def build_router(context: AppContext) -> Router:
                 ai_options=ai_options,
             )
         except KeyError:
-            await message.answer(
-                "Usage: /summarize_range start=<message_id> end=<message_id> [template=name]"
+            await safe_answer(
+                message,
+                "Usage: /summarize_range start=<message_id> end=<message_id> [template=name]",
             )
             return
         except ValueError as exc:
-            await message.answer(str(exc))
+            await safe_answer(message, str(exc))
             return
-        await message.answer(format_range_summary(result)[:3900])
+        await safe_answer(message, format_range_summary(result)[:3900])
 
     @router.message(Command("forget"))
     async def forget(message: Message, command: CommandObject) -> None:
@@ -526,15 +551,15 @@ def build_router(context: AppContext) -> Router:
                 args.get("scope", "this_topic"), current=scope_from_message(message)
             )
         except ValueError as exc:
-            await message.answer(str(exc))
+            await safe_answer(message, str(exc))
             return
         if scope.is_global and not context.admins.is_bot_admin(message_user_id(message)):
-            await message.answer("Only configured bot admins can forget all memory.")
+            await safe_answer(message, "Only configured bot admins can forget all memory.")
             return
         _ok, response = await context.memory.forget(
             scope, message_user_id(message) or 0, args.get("confirm")
         )
-        await message.answer(response)
+        await safe_answer(message, response)
 
     @router.message(F.text | F.caption)
     async def ingest(message: Message) -> None:
@@ -570,23 +595,23 @@ async def _scope_settings_command(
 ) -> None:
     user_id = message_user_id(message)
     if not await context.admins.can_administer(message.bot, int(message.chat.id), user_id):
-        await message.answer("This command requires a bot admin or Telegram chat admin.")
+        await safe_answer(message, "This command requires a bot admin or Telegram chat admin.")
         return
     args = parse_key_values(command.args)
     try:
         scope = parse_scope(args.get("scope", "this_topic"), current=scope_from_message(message))
         updates = parse_scope_settings_args(args)
     except ValueError as exc:
-        await message.answer(str(exc))
+        await safe_answer(message, str(exc))
         return
     if not updates:
         settings = await context.memory.get_scope_settings(scope)
-        await message.answer(format_scope_settings(settings))
+        await safe_answer(message, format_scope_settings(settings))
         return
     settings = await context.memory.set_scope_settings(
         scope, updates, updated_by=message_user_id(message)
     )
-    await message.answer("Updated memory settings:\n" + format_scope_settings(settings))
+    await safe_answer(message, "Updated memory settings:\n" + format_scope_settings(settings))
 
 
 async def _set_user_policy(
@@ -594,7 +619,7 @@ async def _set_user_policy(
 ) -> None:
     user_id = message_user_id(message)
     if not await context.admins.can_administer(message.bot, int(message.chat.id), user_id):
-        await message.answer("This command requires a bot admin or Telegram chat admin.")
+        await safe_answer(message, "This command requires a bot admin or Telegram chat admin.")
         return
     target_id: int | None = None
     if message.reply_to_message and message.reply_to_message.from_user:
@@ -605,10 +630,14 @@ async def _set_user_policy(
         except ValueError:
             target_id = None
     if target_id is None:
-        await message.answer("Usage: reply with /allow_user or pass /allow_user <telegram_user_id>")
+        await safe_answer(
+            message, "Usage: reply with /allow_user or pass /allow_user <telegram_user_id>"
+        )
         return
     await context.memory.set_user_policy(scope_from_message(message), target_id, allowed, user_id)
-    await message.answer(f"User {target_id} {'allowed' if allowed else 'denied'} for this scope.")
+    await safe_answer(
+        message, f"User {target_id} {'allowed' if allowed else 'denied'} for this scope."
+    )
 
 
 def _extract_ai_query_args(
@@ -707,3 +736,23 @@ def _parse_on_off(raw: str) -> bool:
     if value in {"0", "false", "no", "off"}:
         return False
     raise ValueError(f"invalid boolean: {raw}")
+
+
+def export_documents(
+    payload: str, *, filename: str, max_bytes: int = EXPORT_DOCUMENT_CHUNK_BYTES
+) -> list[BufferedInputFile]:
+    if max_bytes <= 0 or max_bytes > TELEGRAM_DOCUMENT_MAX_BYTES:
+        raise ValueError("max_bytes must be between 1 and the Telegram document upload limit")
+    data = payload.encode("utf-8")
+    if len(data) <= max_bytes:
+        return [BufferedInputFile(data, filename=filename)]
+    stem, dot, suffix = filename.rpartition(".")
+    if not dot:
+        stem = filename
+        suffix = "txt"
+    total = (len(data) + max_bytes - 1) // max_bytes
+    documents: list[BufferedInputFile] = []
+    for index, start in enumerate(range(0, len(data), max_bytes), start=1):
+        chunk_name = f"{stem}.part{index:03d}of{total:03d}.{suffix}"
+        documents.append(BufferedInputFile(data[start : start + max_bytes], filename=chunk_name))
+    return documents

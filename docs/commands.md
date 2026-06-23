@@ -2,7 +2,7 @@
 
 - `/ask [profile=name] [provider=name] [system=name] [model=name] [reasoning=low|medium|high] [prompt="one-shot system prompt"] <question>`: answer from current chat/topic memory by default. `profile=name` expands retrieval through explicitly permissioned, learning-enabled memory profiles. `provider`, `model`, `reasoning`, `system` and `prompt` are admin-only one-shot AI overrides
 - `/memory_search [profile=name] [provider=name] [embedding_model=name] <query>`: show top retrieved memory snippets, optionally using a permissioned cross-chat profile and admin-selected query embedding provider/model
-- `/memory_export [md|jsonl] [scope=...]`: send a memory export file with readable scope/source metadata where available. Unknown formats, scopes, or extra tokens are rejected with a usage/error message
+- `/memory_export [md|jsonl] [scope=...]`: send a memory export file with readable scope/source metadata where available. Large exports are split into document parts below Telegram upload limits. Unknown formats, scopes, or extra tokens are rejected with a usage/error message
 - `/memory_settings [top_k=N] [summary_batch_size=N] [summary_model=name] [provider=name] [chat_model=name] [embedding_model=name] [reasoning=low|medium|high] [system_prompt=name] [raw_retention_days=N|off] [knowledge_retention_days=N|off] [review_before_compact=on|off]`: view or edit current-scope memory, provider, prompt and model settings
 - `/settings ...`: admin alias for `/memory_settings`, intended as the Phase 3/Phase 6 path toward Telegram-native runtime settings
 - `/memory_prune [scope=...]`: apply configured raw-message and knowledge retention for a scope
