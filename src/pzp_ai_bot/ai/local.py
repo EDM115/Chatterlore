@@ -39,6 +39,13 @@ class LocalSentenceTransformerEmbeddingProvider:
 
     async def _load(self):
         if self._model is None:
-            module: Any = importlib.import_module("sentence_transformers")
+            try:
+                module: Any = importlib.import_module("sentence_transformers")
+            except ModuleNotFoundError as exc:
+                raise RuntimeError(
+                    "sentence-transformers is required for the local embedding provider. "
+                    "Install it with `uv sync --extra local` or choose "
+                    "AI_PROVIDER=fake/openai_compatible."
+                ) from exc
             self._model = await asyncio.to_thread(module.SentenceTransformer, self.embedding_model)
         return self._model

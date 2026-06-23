@@ -142,6 +142,11 @@ class ScopeSettings(Base):
     retrieval_top_k: Mapped[int | None] = mapped_column(Integer, nullable=True)
     summary_batch_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
     summary_model: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    system_prompt_template: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    provider_profile: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    chat_model: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    embedding_model: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    reasoning_level: Mapped[str | None] = mapped_column(String(32), nullable=True)
     raw_message_retention_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     knowledge_retention_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     review_before_compact: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
@@ -238,6 +243,19 @@ class SummaryTemplate(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class SystemPromptTemplate(Base):
+    __tablename__ = "system_prompt_templates"
+    __table_args__ = (UniqueConstraint("name", name="uq_system_prompt_templates_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    version: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class BotEvent(Base):
     __tablename__ = "bot_events"
 
@@ -261,4 +279,5 @@ class AIUsage(Base):
     completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

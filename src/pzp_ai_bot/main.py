@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 from pathlib import Path
 from typing import Annotated
 
@@ -8,7 +9,7 @@ import typer
 from rich.console import Console
 
 from pzp_ai_bot.app_context import build_context
-from pzp_ai_bot.config import get_settings
+from pzp_ai_bot.config import Settings, get_settings
 from pzp_ai_bot.db.session import upgrade_schema
 from pzp_ai_bot.memory.scope import Scope, parse_scope
 from pzp_ai_bot.memory.service import parse_memory_export_format
@@ -110,6 +111,18 @@ def import_jsonl(
     console.print(f"Imported {count} memory items into {scope.key}.")
 
 
+@app.command("doctor")
+def doctor() -> None:
+    """Check local provider, database and memory-path health without starting Telegram."""
+    settings = get_settings()
+    checks = provider_health_checks(settings)
+    for name, ok, detail in checks:
+        status = "ok" if ok else "error"
+        console.print(f"{name}: {status} - {detail}")
+    if any(not ok for _name, ok, _detail in checks):
+        raise typer.Exit(code=1)
+
+
 @app.command("show-config")
 def show_config() -> None:
     """Show non-secret runtime configuration."""
@@ -121,11 +134,69 @@ def show_config() -> None:
         "ai_provider": settings.ai_provider,
         "chat_model": settings.chat_model,
         "embedding_model": settings.embedding_model,
+        "provider_profiles": ",".join(sorted(settings.provider_profiles)),
+        "system_prompt_template": settings.system_prompt_template,
+        "reasoning_level": settings.reasoning_level,
         "learning_default_enabled": settings.learning_default_enabled,
         "bot_admins_count": len(settings.bot_admin_ids),
     }
     for key, value in visible.items():
         console.print(f"{key}: {value}")
+
+
+def provider_health_checks(settings: Settings) -> list[tuple[str, bool, str]]:
+    checks: list[tuple[str, bool, str]] = []
+    try:
+        profiles = settings.provider_profiles
+    except ValueError as exc:
+        return [("provider_profiles", False, str(exc))]
+    for name, profile in sorted(profiles.items()):
+        if profile.provider == "openai_compatible" and not profile.openai_api_key:
+            checks.append((f"provider:{name}", False, "missing OpenAI-compatible API key"))
+        elif (
+            profile.provider == "local"
+            and importlib.util.find_spec("sentence_transformers") is None
+        ):
+            checks.append(
+                (
+                    f"provider:{name}",
+                    False,
+                    "sentence-transformers is not installed; run `uv sync --extra local`",
+                )
+            )
+        else:
+            checks.append(
+                (
+                    f"provider:{name}",
+                    True,
+                    f"{profile.provider} chat={profile.chat_model} "
+                    f"embedding={profile.embedding_model}",
+                )
+            )
+    sqlite_path = settings.sqlite_path
+    if sqlite_path is None:
+        checks.append(("database", True, settings.db_url))
+    else:
+        parent = sqlite_path.parent
+        try:
+            parent.mkdir(parents=True, exist_ok=True)
+            probe = parent / ".pzp_ai_write_probe"
+            probe.write_text("ok", encoding="utf-8")
+            probe.unlink(missing_ok=True)
+            checks.append(("database", True, str(sqlite_path)))
+        except OSError as exc:
+            checks.append(("database", False, f"cannot write SQLite parent {parent}: {exc}"))
+    try:
+        settings.memory_dir.mkdir(parents=True, exist_ok=True)
+        probe = settings.memory_dir / ".pzp_ai_write_probe"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink(missing_ok=True)
+        checks.append(("memory_dir", True, str(settings.memory_dir)))
+    except OSError as exc:
+        checks.append(
+            ("memory_dir", False, f"cannot write memory dir {settings.memory_dir}: {exc}")
+        )
+    return checks
 
 
 if __name__ == "__main__":
