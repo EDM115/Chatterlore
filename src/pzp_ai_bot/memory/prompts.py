@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-PROMPT_VERSION = "phase3-2026-06-23"
+PROMPT_VERSION = "phase6-2026-06-23"
 SUMMARY_PROMPT_VERSION = PROMPT_VERSION
 ANSWER_PROMPT_VERSION = PROMPT_VERSION
 CANONICAL_PROMPT_VERSION = PROMPT_VERSION
@@ -21,7 +21,8 @@ BUILTIN_SYSTEM_PROMPTS: dict[str, PromptTemplate] = {
         version=ANSWER_PROMPT_VERSION,
         prompt=(
             "Answer from scoped memory only. If the context is insufficient, say so. "
-            "Include compact source references."
+            "Include compact source references. Match the user's language unless the memory "
+            "itself requires another language."
         ),
     ),
     "strict": PromptTemplate(
@@ -29,7 +30,8 @@ BUILTIN_SYSTEM_PROMPTS: dict[str, PromptTemplate] = {
         version=ANSWER_PROMPT_VERSION,
         prompt=(
             "Answer only when the provided scoped memory directly supports the answer. "
-            "Do not infer from outside knowledge. Cite compact source references."
+            "Do not infer from outside knowledge. Cite compact source references. Match the "
+            "user's language unless the memory itself requires another language."
         ),
     ),
     "brief": PromptTemplate(
@@ -37,7 +39,8 @@ BUILTIN_SYSTEM_PROMPTS: dict[str, PromptTemplate] = {
         version=ANSWER_PROMPT_VERSION,
         prompt=(
             "Answer briefly from scoped memory only. Say when context is insufficient "
-            "and cite compact source references."
+            "and cite compact source references. Match the user's language unless the memory "
+            "itself requires another language."
         ),
     ),
 }
@@ -45,7 +48,10 @@ BUILTIN_SYSTEM_PROMPTS: dict[str, PromptTemplate] = {
 SUMMARY_BASE_PROMPT = PromptTemplate(
     name="summary_base",
     version=SUMMARY_PROMPT_VERSION,
-    prompt="Summarize durable group-chat memory.",
+    prompt=(
+        "Summarize durable group-chat memory. Preserve the source language for facts and names, "
+        "and do not translate unless the template asks for it."
+    ),
 )
 
 ANSWER_INSUFFICIENT_CONTEXT = "I do not have enough scoped memory to answer that confidently yet."

@@ -1,6 +1,6 @@
 [project]
 name = "pzp-ai"
-version = "0.6.0"
+version = "0.7.0"
 description = "Telegram group memory assistant PoC with scoped RAG memory."
 readme = "README.md"
 requires-python = ">=3.12"

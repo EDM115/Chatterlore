@@ -14,7 +14,48 @@ def scope_from_message(message: Any) -> Scope:
 
 
 def text_from_message(message: Any) -> str:
-    return (getattr(message, "text", None) or getattr(message, "caption", None) or "").strip()
+    body = (getattr(message, "text", None) or getattr(message, "caption", None) or "").strip()
+    parts = [body] if body else []
+    links = message_links(message, body)
+    if links:
+        parts.append("Links: " + ", ".join(links[:5]))
+    document_name = message_document_name(message)
+    if document_name:
+        parts.append(f"Attachment: {document_name}")
+    return "\n".join(parts).strip()
+
+
+def message_links(message: Any, body: str) -> list[str]:
+    entities = (
+        getattr(message, "entities", None) or getattr(message, "caption_entities", None) or []
+    )
+    out: list[str] = []
+    seen: set[str] = set()
+    for entity in entities:
+        raw_type = getattr(entity, "type", "")
+        entity_type = str(getattr(raw_type, "value", raw_type))
+        candidate = ""
+        if entity_type in {"url", "link"}:
+            offset = int(getattr(entity, "offset", 0) or 0)
+            length = int(getattr(entity, "length", 0) or 0)
+            candidate = body[offset : offset + length]
+        elif entity_type == "text_link":
+            candidate = str(getattr(entity, "url", "") or "")
+        candidate = candidate.strip()
+        if candidate and candidate not in seen:
+            seen.add(candidate)
+            out.append(candidate)
+    return out
+
+
+def message_document_name(message: Any) -> str | None:
+    document = getattr(message, "document", None)
+    if document is None:
+        return None
+    file_name = (
+        str(getattr(document, "file_name", "") or "").replace("\\", "/").rsplit("/", 1)[-1].strip()
+    )
+    return file_name[:160] if file_name else None
 
 
 def message_user_id(message: Any) -> int | None:
