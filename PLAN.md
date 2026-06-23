@@ -1,6 +1,6 @@
 ---
 goal: Telegram Group Memory Assistant PoC v1
-version: 0.5
+version: 0.6
 date_created: 2026-06-16
 last_updated: 2026-06-23
 owner: PZP-AI
@@ -73,7 +73,7 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 - **DONE**: `src/pzp_ai_bot/db/` defines async SQLAlchemy models, session helpers and repositories
 - **DONE**: `src/pzp_ai_bot/memory/` defines scopes, policy evaluation, vectors, Markdown persistence, retrieval and memory orchestration
 - **DONE**: `src/pzp_ai_bot/telegram/` defines admin checks, utility parsing, command router, polling runtime and webhook runtime
-- **DONE**: `alembic/versions/0001_initial.py` creates the initial SQLite schema and `alembic/versions/0002_phase2_memory_quality.py` adds Phase 2 metadata, settings and review tables.
+- **DONE**: `alembic/versions/0001_initial.py` creates the initial SQLite schema, `alembic/versions/0002_phase2_memory_quality.py` adds Phase 2 metadata/settings/review tables and `alembic/versions/0003_phase2_remaining_memory_tools.py` adds manual-note metadata, profiles, permissions and summary templates.
 - **DONE**: `docs/` contains setup, architecture, command, privacy, deployment and test documentation
 - **DONE**: `tests/` contains offline unit/integration coverage for core behavior
 
@@ -91,8 +91,8 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 
 ### Telegram Commands
 
-- **DONE**: `/ask <question>` answers from current scope memory
-- **DONE**: `/memory_search <query>` returns formatted retrieval results
+- **DONE**: `/ask [profile=name] <question>` answers from current scope memory by default and can opt into explicitly permissioned cross-chat profiles
+- **DONE**: `/memory_search [profile=name] <query>` returns formatted retrieval results with the same optional profile expansion
 - **DONE**: `/memory_export [md|jsonl] [scope=...]` sends a Markdown or JSONL export with scope/source metadata where available and rejects unknown tokens
 - **DONE**: `/stats` returns message, learned, skipped, knowledge, embedding, event and pending-review counts
 - **DONE**: `/learn_on`, `/learn_off`, `/learn_status` control/report current scope and show effective memory settings
@@ -100,34 +100,41 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 - **DONE**: `/allow_topic`, `/deny_topic` enable/disable the current topic scope
 - **DONE**: `/allow_user <id|reply>` and `/deny_user <id|reply>` update author policy
 - **DONE**: `/allow_admins on|off` stores admin-author learning policy
-- **DONE**: `/remember <text>` creates a manual durable memory note
-- **DONE**: `/summarize_now` summarizes pending messages for the current scope
+- **DONE**: `/remember [tags=a,b] [priority=N] [source=url] <text>` creates a manual durable memory note with structured metadata
+- **DONE**: `/summarize_now [template=name]` summarizes pending messages for the current scope with a built-in or custom summary template
 - **DONE**: `/memory_settings` views or edits scoped top-k, summary batch size, summary model, retention and review-before-compact settings
 - **DONE**: `/memory_prune` applies configured retention pruning for a scope
 - **DONE**: `/memory_reviews`, `/memory_approve` and `/memory_reject` support review-before-compact workflows
+- **DONE**: `/memory_notes`, `/memory_note_edit` and `/memory_note_delete` list, edit and delete manual notes
+- **DONE**: `/memory_profiles`, `/memory_profile_set` and `/memory_profile_allow` define named source-scope profiles and explicit destination permissions
+- **DONE**: `/memory_templates` and `/memory_template_set` list built-in templates and manage custom summary templates
+- **DONE**: `/summarize_range start=<message_id> end=<message_id> [template=name]` summarizes a bounded learned message range and records source IDs, date interval and template metadata
 - **DONE**: `/forget scope=this_topic|this_chat|all confirm=<token>` uses two-step confirmation and deletes scoped memory
 - **DONE**: `/help` returns Telegram-native command discovery text
 
 ### Persistence And Memory
 
-- **DONE**: SQLite tables exist for `messages`, `knowledge_items`, `embeddings`, `learning_policies`, `scope_metadata`, `scope_settings`, `memory_review_items`, `bot_events` and `ai_usage`
+- **DONE**: SQLite tables exist for `messages`, `knowledge_items`, `embeddings`, `learning_policies`, `scope_metadata`, `scope_settings`, `memory_review_items`, `memory_profiles`, `memory_profile_scopes`, `memory_scope_permissions`, `summary_templates`, `bot_events` and `ai_usage`
 - **DONE**: Raw messages are stored with Telegram IDs, chat/thread/user IDs, optional chat/topic/source-link metadata, text, normalized text, learned flag, skip reason, reply ID and timestamps
-- **DONE**: Knowledge items store kind, content, scope, source message IDs and timestamps
+- **DONE**: Knowledge items store kind, content, scope, source message IDs, JSON metadata and timestamps
 - **DONE**: Embeddings store target type, target ID, scope, provider, model, dimensions, vector blob and timestamp
 - **DONE**: Learning policies store global/chat/topic/user/admin toggles
-- **DONE**: AI usage records ask, summarize and canonical-compaction provider/model/tokens/latency/error
+- **DONE**: AI usage records ask, summarize, range-summary and canonical-compaction provider/model/tokens/latency/error
 - **DONE**: `data/memory/MEMORY.md` is canonically compacted from knowledge items into scoped Facts, Decisions, Preferences, Open Questions and Todos sections with deduplicated sources
 - **DONE**: `data/memory/daily/YYYY-MM-DD/<chat_id>_<thread_id>.md` daily files are appended for manual, import and summary memory
 - **DONE**: `FakeProvider` gives deterministic chat, canonical compaction and embedding behavior
 - **DONE**: `OpenAICompatibleProvider` supports configurable chat and embedding calls
 - **DONE**: `LocalSentenceTransformerEmbeddingProvider` supports optional local embeddings when the `local` extra is installed
 - **DONE**: Retrieval uses embedding cosine similarity over knowledge-item embeddings first and learned raw-message embeddings as the second tier
+- **DONE**: Cross-chat retrieval is disabled by default and only expands through named profiles whose source scopes have destination permission and enabled learning policy
 - **DONE**: `/ask` falls back to deterministic scoped results if chat generation fails
 - **DONE**: Duplicate Telegram message ingestion no-ops deterministically and does not duplicate message embeddings
 - **DONE**: Global summarization groups pending messages by concrete chat/topic scope instead of creating mixed global knowledge items
 - **DONE**: Per-scope memory settings override top-k, summary batch size, summary model, raw-message retention, knowledge retention and review-before-compact defaults
 - **DONE**: Retention pruning can remove old raw messages and message embeddings without deleting durable summaries
 - **DONE**: Optional review-before-compact mode writes proposed summaries and requires approval before durable knowledge insertion
+- **DONE**: Manual notes can be tagged, prioritized, sourced, listed, edited, deleted and exported with metadata
+- **DONE**: Bounded range summaries use built-in or custom templates and store boundary message IDs, source IDs and date intervals
 
 ### Telegram Runtime
 
@@ -151,13 +158,13 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 
 ### Current Verification Baseline
 
-- **DONE**: `uv sync --extra dev --extra local` passed on 2026-06-23 after Phase 2 implementation
-- **DONE**: `uv run ruff format --check .` passed on 2026-06-23 after Phase 2 implementation
-- **DONE**: `uv run ruff check .` passed on 2026-06-23 after Phase 2 implementation
-- **DONE**: `uv run ty check` passed on 2026-06-23 after Phase 2 implementation
-- **DONE**: `uv run pytest` passed on 2026-06-23 with 24 tests after Phase 2 implementation
-- **DONE**: `uv run alembic upgrade head` passed on 2026-06-23 after Phase 2 implementation
-- **DONE**: `uv run pzp-bot --help` displayed all CLI commands on 2026-06-23 after Phase 2 implementation
+- **DONE**: `uv sync --extra dev --extra local` passed on 2026-06-23 after finishing remaining Phase 2 TODOs
+- **DONE**: `uv run ruff format --check .` passed on 2026-06-23 after finishing remaining Phase 2 TODOs
+- **DONE**: `uv run ruff check .` passed on 2026-06-23 after finishing remaining Phase 2 TODOs
+- **DONE**: `uv run ty check` passed on 2026-06-23 after finishing remaining Phase 2 TODOs
+- **DONE**: `uv run pytest` passed on 2026-06-23 with 27 tests after finishing remaining Phase 2 TODOs
+- **DONE**: `uv run alembic upgrade head` passed on 2026-06-23 through `0003_phase2_remaining_memory_tools` after finishing remaining Phase 2 TODOs
+- **DONE**: `uv run pzp-bot --help` displayed all CLI commands on 2026-06-23 after finishing remaining Phase 2 TODOs
 - **TODO**: Re-run the full verification baseline after every future code or dependency change and update this section with date and result
 
 ## 4. Known Partial Implementations
@@ -208,11 +215,11 @@ Goal: make `MEMORY.md` a useful canonical memory file rather than only a dump of
 | TASK-015 | DONE   | Add per-scope memory settings such as top-k, summary batch size and summary model                                                    | Scope-specific settings override defaults and are visible in `/learn_status`                                                                                                                                    |
 | TASK-016 | DONE   | Add retention controls for raw messages and generated knowledge                                                                       | Admins can configure retention; old raw messages can be pruned without deleting durable summaries                                                                                                               |
 | TASK-017 | DONE   | Add memory review workflow before compacting sensitive scopes                                                                         | Optional mode writes proposed summaries and requires admin approval before knowledge insertion                                                                                                                  |
-| TASK-018 | TODO   | Add richer manual note commands: tags, source, priority and edit/delete note                                                         | `/remember` notes can be listed, edited, deleted and exported with tags                                                                                                                                        |
-| TASK-019 | TODO   | Add explicit cross-chat learning scopes for selected source channels, groups and topics                                              | Admin can define a named learning profile such as one channel, two groups and three topics; ingestion keeps original source scope metadata; retrieval can opt into the profile without leaking unrelated chats |
-| TASK-020 | TODO   | Add source-scope permissions for cross-chat memory sharing                                                                            | A scope can only learn from or query another scope when both policy and admin permissions allow it; tests cover denied and allowed cross-scope access                                                           |
-| TASK-021 | TODO   | Add message-range summarization between two Telegram messages                                                                         | Admin can reply/select/provide two message IDs; the bot checks both message dates and source scope, summarizes only the bounded range and records the date interval and source IDs                             |
-| TASK-022 | TODO   | Add reusable summary templates for range and scope summaries                                                                          | Admin can choose configured templates for decisions, todos, meeting notes, incident recap, or custom formats; fake provider tests snapshot the prompt inputs                                                    |
+| TASK-018 | DONE   | Add richer manual note commands: tags, source, priority and edit/delete note                                                         | `/remember` notes can be listed, edited, deleted and exported with tags                                                                                                                                        |
+| TASK-019 | DONE   | Add explicit cross-chat learning scopes for selected source channels, groups and topics                                              | Admin can define a named learning profile such as one channel, two groups and three topics; ingestion keeps original source scope metadata; retrieval can opt into the profile without leaking unrelated chats |
+| TASK-020 | DONE   | Add source-scope permissions for cross-chat memory sharing                                                                            | A scope can only learn from or query another scope when both policy and admin permissions allow it; tests cover denied and allowed cross-scope access                                                           |
+| TASK-021 | DONE   | Add message-range summarization between two Telegram messages                                                                         | Admin can reply/select/provide two message IDs; the bot checks both message dates and source scope, summarizes only the bounded range and records the date interval and source IDs                             |
+| TASK-022 | DONE   | Add reusable summary templates for range and scope summaries                                                                          | Admin can choose configured templates for decisions, todos, meeting notes, incident recap, or custom formats; fake provider tests snapshot the prompt inputs                                                    |
 
 ### Phase 3 - Provider And AI Hardening
 
@@ -297,6 +304,7 @@ Goal: make the assistant useful to group admins and participants beyond the mini
 - **DONE**: `tests/test_webhook.py` verifies bad webhook secret rejection
 - **DONE**: `tests/test_phase1.py` verifies concrete-scope global summarization, idle summarization, duplicate ingestion idempotency, nullable policy cleanup, message-embedding retrieval and JSONL validation
 - **DONE**: `tests/test_phase2.py` verifies canonical compaction grouping/dedup/source links, per-scope settings and review approval, and retention pruning without durable-summary deletion
+- **DONE**: `tests/test_phase2_remaining.py` verifies manual note metadata/edit/delete/export, cross-chat profile permission gating, range summaries with templates and fake-provider template prompt inputs
 - **DONE**: `tests/test_cli.py` verifies Alembic-backed migration and CLI validation errors for invalid export scope/format and empty JSONL import
 - **DONE**: `tests/test_telegram_commands.py` verifies command help text and mocked `set_my_commands` registration
 - **DONE**: `tests/conftest.py` builds isolated SQLite and fake-provider context
@@ -312,8 +320,6 @@ Goal: make the assistant useful to group admins and participants beyond the mini
 - **TEST-012**: Large export file behavior test
 - **TEST-013**: Docker smoke test or documented manual verification
 - **TEST-014**: Optional `telegram_live` test suite, skipped by default
-- **TEST-015**: Cross-chat learning permission and retrieval tests
-- **TEST-016**: Message-range summary tests covering date ordering, same-scope validation, empty ranges and template selection
 - **TEST-017**: Broader prompt/provider/model/reasoning settings tests covering provider profiles, one-shot overrides, validation and usage metadata
 - **TEST-018**: Reloadless settings tests for polling and webhook runtimes
 - **TEST-019**: `/settings` command tests for view, edit, preview, confirm, reject and unauthorized cases
@@ -454,9 +460,9 @@ uv run pzp-bot webhook
 - **TELEGRAM-001**: `src/pzp_ai_bot/telegram/admin.py`, `src/pzp_ai_bot/telegram/router.py`, `src/pzp_ai_bot/telegram/utils.py`, `src/pzp_ai_bot/telegram/polling.py`, `src/pzp_ai_bot/telegram/webhook.py`
 - **MEMORY-001**: `src/pzp_ai_bot/memory/service.py`, `src/pzp_ai_bot/memory/canonical.py`, `src/pzp_ai_bot/memory/policy.py`, `src/pzp_ai_bot/memory/retrieval.py`, `src/pzp_ai_bot/memory/markdown.py`, `src/pzp_ai_bot/memory/scope.py`, `src/pzp_ai_bot/memory/vector.py`
 - **AI-001**: `src/pzp_ai_bot/ai/protocols.py`, `src/pzp_ai_bot/ai/fake.py`, `src/pzp_ai_bot/ai/openai_compatible.py`, `src/pzp_ai_bot/ai/local.py`, `src/pzp_ai_bot/ai/factory.py`
-- **DB-001**: `src/pzp_ai_bot/db/models.py`, `src/pzp_ai_bot/db/repositories.py`, `src/pzp_ai_bot/db/session.py`, `alembic/env.py`, `alembic/versions/0001_initial.py`, `alembic/versions/0002_phase2_memory_quality.py`
+- **DB-001**: `src/pzp_ai_bot/db/models.py`, `src/pzp_ai_bot/db/repositories.py`, `src/pzp_ai_bot/db/session.py`, `alembic/env.py`, `alembic/versions/0001_initial.py`, `alembic/versions/0002_phase2_memory_quality.py`, `alembic/versions/0003_phase2_remaining_memory_tools.py`
 - **DOCS-001**: `docs/setup.md`, `docs/architecture.md`, `docs/commands.md`, `docs/privacy.md`, `docs/deployment.md`, `docs/testing.md`
-- **TESTS-001**: `tests/conftest.py`, `tests/test_scope.py`, `tests/test_policy_and_ingestion.py`, `tests/test_memory_service.py`, `tests/test_phase1.py`, `tests/test_phase2.py`, `tests/test_cli.py`, `tests/test_telegram_commands.py`, `tests/test_webhook.py`
+- **TESTS-001**: `tests/conftest.py`, `tests/test_scope.py`, `tests/test_policy_and_ingestion.py`, `tests/test_memory_service.py`, `tests/test_phase1.py`, `tests/test_phase2.py`, `tests/test_phase2_remaining.py`, `tests/test_cli.py`, `tests/test_telegram_commands.py`, `tests/test_webhook.py`
 
 ## 10. Risks And Assumptions
 
@@ -468,7 +474,7 @@ uv run pzp-bot webhook
 - **RISK-006**: Runtime scheduling and long-running polling/webhook behavior are not yet exercised by tests
 - **RISK-007**: Optional local embeddings can pull large model dependencies and need explicit deployment sizing
 - **RISK-008**: Live Telegram behavior may surface API or permission details not covered by offline tests
-- **RISK-009**: Cross-chat learning can leak context across communities if source and destination permissions are not modeled explicitly
+- **RISK-009**: Cross-chat learning can leak context across communities if profile permissions are misconfigured or tested only on synthetic scopes
 - **RISK-010**: Runtime prompt/provider changes can make answers non-reproducible unless selected templates, models and reasoning levels are logged with AI usage
 - **RISK-011**: Reloadless settings can leave long-running services in a mixed config state unless changes are validated and applied atomically
 
@@ -497,3 +503,4 @@ uv run pzp-bot webhook
 - **2026-06-22 / v0.3**: Added various roadmap items
 - **2026-06-23 / v0.4**: Implemented Phase 1 correctness work: idle summarization, concrete-scope global summaries, Alembic-backed migration, idempotent policies and duplicate ingestion, message-tier retrieval, import/export validation, `/help`, command registration and 21-test verification baseline
 - **2026-06-23 / v0.5**: Implemented Phase 2 memory-quality work: canonical categorized compaction, deterministic deduplication, source links and scope metadata, per-scope memory settings, retention pruning, review-before-compact approval flow and 24-test verification baseline
+- **2026-06-23 / v0.6**: Finished remaining Phase 2 TODOs: rich manual note metadata/edit/delete, named cross-chat profiles with explicit source-scope permissions, bounded message-range summaries, reusable summary templates and focused Phase 2 remaining tests

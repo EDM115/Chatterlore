@@ -8,6 +8,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     DateTime,
+    ForeignKey,
     Index,
     Integer,
     LargeBinary,
@@ -63,6 +64,7 @@ class KnowledgeItem(Base):
     kind: Mapped[str] = mapped_column(String(64), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     source_message_ids: Mapped[list[int]] = mapped_column(JSON, nullable=False, default=list)
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
@@ -163,6 +165,77 @@ class MemoryReviewItem(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     reviewed_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class MemoryProfile(Base):
+    __tablename__ = "memory_profiles"
+    __table_args__ = (UniqueConstraint("name", name="uq_memory_profiles_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class MemoryProfileScope(Base):
+    __tablename__ = "memory_profile_scopes"
+    __table_args__ = (
+        UniqueConstraint(
+            "profile_id", "chat_id", "message_thread_id", name="uq_memory_profile_scope"
+        ),
+        Index("ix_memory_profile_scopes_profile", "profile_id"),
+        Index("ix_memory_profile_scopes_scope", "chat_id", "message_thread_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    profile_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("memory_profiles.id", ondelete="CASCADE"), nullable=False
+    )
+    chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    message_thread_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class MemoryScopePermission(Base):
+    __tablename__ = "memory_scope_permissions"
+    __table_args__ = (
+        UniqueConstraint(
+            "destination_chat_id",
+            "destination_thread_id",
+            "source_chat_id",
+            "source_thread_id",
+            name="uq_memory_scope_permission",
+        ),
+        Index(
+            "ix_memory_scope_permissions_destination",
+            "destination_chat_id",
+            "destination_thread_id",
+        ),
+        Index("ix_memory_scope_permissions_source", "source_chat_id", "source_thread_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    destination_chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    destination_thread_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source_chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    source_thread_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    can_query: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    can_learn: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    updated_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class SummaryTemplate(Base):
+    __tablename__ = "summary_templates"
+    __table_args__ = (UniqueConstraint("name", name="uq_summary_templates_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    created_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class BotEvent(Base):
