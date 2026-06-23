@@ -31,6 +31,47 @@ def message_username(message: Any) -> str | None:
     return getattr(user, "username", None)
 
 
+def message_chat_title(message: Any) -> str | None:
+    chat = getattr(message, "chat", None)
+    if chat is None:
+        return None
+    return getattr(chat, "title", None)
+
+
+def message_chat_username(message: Any) -> str | None:
+    chat = getattr(message, "chat", None)
+    if chat is None:
+        return None
+    return getattr(chat, "username", None)
+
+
+def message_topic_title(message: Any) -> str | None:
+    topic = getattr(message, "forum_topic_created", None)
+    if topic is not None:
+        return getattr(topic, "name", None)
+    return None
+
+
+def message_permalink(message: Any) -> str | None:
+    username = message_chat_username(message)
+    message_id = getattr(message, "message_id", None)
+    if message_id is None:
+        return None
+    if username:
+        return f"https://t.me/{str(username).removeprefix('@')}/{message_id}"
+    chat = getattr(message, "chat", None)
+    if chat is None:
+        return None
+    chat_id = str(getattr(chat, "id", ""))
+    if not chat_id.startswith("-100"):
+        return None
+    internal_id = chat_id.removeprefix("-100")
+    scope = scope_from_message(message)
+    if scope.thread_id is not None:
+        return f"https://t.me/c/{internal_id}/{scope.thread_id}/{message_id}"
+    return f"https://t.me/c/{internal_id}/{message_id}"
+
+
 def message_created_at(message: Any) -> datetime:
     value = getattr(message, "date", None)
     if isinstance(value, datetime):

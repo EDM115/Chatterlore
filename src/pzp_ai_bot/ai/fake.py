@@ -31,6 +31,8 @@ class FakeProvider:
         joined = "\n".join(message.content for message in messages)
         if "Summarize durable group-chat memory" in joined:
             content = self._summary(joined)
+        elif "Canonicalize durable group-chat memory" in joined:
+            content = self._canonical(joined)
         elif "Answer from scoped memory" in joined:
             content = self._answer(joined)
         else:
@@ -77,6 +79,38 @@ class FakeProvider:
             cleaned = re.sub(r"\s*\[source:[^\]]+\]", "", line).strip()
             bullets.append(f"- {cleaned}{source}")
         return "\n".join(bullets) if bullets else "- No durable facts found."
+
+    def _canonical(self, prompt: str) -> str:
+        grouped: dict[str, list[str]] = {
+            "Facts": [],
+            "Decisions": [],
+            "Preferences": [],
+            "Open Questions": [],
+            "Todos": [],
+        }
+        for raw_line in prompt.splitlines():
+            line = raw_line.strip()
+            if not line.startswith("- [item:"):
+                continue
+            lower = line.lower()
+            if "todo" in lower or " needs to " in lower or " should " in lower:
+                category = "Todos"
+            elif "decision" in lower or " decided" in lower:
+                category = "Decisions"
+            elif "preference" in lower or " prefers " in lower:
+                category = "Preferences"
+            elif line.endswith("?") or "open question" in lower:
+                category = "Open Questions"
+            else:
+                category = "Facts"
+            grouped[category].append(line)
+        lines: list[str] = []
+        for category, entries in grouped.items():
+            if not entries:
+                continue
+            lines.append(category)
+            lines.extend(entries[:12])
+        return "\n".join(lines) if lines else "Facts\n- No durable facts found."
 
     def _answer(self, prompt: str) -> str:
         context_lines = [

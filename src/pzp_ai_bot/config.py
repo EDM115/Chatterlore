@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     summary_batch_size: int = Field(default=25, ge=1)
     summary_idle_seconds: int = Field(default=900, ge=1)
     retrieval_top_k: int = Field(default=6, ge=1)
+    raw_message_retention_days: int | None = Field(default=None, ge=1)
+    knowledge_retention_days: int | None = Field(default=None, ge=1)
+    review_before_compact: bool = False
     fake_embedding_dimensions: int = Field(default=64, ge=8)
 
     @property
