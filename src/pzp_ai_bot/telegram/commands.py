@@ -9,6 +9,7 @@ COMMAND_DESCRIPTIONS: tuple[tuple[str, str], ...] = (
     ("memory_search", "Search scoped memory"),
     ("memory_export", "Export memory as Markdown or JSONL"),
     ("memory_settings", "View or edit scoped memory settings"),
+    ("settings", "View or edit scoped AI and memory settings"),
     ("memory_prune", "Apply retention pruning for this scope"),
     ("memory_reviews", "List pending memory review proposals"),
     ("memory_approve", "Approve a memory review proposal"),
@@ -21,6 +22,8 @@ COMMAND_DESCRIPTIONS: tuple[tuple[str, str], ...] = (
     ("memory_profile_allow", "Allow profile retrieval for a scope"),
     ("memory_templates", "List summary templates"),
     ("memory_template_set", "Create or update a summary template"),
+    ("system_prompts", "List system prompt templates"),
+    ("system_prompt_set", "Create or update a system prompt"),
     ("summarize_range", "Summarize a bounded message range"),
     ("stats", "Show memory counts"),
     ("learn_on", "Enable learning for this scope"),
@@ -53,9 +56,12 @@ def command_help_text() -> str:
         [
             "",
             "Useful forms:",
-            "/ask <question>",
+            "/ask [profile=name] [provider=name] [system=name] [model=name] "
+            "[reasoning=low|medium|high] <question>",
             "/memory_export [md|jsonl] [scope=this_topic|this_chat|all|<chat_id>:<thread_id>]",
             "/memory_settings [top_k=N] [summary_batch_size=N] [summary_model=name] "
+            "[provider=name] [chat_model=name] [embedding_model=name] "
+            "[reasoning=low|medium|high] [system_prompt=name] "
             "[raw_retention_days=N|off] [knowledge_retention_days=N|off] "
             "[review_before_compact=on|off]",
             "/memory_reviews [scope=this_topic|this_chat|all|<chat_id>:<thread_id>]",
@@ -72,8 +78,12 @@ def command_help_text() -> str:
             "/memory_search [profile=name] <query>",
             "/memory_templates",
             "/memory_template_set <name> <prompt>",
-            "/summarize_now [template=name]",
-            "/summarize_range start=<message_id> end=<message_id> [template=name]",
+            "/system_prompts",
+            "/system_prompt_set <name> <prompt>",
+            "/summarize_now [template=name] [provider=name] [model=name] "
+            "[reasoning=low|medium|high] [prompt='one-shot instruction']",
+            "/summarize_range start=<message_id> end=<message_id> [template=name] "
+            "[provider=name] [model=name] [prompt='one-shot instruction']",
             "/forget scope=this_topic|this_chat|all confirm=<token>",
         ]
     )

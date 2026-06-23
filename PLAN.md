@@ -1,6 +1,6 @@
 ---
 goal: Telegram Group Memory Assistant PoC v1
-version: 0.6
+version: 0.7
 date_created: 2026-06-16
 last_updated: 2026-06-23
 owner: PZP-AI
@@ -73,7 +73,7 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 - **DONE**: `src/pzp_ai_bot/db/` defines async SQLAlchemy models, session helpers and repositories
 - **DONE**: `src/pzp_ai_bot/memory/` defines scopes, policy evaluation, vectors, Markdown persistence, retrieval and memory orchestration
 - **DONE**: `src/pzp_ai_bot/telegram/` defines admin checks, utility parsing, command router, polling runtime and webhook runtime
-- **DONE**: `alembic/versions/0001_initial.py` creates the initial SQLite schema, `alembic/versions/0002_phase2_memory_quality.py` adds Phase 2 metadata/settings/review tables and `alembic/versions/0003_phase2_remaining_memory_tools.py` adds manual-note metadata, profiles, permissions and summary templates.
+- **DONE**: `alembic/versions/0001_initial.py` creates the initial SQLite schema, `alembic/versions/0002_phase2_memory_quality.py` adds Phase 2 metadata/settings/review tables, `alembic/versions/0003_phase2_remaining_memory_tools.py` adds manual-note metadata, profiles, permissions and summary templates, and `alembic/versions/0004_phase3_provider_ai_hardening.py` adds provider/prompt settings and AI usage metadata.
 - **DONE**: `docs/` contains setup, architecture, command, privacy, deployment and test documentation
 - **DONE**: `tests/` contains offline unit/integration coverage for core behavior
 
@@ -87,12 +87,13 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 - **DONE**: `pzp-bot summarize-now --scope <scope>` summarizes pending messages and compacts `MEMORY.md`
 - **DONE**: `pzp-bot export-memory --format md|jsonl --scope <scope> [--out path]` exports memory and rejects unsupported formats or invalid scopes before opening the app context
 - **DONE**: `pzp-bot import-jsonl --file path --chat-id id [--thread-id id]` imports knowledge items into a scope and rejects empty or malformed JSONL with clear errors
-- **DONE**: `pzp-bot show-config` prints non-secret runtime settings
+- **DONE**: `pzp-bot show-config` prints non-secret runtime settings, provider profiles, default system prompt and reasoning level
+- **DONE**: `pzp-bot doctor` checks configured provider profiles, missing OpenAI-compatible API keys, missing local optional dependencies, SQLite parent write access and memory directory write access
 
 ### Telegram Commands
 
-- **DONE**: `/ask [profile=name] <question>` answers from current scope memory by default and can opt into explicitly permissioned cross-chat profiles
-- **DONE**: `/memory_search [profile=name] <query>` returns formatted retrieval results with the same optional profile expansion
+- **DONE**: `/ask [profile=name] [provider=name] [system=name] [model=name] [reasoning=low|medium|high] [prompt="one-shot system prompt"] <question>` answers from current scope memory by default, can opt into explicitly permissioned cross-chat profiles and supports admin-only one-shot provider/model/reasoning/system-prompt overrides
+- **DONE**: `/memory_search [profile=name] [provider=name] [embedding_model=name] <query>` returns formatted retrieval results with the same optional memory-profile expansion and admin-only query embedding provider/model overrides
 - **DONE**: `/memory_export [md|jsonl] [scope=...]` sends a Markdown or JSONL export with scope/source metadata where available and rejects unknown tokens
 - **DONE**: `/stats` returns message, learned, skipped, knowledge, embedding, event and pending-review counts
 - **DONE**: `/learn_on`, `/learn_off`, `/learn_status` control/report current scope and show effective memory settings
@@ -101,25 +102,26 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 - **DONE**: `/allow_user <id|reply>` and `/deny_user <id|reply>` update author policy
 - **DONE**: `/allow_admins on|off` stores admin-author learning policy
 - **DONE**: `/remember [tags=a,b] [priority=N] [source=url] <text>` creates a manual durable memory note with structured metadata
-- **DONE**: `/summarize_now [template=name]` summarizes pending messages for the current scope with a built-in or custom summary template
-- **DONE**: `/memory_settings` views or edits scoped top-k, summary batch size, summary model, retention and review-before-compact settings
+- **DONE**: `/summarize_now [template=name] [provider=name] [model=name] [reasoning=low|medium|high] [prompt="one-shot instruction"]` summarizes pending messages for the current scope with built-in/custom summary templates plus admin-only provider/model/reasoning/one-shot prompt overrides
+- **DONE**: `/memory_settings` and `/settings` view or edit scoped top-k, summary batch size, summary/chat/embedding models, provider profile, reasoning level, system prompt template, retention and review-before-compact settings
 - **DONE**: `/memory_prune` applies configured retention pruning for a scope
 - **DONE**: `/memory_reviews`, `/memory_approve` and `/memory_reject` support review-before-compact workflows
 - **DONE**: `/memory_notes`, `/memory_note_edit` and `/memory_note_delete` list, edit and delete manual notes
 - **DONE**: `/memory_profiles`, `/memory_profile_set` and `/memory_profile_allow` define named source-scope profiles and explicit destination permissions
 - **DONE**: `/memory_templates` and `/memory_template_set` list built-in templates and manage custom summary templates
-- **DONE**: `/summarize_range start=<message_id> end=<message_id> [template=name]` summarizes a bounded learned message range and records source IDs, date interval and template metadata
+- **DONE**: `/system_prompts` and `/system_prompt_set` list built-in answer system prompts and manage custom system prompts
+- **DONE**: `/summarize_range start=<message_id> end=<message_id> [template=name] [provider=name] [model=name] [prompt="one-shot instruction"]` summarizes a bounded learned message range and records source IDs, date interval, template and AI settings metadata
 - **DONE**: `/forget scope=this_topic|this_chat|all confirm=<token>` uses two-step confirmation and deletes scoped memory
 - **DONE**: `/help` returns Telegram-native command discovery text
 
 ### Persistence And Memory
 
-- **DONE**: SQLite tables exist for `messages`, `knowledge_items`, `embeddings`, `learning_policies`, `scope_metadata`, `scope_settings`, `memory_review_items`, `memory_profiles`, `memory_profile_scopes`, `memory_scope_permissions`, `summary_templates`, `bot_events` and `ai_usage`
+- **DONE**: SQLite tables exist for `messages`, `knowledge_items`, `embeddings`, `learning_policies`, `scope_metadata`, `scope_settings`, `memory_review_items`, `memory_profiles`, `memory_profile_scopes`, `memory_scope_permissions`, `summary_templates`, `system_prompt_templates`, `bot_events` and `ai_usage`
 - **DONE**: Raw messages are stored with Telegram IDs, chat/thread/user IDs, optional chat/topic/source-link metadata, text, normalized text, learned flag, skip reason, reply ID and timestamps
 - **DONE**: Knowledge items store kind, content, scope, source message IDs, JSON metadata and timestamps
 - **DONE**: Embeddings store target type, target ID, scope, provider, model, dimensions, vector blob and timestamp
 - **DONE**: Learning policies store global/chat/topic/user/admin toggles
-- **DONE**: AI usage records ask, summarize, range-summary and canonical-compaction provider/model/tokens/latency/error
+- **DONE**: AI usage records ask, summarize, range-summary, canonical-compaction and embedding provider/model/tokens/latency/error plus JSON metadata for provider profile, selected models, prompt/template versions, reasoning level and embedding count/dimensions
 - **DONE**: `data/memory/MEMORY.md` is canonically compacted from knowledge items into scoped Facts, Decisions, Preferences, Open Questions and Todos sections with deduplicated sources
 - **DONE**: `data/memory/daily/YYYY-MM-DD/<chat_id>_<thread_id>.md` daily files are appended for manual, import and summary memory
 - **DONE**: `FakeProvider` gives deterministic chat, canonical compaction and embedding behavior
@@ -130,11 +132,14 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 - **DONE**: `/ask` falls back to deterministic scoped results if chat generation fails
 - **DONE**: Duplicate Telegram message ingestion no-ops deterministically and does not duplicate message embeddings
 - **DONE**: Global summarization groups pending messages by concrete chat/topic scope instead of creating mixed global knowledge items
-- **DONE**: Per-scope memory settings override top-k, summary batch size, summary model, raw-message retention, knowledge retention and review-before-compact defaults
+- **DONE**: Per-scope memory settings override top-k, summary batch size, summary/chat/embedding models, provider profile, reasoning level, system prompt template, raw-message retention, knowledge retention and review-before-compact defaults
 - **DONE**: Retention pruning can remove old raw messages and message embeddings without deleting durable summaries
 - **DONE**: Optional review-before-compact mode writes proposed summaries and requires approval before durable knowledge insertion
 - **DONE**: Manual notes can be tagged, prioritized, sourced, listed, edited, deleted and exported with metadata
-- **DONE**: Bounded range summaries use built-in or custom templates and store boundary message IDs, source IDs and date intervals
+- **DONE**: Bounded range summaries use built-in, custom or one-shot templates and store boundary message IDs, source IDs, date intervals and AI settings metadata
+- **DONE**: OpenAI-compatible chat and embedding calls use bounded retry/backoff and configurable redaction for secret-like key/value pairs, bearer/common token forms, emails, phone numbers and custom regex patterns
+- **DONE**: Provider profiles can be configured through `AI_PROVIDER_PROFILES`; missing OpenAI-compatible credentials fail closed and local embedding missing extras raise actionable install guidance
+- **DONE**: `/ask` returns an explicit insufficient-context answer when scoped memory is empty or below the configured score threshold
 
 ### Telegram Runtime
 
@@ -158,22 +163,20 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 
 ### Current Verification Baseline
 
-- **DONE**: `uv sync --extra dev --extra local` passed on 2026-06-23 after finishing remaining Phase 2 TODOs
-- **DONE**: `uv run ruff format --check .` passed on 2026-06-23 after finishing remaining Phase 2 TODOs
-- **DONE**: `uv run ruff check .` passed on 2026-06-23 after finishing remaining Phase 2 TODOs
-- **DONE**: `uv run ty check` passed on 2026-06-23 after finishing remaining Phase 2 TODOs
-- **DONE**: `uv run pytest` passed on 2026-06-23 with 27 tests after finishing remaining Phase 2 TODOs
-- **DONE**: `uv run alembic upgrade head` passed on 2026-06-23 through `0003_phase2_remaining_memory_tools` after finishing remaining Phase 2 TODOs
-- **DONE**: `uv run pzp-bot --help` displayed all CLI commands on 2026-06-23 after finishing remaining Phase 2 TODOs
+- **DONE**: `uv sync --extra dev --extra local` passed on 2026-06-23 after Phase 3 implementation
+- **DONE**: `uv run ruff format --check .` passed on 2026-06-23 after Phase 3 implementation
+- **DONE**: `uv run ruff check .` passed on 2026-06-23 after Phase 3 implementation
+- **DONE**: `uv run ty check` passed on 2026-06-23 after Phase 3 implementation
+- **DONE**: `uv run pytest` passed on 2026-06-23 with 33 tests after Phase 3 implementation
+- **DONE**: `uv run alembic upgrade head` passed on 2026-06-23 through `0004_phase3_provider_ai_hardening` after Phase 3 implementation
+- **DONE**: `uv run pzp-bot --help` displayed all CLI commands on 2026-06-23 after Phase 3 implementation
+- **DONE**: `uv run pzp-bot doctor` passed on 2026-06-23 with the default fake provider after Phase 3 implementation
 - **TODO**: Re-run the full verification baseline after every future code or dependency change and update this section with date and result
 
 ## 4. Known Partial Implementations
 
 These items exist but are not complete enough for production-quality v1.
 
-- **PARTIAL-005**: Redaction covers simple secret-like key/value patterns for OpenAI-compatible calls. It is not a comprehensive PII or secrets scrubber
-- **PARTIAL-006**: OpenAI-compatible retry/backoff helper exists but is not consistently wrapped around generation and embedding calls
-- **PARTIAL-007**: AI usage tracks ask and summarization calls, but not embedding calls
 - **PARTIAL-008**: `/stats` reports counts but not DB size, per-scope counts, AI call totals, error rates, or provider latency percentiles
 - **PARTIAL-009**: Forget confirmation tokens are in process memory only. They are lost on restart and are not audited as pending destructive operations
 - **PARTIAL-010**: Admin cache is in memory only. That is acceptable for PoC but should be tunable and observable before production
@@ -227,18 +230,18 @@ Goal: make provider failures, privacy and costs explicit and manageable.
 
 | Task     | Status | Description                                                                    | Acceptance Criteria                                                                                                                                                     |
 | -------- | ------ | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| TASK-023 | TODO   | Apply retry/backoff consistently to OpenAI-compatible chat and embedding calls | Transient provider failures retry with bounded backoff; tests mock transient errors                                                                                     |
-| TASK-024 | TODO   | Track embedding AI usage in `ai_usage`                                         | Embedding operations record provider, model, dimensions/count, latency and errors                                                                                      |
-| TASK-025 | TODO   | Add provider health checks to `pzp-bot show-config` or a new `doctor` command  | CLI reports missing tokens, unusable local optional deps and DB/memory path health                                                                                     |
-| TASK-026 | TODO   | Add tests for OpenAI-compatible provider payloads and redaction                | Tests verify secret-like strings are redacted and request payloads match API expectations                                                                               |
-| TASK-027 | TODO   | Add tests for local embedding provider dependency failure messaging            | Running `AI_PROVIDER=local` without local extra fails with a clear actionable message                                                                                   |
-| TASK-028 | TODO   | Replace basic redaction with configurable PII/secrets scrubbing                | Redaction covers emails, phone numbers, common token forms and custom patterns                                                                                         |
-| TASK-029 | TODO   | Add prompt templates as versioned files or constants with tests                | Summary and answer prompts are reviewable, versioned and snapshot-tested                                                                                               |
-| TASK-030 | TODO   | Add answer confidence/insufficient-context behavior                            | `/ask` explicitly says when scoped memory is weak; tests cover empty and low-score retrieval                                                                            |
-| TASK-031 | TODO   | Add configurable system prompt templates                                       | Admins can select a named system prompt template per scope or request; prompts are versioned, auditable and included in usage metadata                                 |
-| TASK-032 | TODO   | Add on-the-fly prompt override for admin-triggered commands                    | Authorized admins can send a one-shot prompt/template override for a single `/ask` or summary run without changing global defaults                                      |
-| TASK-033 | TODO   | Support multiple configured AI providers in bot settings                       | Settings can define more than one provider profile; admins can switch provider profile per scope or per request; missing credentials fail closed with clear diagnostics |
-| TASK-034 | TODO   | Allow model and reasoning-level selection                                      | Admins can choose chat model, embedding model where applicable and reasoning level from validated options; choices are reflected in `ai_usage` and `/settings`         |
+| TASK-023 | DONE   | Apply retry/backoff consistently to OpenAI-compatible chat and embedding calls | Transient provider failures retry with bounded backoff; tests mock transient errors                                                                                     |
+| TASK-024 | DONE   | Track embedding AI usage in `ai_usage`                                         | Embedding operations record provider, model, dimensions/count, latency and errors                                                                                      |
+| TASK-025 | DONE   | Add provider health checks to `pzp-bot show-config` or a new `doctor` command  | CLI reports missing tokens, unusable local optional deps and DB/memory path health                                                                                     |
+| TASK-026 | DONE   | Add tests for OpenAI-compatible provider payloads and redaction                | Tests verify secret-like strings are redacted and request payloads match API expectations                                                                               |
+| TASK-027 | DONE   | Add tests for local embedding provider dependency failure messaging            | Running `AI_PROVIDER=local` without local extra fails with a clear actionable message                                                                                   |
+| TASK-028 | DONE   | Replace basic redaction with configurable PII/secrets scrubbing                | Redaction covers emails, phone numbers, common token forms and custom patterns                                                                                         |
+| TASK-029 | DONE   | Add prompt templates as versioned files or constants with tests                | Summary and answer prompts are reviewable, versioned and snapshot-tested                                                                                               |
+| TASK-030 | DONE   | Add answer confidence/insufficient-context behavior                            | `/ask` explicitly says when scoped memory is weak; tests cover empty and low-score retrieval                                                                            |
+| TASK-031 | DONE   | Add configurable system prompt templates                                       | Admins can select a named system prompt template per scope or request; prompts are versioned, auditable and included in usage metadata                                 |
+| TASK-032 | DONE   | Add on-the-fly prompt override for admin-triggered commands                    | Authorized admins can send a one-shot prompt/template override for a single `/ask` or summary run without changing global defaults                                      |
+| TASK-033 | DONE   | Support multiple configured AI providers in bot settings                       | Settings can define more than one provider profile; admins can switch provider profile per scope or per request; missing credentials fail closed with clear diagnostics |
+| TASK-034 | DONE   | Allow model and reasoning-level selection                                      | Admins can choose chat model, embedding model where applicable and reasoning level from validated options; choices are reflected in `ai_usage` and `/settings`         |
 
 ### Phase 4 - Telegram Integration Coverage
 
@@ -305,6 +308,7 @@ Goal: make the assistant useful to group admins and participants beyond the mini
 - **DONE**: `tests/test_phase1.py` verifies concrete-scope global summarization, idle summarization, duplicate ingestion idempotency, nullable policy cleanup, message-embedding retrieval and JSONL validation
 - **DONE**: `tests/test_phase2.py` verifies canonical compaction grouping/dedup/source links, per-scope settings and review approval, and retention pruning without durable-summary deletion
 - **DONE**: `tests/test_phase2_remaining.py` verifies manual note metadata/edit/delete/export, cross-chat profile permission gating, range summaries with templates and fake-provider template prompt inputs
+- **DONE**: `tests/test_phase3.py` verifies OpenAI-compatible retry/redaction payloads, local optional-dependency failure messaging, provider-profile fail-closed behavior, CLI doctor diagnostics, embedding usage metadata, insufficient-context answers and prompt/model/reasoning usage metadata
 - **DONE**: `tests/test_cli.py` verifies Alembic-backed migration and CLI validation errors for invalid export scope/format and empty JSONL import
 - **DONE**: `tests/test_telegram_commands.py` verifies command help text and mocked `set_my_commands` registration
 - **DONE**: `tests/conftest.py` builds isolated SQLite and fake-provider context
@@ -315,12 +319,9 @@ Goal: make the assistant useful to group admins and participants beyond the mini
 - **TEST-002**: Valid webhook update test
 - **TEST-003**: Mocked Telegram Bot API tests for admin lookup, message sending, document sending, webhook setup and webhook deletion
 - **TEST-004**: Broader CLI tests for successful `summarize-now`, successful `export-memory`, successful `import-jsonl` and `show-config`
-- **TEST-008**: OpenAI-compatible provider request/redaction tests
-- **TEST-009**: Local provider missing-extra failure test
 - **TEST-012**: Large export file behavior test
 - **TEST-013**: Docker smoke test or documented manual verification
 - **TEST-014**: Optional `telegram_live` test suite, skipped by default
-- **TEST-017**: Broader prompt/provider/model/reasoning settings tests covering provider profiles, one-shot overrides, validation and usage metadata
 - **TEST-018**: Reloadless settings tests for polling and webhook runtimes
 - **TEST-019**: `/settings` command tests for view, edit, preview, confirm, reject and unauthorized cases
 
@@ -363,7 +364,7 @@ Required before serious local dogfooding:
 - **TODO**: `/stats` reports useful per-scope and AI usage information
 - **DONE**: Admins can inspect and update safe memory-quality settings without editing files for local dogfooding
 - **DONE**: Duplicate update handling is tested
-- **TODO**: Provider failure behavior is tested
+- **DONE**: Provider failure behavior is tested
 
 ### Gate C - Private Telegram Beta
 
@@ -382,7 +383,8 @@ Required before inviting a real private group:
 
 Required before calling this v1 complete:
 
-- **TODO**: All Phase 1, Phase 2, Phase 3, Phase 4 and Phase 5 tasks are complete or explicitly deferred in this plan
+- **DONE**: All Phase 1, Phase 2 and Phase 3 tasks are complete
+- **TODO**: All Phase 4 and Phase 5 tasks are complete or explicitly deferred in this plan
 - **TODO**: CI runs formatting, linting, type checking, tests and migration checks
 - **TODO**: Migration history is stable and tested from an empty database
 - **TODO**: Memory quality is acceptable on a representative imported dataset
@@ -458,11 +460,11 @@ uv run pzp-bot webhook
 - **PROJECT-001**: `pyproject.toml`, `uv.lock`, `.env.example`, `.gitignore`, `README.md`
 - **RUNTIME-001**: `src/pzp_ai_bot/main.py`, `src/pzp_ai_bot/app_context.py`, `src/pzp_ai_bot/config.py`
 - **TELEGRAM-001**: `src/pzp_ai_bot/telegram/admin.py`, `src/pzp_ai_bot/telegram/router.py`, `src/pzp_ai_bot/telegram/utils.py`, `src/pzp_ai_bot/telegram/polling.py`, `src/pzp_ai_bot/telegram/webhook.py`
-- **MEMORY-001**: `src/pzp_ai_bot/memory/service.py`, `src/pzp_ai_bot/memory/canonical.py`, `src/pzp_ai_bot/memory/policy.py`, `src/pzp_ai_bot/memory/retrieval.py`, `src/pzp_ai_bot/memory/markdown.py`, `src/pzp_ai_bot/memory/scope.py`, `src/pzp_ai_bot/memory/vector.py`
-- **AI-001**: `src/pzp_ai_bot/ai/protocols.py`, `src/pzp_ai_bot/ai/fake.py`, `src/pzp_ai_bot/ai/openai_compatible.py`, `src/pzp_ai_bot/ai/local.py`, `src/pzp_ai_bot/ai/factory.py`
-- **DB-001**: `src/pzp_ai_bot/db/models.py`, `src/pzp_ai_bot/db/repositories.py`, `src/pzp_ai_bot/db/session.py`, `alembic/env.py`, `alembic/versions/0001_initial.py`, `alembic/versions/0002_phase2_memory_quality.py`, `alembic/versions/0003_phase2_remaining_memory_tools.py`
+- **MEMORY-001**: `src/pzp_ai_bot/memory/service.py`, `src/pzp_ai_bot/memory/prompts.py`, `src/pzp_ai_bot/memory/canonical.py`, `src/pzp_ai_bot/memory/policy.py`, `src/pzp_ai_bot/memory/retrieval.py`, `src/pzp_ai_bot/memory/markdown.py`, `src/pzp_ai_bot/memory/scope.py`, `src/pzp_ai_bot/memory/vector.py`
+- **AI-001**: `src/pzp_ai_bot/ai/protocols.py`, `src/pzp_ai_bot/ai/fake.py`, `src/pzp_ai_bot/ai/openai_compatible.py`, `src/pzp_ai_bot/ai/local.py`, `src/pzp_ai_bot/ai/factory.py`, `src/pzp_ai_bot/ai/redaction.py`
+- **DB-001**: `src/pzp_ai_bot/db/models.py`, `src/pzp_ai_bot/db/repositories.py`, `src/pzp_ai_bot/db/session.py`, `alembic/env.py`, `alembic/versions/0001_initial.py`, `alembic/versions/0002_phase2_memory_quality.py`, `alembic/versions/0003_phase2_remaining_memory_tools.py`, `alembic/versions/0004_phase3_provider_ai_hardening.py`
 - **DOCS-001**: `docs/setup.md`, `docs/architecture.md`, `docs/commands.md`, `docs/privacy.md`, `docs/deployment.md`, `docs/testing.md`
-- **TESTS-001**: `tests/conftest.py`, `tests/test_scope.py`, `tests/test_policy_and_ingestion.py`, `tests/test_memory_service.py`, `tests/test_phase1.py`, `tests/test_phase2.py`, `tests/test_phase2_remaining.py`, `tests/test_cli.py`, `tests/test_telegram_commands.py`, `tests/test_webhook.py`
+- **TESTS-001**: `tests/conftest.py`, `tests/test_scope.py`, `tests/test_policy_and_ingestion.py`, `tests/test_memory_service.py`, `tests/test_phase1.py`, `tests/test_phase2.py`, `tests/test_phase2_remaining.py`, `tests/test_phase3.py`, `tests/test_cli.py`, `tests/test_telegram_commands.py`, `tests/test_webhook.py`
 
 ## 10. Risks And Assumptions
 
@@ -504,3 +506,4 @@ uv run pzp-bot webhook
 - **2026-06-23 / v0.4**: Implemented Phase 1 correctness work: idle summarization, concrete-scope global summaries, Alembic-backed migration, idempotent policies and duplicate ingestion, message-tier retrieval, import/export validation, `/help`, command registration and 21-test verification baseline
 - **2026-06-23 / v0.5**: Implemented Phase 2 memory-quality work: canonical categorized compaction, deterministic deduplication, source links and scope metadata, per-scope memory settings, retention pruning, review-before-compact approval flow and 24-test verification baseline
 - **2026-06-23 / v0.6**: Finished remaining Phase 2 TODOs: rich manual note metadata/edit/delete, named cross-chat profiles with explicit source-scope permissions, bounded message-range summaries, reusable summary templates and focused Phase 2 remaining tests
+- **2026-06-23 / v0.7**: Implemented Phase 3 provider and AI hardening: OpenAI-compatible retries, embedding usage telemetry, `doctor`, stronger redaction, versioned prompts, insufficient-context answers, system prompt templates, one-shot AI overrides, provider profiles and scoped model/reasoning settings

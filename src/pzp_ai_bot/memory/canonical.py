@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass
 
 from pzp_ai_bot.db.models import KnowledgeItem
+from pzp_ai_bot.memory.prompts import CANONICAL_PROMPT_VERSION
 
 CATEGORY_HEADINGS = ("Facts", "Decisions", "Preferences", "Open Questions", "Todos")
 CATEGORY_BY_NORMALIZED = {
@@ -39,6 +40,7 @@ class CanonicalMemoryEntry:
 
 def canonical_prompt(scope_key: str, items: list[KnowledgeItem]) -> str:
     lines = [
+        f"Prompt version: {CANONICAL_PROMPT_VERSION}.",
         "Canonicalize durable group-chat memory.",
         "Group entries into Facts, Decisions, Preferences, Open Questions, and Todos.",
         "Deduplicate repeated facts and preserve item/source markers.",

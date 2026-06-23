@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from pzp_ai_bot.ai import build_providers
+from pzp_ai_bot.ai import ProviderRegistry, build_providers
 from pzp_ai_bot.config import Settings
 from pzp_ai_bot.db.session import create_session_factory, upgrade_schema
 from pzp_ai_bot.memory.service import MemoryService
@@ -22,6 +22,7 @@ class AppContext:
 async def build_context(settings: Settings, *, ensure_schema: bool = True) -> AppContext:
     if ensure_schema:
         upgrade_schema(settings)
+    provider_registry = ProviderRegistry(settings)
     chat_provider, embedding_provider = build_providers(settings)
     session_factory = create_session_factory(settings)
     memory = MemoryService(
@@ -29,6 +30,7 @@ async def build_context(settings: Settings, *, ensure_schema: bool = True) -> Ap
         session_factory=session_factory,
         chat_provider=chat_provider,
         embedding_provider=embedding_provider,
+        provider_registry=provider_registry,
     )
     memory.markdown.ensure()
     admins = AdminService(settings.bot_admin_ids)

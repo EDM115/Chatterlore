@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import shlex
+
 from aiogram import F, Router
 from aiogram.filters import Command, CommandObject
 from aiogram.types import BufferedInputFile, Message
@@ -7,6 +9,7 @@ from aiogram.types import BufferedInputFile, Message
 from pzp_ai_bot.app_context import AppContext
 from pzp_ai_bot.memory.scope import Scope, parse_scope
 from pzp_ai_bot.memory.service import (
+    AIRequestOptions,
     IncomingMessage,
     format_memory_profiles,
     format_note_previews,
@@ -15,6 +18,7 @@ from pzp_ai_bot.memory.service import (
     format_review_previews,
     format_scope_settings,
     format_summary_templates,
+    format_system_prompt_templates,
     parse_memory_export_format,
     parse_note_create_args,
     parse_note_edit_args,
@@ -50,13 +54,27 @@ def build_router(context: AppContext) -> Router:
 
     @router.message(Command("ask"))
     async def ask(message: Message, command: CommandObject) -> None:
-        profile_name, question = _extract_profile_arg(command.args)
+        try:
+            profile_name, ai_options, question, admin_override = _extract_ai_query_args(
+                command.args, prompt_target="system"
+            )
+        except ValueError as exc:
+            await message.answer(str(exc))
+            return
         if not question:
-            await message.answer("Usage: /ask <question>")
+            await message.answer(
+                "Usage: /ask [profile=name] [provider=name] [system=name] [model=name] "
+                "[reasoning=low|medium|high] [prompt='one-shot system prompt'] <question>"
+            )
+            return
+        if admin_override and not await require_admin(message):
             return
         try:
             answer = await context.memory.ask(
-                scope_from_message(message), question, profile_name=profile_name
+                scope_from_message(message),
+                question,
+                profile_name=profile_name,
+                ai_options=ai_options,
             )
         except ValueError as exc:
             await message.answer(str(exc))
@@ -65,13 +83,21 @@ def build_router(context: AppContext) -> Router:
 
     @router.message(Command("memory_search"))
     async def memory_search(message: Message, command: CommandObject) -> None:
-        profile_name, query = _extract_profile_arg(command.args)
+        try:
+            profile_name, ai_options, query, admin_override = _extract_ai_query_args(
+                command.args, prompt_target="none"
+            )
+        except ValueError as exc:
+            await message.answer(str(exc))
+            return
         if not query:
-            await message.answer("Usage: /memory_search <query>")
+            await message.answer("Usage: /memory_search [profile=name] [provider=name] <query>")
+            return
+        if admin_override and not await require_admin(message):
             return
         try:
             results = await context.memory.search(
-                scope_from_message(message), query, profile_name=profile_name
+                scope_from_message(message), query, profile_name=profile_name, ai_options=ai_options
             )
         except ValueError as exc:
             await message.answer(str(exc))
@@ -144,25 +170,11 @@ def build_router(context: AppContext) -> Router:
 
     @router.message(Command("memory_settings"))
     async def memory_settings(message: Message, command: CommandObject) -> None:
-        if not await require_admin(message):
-            return
-        args = parse_key_values(command.args)
-        try:
-            scope = parse_scope(
-                args.get("scope", "this_topic"), current=scope_from_message(message)
-            )
-            updates = parse_scope_settings_args(args)
-        except ValueError as exc:
-            await message.answer(str(exc))
-            return
-        if not updates:
-            settings = await context.memory.get_scope_settings(scope)
-            await message.answer(format_scope_settings(settings))
-            return
-        settings = await context.memory.set_scope_settings(
-            scope, updates, updated_by=message_user_id(message)
-        )
-        await message.answer("Updated memory settings:\n" + format_scope_settings(settings))
+        await _scope_settings_command(context, message, command)
+
+    @router.message(Command("settings"))
+    async def settings(message: Message, command: CommandObject) -> None:
+        await _scope_settings_command(context, message, command)
 
     @router.message(Command("memory_prune"))
     async def memory_prune(message: Message, command: CommandObject) -> None:
@@ -308,10 +320,12 @@ def build_router(context: AppContext) -> Router:
     async def summarize_now(message: Message, command: CommandObject) -> None:
         if not await require_admin(message):
             return
-        args = parse_key_values(command.args)
         try:
+            args, ai_options = _extract_summary_args(command.args)
             count = await context.memory.summarize_now(
-                scope_from_message(message), template_name=args.get("template")
+                scope_from_message(message),
+                template_name=args.get("template"),
+                ai_options=ai_options,
             )
         except ValueError as exc:
             await message.answer(str(exc))
@@ -453,12 +467,36 @@ def build_router(context: AppContext) -> Router:
             return
         await message.answer(format_summary_templates([template])[:3900])
 
+    @router.message(Command("system_prompts"))
+    async def system_prompts(message: Message) -> None:
+        if not await require_admin(message):
+            return
+        templates = await context.memory.list_system_prompt_templates()
+        await message.answer(format_system_prompt_templates(templates)[:3900])
+
+    @router.message(Command("system_prompt_set"))
+    async def system_prompt_set(message: Message, command: CommandObject) -> None:
+        if not await require_admin(message):
+            return
+        parts = (command.args or "").strip().split(None, 1)
+        if len(parts) < 2:
+            await message.answer("Usage: /system_prompt_set <name> <prompt>")
+            return
+        try:
+            template = await context.memory.set_system_prompt_template(
+                parts[0], parts[1], updated_by=message_user_id(message)
+            )
+        except ValueError as exc:
+            await message.answer(str(exc))
+            return
+        await message.answer(format_system_prompt_templates([template])[:3900])
+
     @router.message(Command("summarize_range"))
     async def summarize_range(message: Message, command: CommandObject) -> None:
         if not await require_admin(message):
             return
-        args = parse_key_values(command.args)
         try:
+            args, ai_options = _extract_summary_args(command.args)
             start = int(args["start"])
             end = int(args["end"])
             result = await context.memory.summarize_range(
@@ -466,6 +504,7 @@ def build_router(context: AppContext) -> Router:
                 start_message_id=start,
                 end_message_id=end,
                 template_name=args.get("template", "general"),
+                ai_options=ai_options,
             )
         except KeyError:
             await message.answer(
@@ -526,6 +565,30 @@ def build_router(context: AppContext) -> Router:
     return router
 
 
+async def _scope_settings_command(
+    context: AppContext, message: Message, command: CommandObject
+) -> None:
+    user_id = message_user_id(message)
+    if not await context.admins.can_administer(message.bot, int(message.chat.id), user_id):
+        await message.answer("This command requires a bot admin or Telegram chat admin.")
+        return
+    args = parse_key_values(command.args)
+    try:
+        scope = parse_scope(args.get("scope", "this_topic"), current=scope_from_message(message))
+        updates = parse_scope_settings_args(args)
+    except ValueError as exc:
+        await message.answer(str(exc))
+        return
+    if not updates:
+        settings = await context.memory.get_scope_settings(scope)
+        await message.answer(format_scope_settings(settings))
+        return
+    settings = await context.memory.set_scope_settings(
+        scope, updates, updated_by=message_user_id(message)
+    )
+    await message.answer("Updated memory settings:\n" + format_scope_settings(settings))
+
+
 async def _set_user_policy(
     context: AppContext, message: Message, command: CommandObject, *, allowed: bool
 ) -> None:
@@ -546,6 +609,84 @@ async def _set_user_policy(
         return
     await context.memory.set_user_policy(scope_from_message(message), target_id, allowed, user_id)
     await message.answer(f"User {target_id} {'allowed' if allowed else 'denied'} for this scope.")
+
+
+def _extract_ai_query_args(
+    raw: str | None, *, prompt_target: str
+) -> tuple[str | None, AIRequestOptions, str, bool]:
+    tokens = _shlex_tokens(raw)
+    kept: list[str] = []
+    memory_profile: str | None = None
+    options: dict[str, str] = {}
+    admin_override = False
+    for token in tokens:
+        if "=" not in token:
+            kept.append(token)
+            continue
+        key, value = token.split("=", 1)
+        key = key.strip().lower()
+        value = value.strip()
+        if key == "profile":
+            memory_profile = value or None
+        elif key in {"provider", "provider_profile"}:
+            options["provider_profile"] = value
+            admin_override = True
+        elif key in {"model", "chat_model"}:
+            options["chat_model"] = value
+            admin_override = True
+        elif key == "embedding_model":
+            options["embedding_model"] = value
+            admin_override = True
+        elif key in {"reasoning", "reasoning_level"}:
+            options["reasoning_level"] = value
+            admin_override = True
+        elif key in {"system", "system_prompt", "system_prompt_template"}:
+            options["system_prompt_template"] = value
+            admin_override = True
+        elif key in {"prompt", "override"}:
+            if prompt_target == "system":
+                options["system_prompt_override"] = value
+                admin_override = True
+            elif prompt_target == "summary":
+                options["summary_template_override"] = value
+                admin_override = True
+            else:
+                raise ValueError(f"{key}= is not supported for this command")
+        else:
+            kept.append(token)
+    return memory_profile, AIRequestOptions(**options), " ".join(kept).strip(), admin_override
+
+
+def _extract_summary_args(raw: str | None) -> tuple[dict[str, str], AIRequestOptions]:
+    tokens = _shlex_tokens(raw)
+    args: dict[str, str] = {}
+    options: dict[str, str] = {}
+    for token in tokens:
+        if "=" not in token:
+            raise ValueError("summary options must use key=value form")
+        key, value = token.split("=", 1)
+        key = key.strip().lower()
+        value = value.strip()
+        if key in {"provider", "provider_profile"}:
+            options["provider_profile"] = value
+        elif key in {"model", "chat_model"}:
+            options["chat_model"] = value
+        elif key == "embedding_model":
+            options["embedding_model"] = value
+        elif key in {"reasoning", "reasoning_level"}:
+            options["reasoning_level"] = value
+        elif key in {"prompt", "override"}:
+            options["summary_template_override"] = value
+        else:
+            args[key] = value
+    return args, AIRequestOptions(**options)
+
+
+def _shlex_tokens(raw: str | None) -> list[str]:
+    try:
+        return shlex.split(raw or "")
+    except ValueError as exc:
+        raise ValueError(f"invalid quoted arguments: {exc}") from exc
 
 
 def _extract_profile_arg(raw: str | None) -> tuple[str | None, str]:

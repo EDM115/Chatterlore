@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from pzp_ai_bot.ai.protocols import EmbeddingProvider
 from pzp_ai_bot.db.repositories import (
     EmbeddingRepository,
     KnowledgeRepository,
@@ -26,18 +25,17 @@ class Retriever:
     def __init__(
         self,
         *,
-        embedder: EmbeddingProvider,
         embedding_repo: EmbeddingRepository,
         knowledge_repo: KnowledgeRepository,
         message_repo: MessageRepository,
     ) -> None:
-        self.embedder = embedder
         self.embedding_repo = embedding_repo
         self.knowledge_repo = knowledge_repo
         self.message_repo = message_repo
 
-    async def search(self, query: str, scope: Scope, top_k: int = 6) -> list[SearchResult]:
-        query_vector = (await self.embedder.embed([query]))[0]
+    async def search(
+        self, query_vector: list[float], scope: Scope, top_k: int = 6
+    ) -> list[SearchResult]:
         embeddings = await self.embedding_repo.list_for_retrieval(scope)
         knowledge_scored: list[RetrievedItem] = []
         message_scored: list[RetrievedItem] = []

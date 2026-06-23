@@ -7,6 +7,8 @@
 - Cross-chat memory is disabled by default. Named profiles do not share memory unless the destination scope is explicitly allowed to query each source scope, and source scopes must still have learning enabled
 - Manual notes can include tags, priority and source metadata; exports include that metadata alongside source message IDs and links when available
 - Range summaries store the boundary message IDs, source message IDs, date interval and summary template name
-- `REDACT_BEFORE_AI=true` masks simple secret-like patterns before text is sent to an OpenAI-compatible provider
+- `REDACT_BEFORE_AI=true` masks secret-like key/value pairs, bearer/common token forms, emails, phone numbers and configured custom regex patterns before text is sent to an OpenAI-compatible provider
+- `AI_PROVIDER_PROFILES` can define multiple non-secret provider profiles. Provider secrets stay in environment variables or deployment secrets; missing credentials fail closed instead of silently sending data to the wrong provider
+- AI usage records provider/profile/model/reasoning/prompt metadata and embedding dimensions/counts for cost and audit visibility. It does not store provider API keys
 - The fake provider is deterministic and local. The local embedding provider avoids cloud embeddings but still requires downloading a sentence-transformers model
 - Telegram Bot API privacy mode must be disabled, or the bot must be a group admin, for the bot to receive normal group messages

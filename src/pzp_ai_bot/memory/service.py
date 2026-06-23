@@ -11,6 +11,7 @@ from typing import Any, Literal
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from pzp_ai_bot.ai.factory import ProviderRegistry, ProviderSelection
 from pzp_ai_bot.ai.protocols import ChatMessage, ChatProvider, ChatResult, EmbeddingProvider
 from pzp_ai_bot.config import Settings
 from pzp_ai_bot.db.models import KnowledgeItem
@@ -27,6 +28,7 @@ from pzp_ai_bot.db.repositories import (
     ScopeMetadataRepository,
     ScopeSettingsRepository,
     SummaryTemplateRepository,
+    SystemPromptTemplateRepository,
     utc_now,
 )
 from pzp_ai_bot.db.session import session_scope
@@ -38,6 +40,14 @@ from pzp_ai_bot.memory.canonical import (
 )
 from pzp_ai_bot.memory.markdown import MarkdownMemoryStore, format_sources
 from pzp_ai_bot.memory.policy import PolicyService
+from pzp_ai_bot.memory.prompts import (
+    ANSWER_INSUFFICIENT_CONTEXT,
+    BUILTIN_SYSTEM_PROMPTS,
+    PROMPT_VERSION,
+    SUMMARY_BASE_PROMPT,
+    PromptTemplate,
+    prompt_metadata,
+)
 from pzp_ai_bot.memory.retrieval import Retriever, SearchResult
 from pzp_ai_bot.memory.scope import Scope, parse_scope
 
@@ -114,6 +124,25 @@ class SummaryTemplatePreview:
     builtin: bool
 
 
+@dataclass(frozen=True, slots=True)
+class SystemPromptTemplatePreview:
+    name: str
+    version: str
+    prompt: str
+    builtin: bool
+
+
+@dataclass(frozen=True, slots=True)
+class AIRequestOptions:
+    provider_profile: str | None = None
+    chat_model: str | None = None
+    embedding_model: str | None = None
+    reasoning_level: str | None = None
+    system_prompt_template: str | None = None
+    system_prompt_override: str | None = None
+    summary_template_override: str | None = None
+
+
 BUILTIN_SUMMARY_TEMPLATES: dict[str, str] = {
     "general": "Keep stable facts, decisions, preferences, todos, and open questions.",
     "decisions": "Extract only durable decisions, owners, deadlines, and source-backed rationale.",
@@ -136,11 +165,13 @@ class MemoryService:
         session_factory: async_sessionmaker,
         chat_provider: ChatProvider,
         embedding_provider: EmbeddingProvider,
+        provider_registry: ProviderRegistry | None = None,
     ) -> None:
         self.settings = settings
         self.session_factory = session_factory
         self.chat_provider = chat_provider
         self.embedding_provider = embedding_provider
+        self.provider_registry = provider_registry or ProviderRegistry(settings)
         self.markdown = MarkdownMemoryStore(settings.memory_dir)
         self._forget_tokens: dict[tuple[str, int], str] = {}
 
@@ -208,7 +239,7 @@ class MemoryService:
         *,
         updated_by: int | None = None,
     ) -> EffectiveScopeSettings:
-        validate_scope_settings(updates)
+        validate_scope_settings(updates, self.settings)
         async with session_scope(self.session_factory) as session:
             repo = ScopeSettingsRepository(session)
             await repo.set_settings(scope, updates, updated_by)
@@ -262,13 +293,22 @@ class MemoryService:
                 return IngestResult(message.learned, "duplicate_message", message.id, False)
             if not decision.allowed:
                 return IngestResult(False, decision.reason, message.id)
-            vector = (await self.embedding_provider.embed([text]))[0]
+            selection = self._select_provider(scope_settings)
+            vector = (
+                await self._embed_texts_in_session(
+                    session,
+                    selection=selection,
+                    texts=[text],
+                    operation="embed_message",
+                    metadata={"scope": incoming.scope.key, "target_type": "message"},
+                )
+            )[0]
             await EmbeddingRepository(session).add(
                 target_type="message",
                 target_id=message.id,
                 scope=incoming.scope,
-                provider=self.embedding_provider.name,
-                model=self._embedding_model_name(),
+                provider=selection.embedding_provider.name,
+                model=selection.embedding_model,
                 vector=vector,
             )
             pending = await message_repo.pending_for_summary(incoming.scope)
@@ -282,7 +322,13 @@ class MemoryService:
             await self.compact_memory()
         return result
 
-    async def summarize_now(self, scope: Scope, *, template_name: str | None = None) -> int:
+    async def summarize_now(
+        self,
+        scope: Scope,
+        *,
+        template_name: str | None = None,
+        ai_options: AIRequestOptions | None = None,
+    ) -> int:
         async with session_scope(self.session_factory) as session:
             if scope.is_global:
                 if template_name is not None:
@@ -296,7 +342,12 @@ class MemoryService:
                     scope, self._default_scope_settings()
                 )
                 needs_compact = await self._summarize_pending_in_session(
-                    session, scope, pending, scope_settings, template_name=template_name
+                    session,
+                    scope,
+                    pending,
+                    scope_settings,
+                    template_name=template_name,
+                    ai_options=ai_options,
                 )
                 count = len(pending)
         if needs_compact:
@@ -377,13 +428,28 @@ class MemoryService:
             await EmbeddingRepository(session).delete_targets(
                 target_type="knowledge_item", target_ids=[item.id]
             )
-            vector = (await self.embedding_provider.embed([item.content]))[0]
+            scope_settings = await ScopeSettingsRepository(session).effective(
+                Scope(item.chat_id, item.message_thread_id), self._default_scope_settings()
+            )
+            selection = self._select_provider(scope_settings)
+            vector = (
+                await self._embed_texts_in_session(
+                    session,
+                    selection=selection,
+                    texts=[item.content],
+                    operation="embed_knowledge",
+                    metadata={
+                        "scope": Scope(item.chat_id, item.message_thread_id).key,
+                        "target_type": "knowledge_item",
+                    },
+                )
+            )[0]
             await EmbeddingRepository(session).add(
                 target_type="knowledge_item",
                 target_id=item.id,
                 scope=Scope(item.chat_id, item.message_thread_id),
-                provider=self.embedding_provider.name,
-                model=self._embedding_model_name(),
+                provider=selection.embedding_provider.name,
+                model=selection.embedding_model,
                 vector=vector,
             )
             await EventRepository(session).add(
@@ -417,48 +483,99 @@ class MemoryService:
         *,
         top_k: int | None = None,
         profile_name: str | None = None,
+        ai_options: AIRequestOptions | None = None,
     ) -> str:
+        scope_settings = await self.get_scope_settings(scope)
         if top_k is None:
-            top_k = (await self.get_scope_settings(scope)).retrieval_top_k
-        results = await self.search(scope, question, top_k=top_k, profile_name=profile_name)
+            top_k = scope_settings.retrieval_top_k
+        results = await self.search(
+            scope, question, top_k=top_k, profile_name=profile_name, ai_options=ai_options
+        )
+        best_score = max((result.score for result in results), default=0.0)
+        if not results or best_score < self.settings.answer_min_score:
+            return f"{ANSWER_INSUFFICIENT_CONTEXT} Best scoped-memory score: {best_score:.3f}."
         context = format_results(results)
-        messages = [
-            ChatMessage(
-                role="system",
-                content=(
-                    "Answer from scoped memory only. If the context is insufficient, say so. "
-                    "Include compact source references."
-                ),
-            ),
-            ChatMessage(role="user", content=f"Question: {question}\n\nScoped memory:\n{context}"),
-        ]
-        started = time.perf_counter()
-        error: str | None = None
-        try:
-            result = await self.chat_provider.generate(messages, temperature=0.1, max_tokens=700)
-            content = result.content
-        except Exception as exc:
-            error = str(exc)
-            content = fallback_answer(results)
-            result = None
         async with session_scope(self.session_factory) as session:
+            scope_settings = await ScopeSettingsRepository(session).effective(
+                scope, self._default_scope_settings()
+            )
+            selection = self._select_provider(scope_settings, ai_options)
+            reasoning_level = self._reasoning_level(scope_settings, ai_options)
+            system_template = await self._answer_system_prompt_in_session(
+                session, scope_settings, ai_options
+            )
+            messages = [
+                ChatMessage(
+                    role="system",
+                    content=(
+                        f"{system_template.prompt}\n"
+                        f"Prompt version: {system_template.version}.\n"
+                        f"Reasoning level setting: {reasoning_level}."
+                    ),
+                ),
+                ChatMessage(
+                    role="user", content=f"Question: {question}\n\nScoped memory:\n{context}"
+                ),
+            ]
+            started = time.perf_counter()
+            error: str | None = None
+            try:
+                result = await selection.chat_provider.generate(
+                    messages, temperature=0.1, max_tokens=700
+                )
+                content = result.content
+            except Exception as exc:
+                error = str(exc)
+                content = fallback_answer(results)
+                result = None
             await EventRepository(session).add_ai_usage(
-                provider=self.chat_provider.name,
-                model=self.chat_provider.model,
+                provider=selection.chat_provider.name,
+                model=selection.chat_model,
                 operation="ask",
                 prompt_tokens=result.prompt_tokens if result else None,
                 completion_tokens=result.completion_tokens if result else None,
                 latency_ms=int((time.perf_counter() - started) * 1000),
                 error=error,
+                metadata_json={
+                    **prompt_metadata(
+                        template_name=system_template.name,
+                        template_version=system_template.version,
+                        reasoning_level=reasoning_level,
+                        provider_profile=selection.profile.name,
+                    ),
+                    "chat_model": selection.chat_model,
+                    "embedding_model": selection.embedding_model,
+                    "retrieval_results": len(results),
+                    "best_score": best_score,
+                    "memory_profile": profile_name,
+                },
             )
-        return content
+            return content
 
     async def search(
-        self, scope: Scope, query: str, *, top_k: int = 6, profile_name: str | None = None
+        self,
+        scope: Scope,
+        query: str,
+        *,
+        top_k: int = 6,
+        profile_name: str | None = None,
+        ai_options: AIRequestOptions | None = None,
     ) -> list[SearchResult]:
         async with session_scope(self.session_factory) as session:
+            scope_settings = await ScopeSettingsRepository(session).effective(
+                scope, self._default_scope_settings()
+            )
+            selection = self._select_provider(scope_settings, ai_options)
+            query_vector = (
+                await self._embed_texts_in_session(
+                    session,
+                    selection=selection,
+                    texts=[query],
+                    operation="embed_query",
+                    metadata={"scope": scope.key, "memory_profile": profile_name},
+                )
+            )[0]
             retriever = Retriever(
-                embedder=self.embedding_provider,
                 embedding_repo=EmbeddingRepository(session),
                 knowledge_repo=KnowledgeRepository(session),
                 message_repo=MessageRepository(session),
@@ -466,7 +583,7 @@ class MemoryService:
             scopes = await self._retrieval_scopes_in_session(session, scope, profile_name)
             results: list[SearchResult] = []
             for source_scope in scopes:
-                results.extend(await retriever.search(query, source_scope, top_k))
+                results.extend(await retriever.search(query_vector, source_scope, top_k))
             results.sort(key=search_result_rank)
             return results[:top_k]
 
@@ -493,18 +610,31 @@ class MemoryService:
                 sources_by_scope[scope.key] = await message_repo.source_references(
                     scope, source_ids, metadata
                 )
-                entries, result, error, latency_ms = await self._canonical_entries_for_scope(
-                    scope, scope_items
-                )
+                (
+                    entries,
+                    result,
+                    error,
+                    latency_ms,
+                    selection,
+                    reasoning_level,
+                ) = await self._canonical_entries_for_scope(session, scope, scope_items)
                 entries_by_scope[scope] = entries
                 await event_repo.add_ai_usage(
-                    provider=self.chat_provider.name,
-                    model=self.chat_provider.model,
+                    provider=selection.chat_provider.name,
+                    model=selection.chat_model,
                     operation="canonical_compact",
                     prompt_tokens=result.prompt_tokens if result else None,
                     completion_tokens=result.completion_tokens if result else None,
                     latency_ms=latency_ms,
                     error=error,
+                    metadata_json={
+                        "prompt_version": PROMPT_VERSION,
+                        "provider_profile": selection.profile.name,
+                        "chat_model": selection.chat_model,
+                        "embedding_model": selection.embedding_model,
+                        "reasoning_level": reasoning_level,
+                        "scope": scope.key,
+                    },
                 )
             path = self.markdown.write_canonical(
                 entries_by_scope, metadata_by_scope, sources_by_scope
@@ -719,6 +849,32 @@ class MemoryService:
                 previews.append(SummaryTemplatePreview(row.name, row.prompt, False))
         return previews
 
+    async def set_system_prompt_template(
+        self, name: str, prompt: str, *, updated_by: int | None = None
+    ) -> SystemPromptTemplatePreview:
+        async with session_scope(self.session_factory) as session:
+            row = await SystemPromptTemplateRepository(session).upsert(
+                name=name, prompt=prompt, version=PROMPT_VERSION, updated_by=updated_by
+            )
+            await EventRepository(session).add(
+                event_type="system_prompt_template_set",
+                user_id=updated_by,
+                payload={"template": row.name, "version": row.version},
+            )
+            return SystemPromptTemplatePreview(row.name, row.version, row.prompt, False)
+
+    async def list_system_prompt_templates(self) -> list[SystemPromptTemplatePreview]:
+        previews = [
+            SystemPromptTemplatePreview(template.name, template.version, template.prompt, True)
+            for template in sorted(BUILTIN_SYSTEM_PROMPTS.values(), key=lambda item: item.name)
+        ]
+        async with session_scope(self.session_factory) as session:
+            for row in await SystemPromptTemplateRepository(session).list_templates():
+                previews.append(
+                    SystemPromptTemplatePreview(row.name, row.version, row.prompt, False)
+                )
+        return previews
+
     async def summarize_range(
         self,
         scope: Scope,
@@ -726,6 +882,7 @@ class MemoryService:
         start_message_id: int,
         end_message_id: int,
         template_name: str = "general",
+        ai_options: AIRequestOptions | None = None,
     ) -> RangeSummaryResult:
         if scope.chat_id is None:
             raise ValueError("range summaries require a concrete scope")
@@ -745,7 +902,15 @@ class MemoryService:
             scope_settings = await ScopeSettingsRepository(session).effective(
                 scope, self._default_scope_settings()
             )
-            content, result, error, latency_ms = await self._summarize_messages_in_session(
+            (
+                content,
+                result,
+                error,
+                latency_ms,
+                selection,
+                reasoning_level,
+                template_version,
+            ) = await self._summarize_messages_in_session(
                 session,
                 scope,
                 pending,
@@ -755,6 +920,7 @@ class MemoryService:
                     f"Range: Telegram messages {start_message_id}..{end_message_id}, "
                     f"dates {start.created_at.isoformat()}..{end.created_at.isoformat()}."
                 ),
+                ai_options=ai_options,
             )
             source_ids = [message.telegram_message_id for message in pending]
             item = await self._add_knowledge_in_session(
@@ -774,13 +940,22 @@ class MemoryService:
             )
             await MessageRepository(session).mark_summarized([message.id for message in pending])
             await EventRepository(session).add_ai_usage(
-                provider=self.chat_provider.name,
-                model=self.chat_provider.model,
+                provider=selection.chat_provider.name,
+                model=selection.chat_model,
                 operation="range_summary",
                 prompt_tokens=result.prompt_tokens if result else None,
                 completion_tokens=result.completion_tokens if result else None,
                 latency_ms=latency_ms,
                 error=error,
+                metadata_json={
+                    "prompt_version": PROMPT_VERSION,
+                    "summary_template": template_name,
+                    "summary_template_version": template_version,
+                    "provider_profile": selection.profile.name,
+                    "chat_model": selection.chat_model,
+                    "embedding_model": selection.embedding_model,
+                    "reasoning_level": reasoning_level,
+                },
             )
             await EventRepository(session).add(
                 event_type="range_summary",
@@ -904,25 +1079,44 @@ class MemoryService:
         scope_settings: EffectiveScopeSettings,
         *,
         template_name: str | None = None,
+        ai_options: AIRequestOptions | None = None,
     ) -> bool:
-        content, result, error, latency_ms = await self._summarize_messages_in_session(
+        (
+            content,
+            result,
+            error,
+            latency_ms,
+            selection,
+            reasoning_level,
+            template_version,
+        ) = await self._summarize_messages_in_session(
             session,
             scope,
             pending,
             scope_settings,
             template_name=template_name or "general",
             context_line="Scope summary from pending learned messages.",
+            ai_options=ai_options,
         )
         source_ids = [message.telegram_message_id for message in pending]
         await MessageRepository(session).mark_summarized([message.id for message in pending])
         await EventRepository(session).add_ai_usage(
-            provider=self.chat_provider.name,
-            model=self.chat_provider.model,
+            provider=selection.chat_provider.name,
+            model=selection.chat_model,
             operation="summarize",
             prompt_tokens=result.prompt_tokens if result else None,
             completion_tokens=result.completion_tokens if result else None,
             latency_ms=latency_ms,
             error=error,
+            metadata_json={
+                "prompt_version": PROMPT_VERSION,
+                "summary_template": template_name or "general",
+                "summary_template_version": template_version,
+                "provider_profile": selection.profile.name,
+                "chat_model": selection.chat_model,
+                "embedding_model": selection.embedding_model,
+                "reasoning_level": reasoning_level,
+            },
         )
         if scope_settings.review_before_compact:
             review = await MemoryReviewRepository(session).add(
@@ -957,15 +1151,26 @@ class MemoryService:
         *,
         template_name: str,
         context_line: str,
-    ) -> tuple[str, ChatResult | None, str | None, int]:
-        template_instruction = await self._summary_template_prompt_in_session(
-            session, template_name
+        ai_options: AIRequestOptions | None = None,
+    ) -> tuple[str, ChatResult | None, str | None, int, ProviderSelection, str, str]:
+        request = ai_options or AIRequestOptions()
+        template_instruction = (
+            request.summary_template_override
+            or await self._summary_template_prompt_in_session(session, template_name)
         )
+        template_version = (
+            PROMPT_VERSION if request.summary_template_override else SUMMARY_BASE_PROMPT.version
+        )
+        selection = self._select_provider(scope_settings, ai_options, summary=True)
+        reasoning_level = self._reasoning_level(scope_settings, ai_options)
         prompt_lines = [
-            "Summarize durable group-chat memory.",
+            SUMMARY_BASE_PROMPT.prompt,
+            f"Prompt version: {SUMMARY_BASE_PROMPT.version}.",
             template_instruction,
             "Do not dump raw chat. Preserve source references.",
             f"Preferred summary model setting: {scope_settings.summary_model}.",
+            f"Selected chat model: {selection.chat_model}.",
+            f"Reasoning level setting: {reasoning_level}.",
             f"Template: {template_name}.",
             f"Scope: {scope.key}.",
             context_line,
@@ -978,7 +1183,7 @@ class MemoryService:
         started = time.perf_counter()
         error: str | None = None
         try:
-            result = await self.chat_provider.generate(
+            result = await selection.chat_provider.generate(
                 [ChatMessage(role="user", content="\n".join(prompt_lines))],
                 temperature=0.1,
                 max_tokens=900,
@@ -991,7 +1196,15 @@ class MemoryService:
                 for message in pending
             )
             result = None
-        return content, result, error, int((time.perf_counter() - started) * 1000)
+        return (
+            content,
+            result,
+            error,
+            int((time.perf_counter() - started) * 1000),
+            selection,
+            reasoning_level,
+            template_version,
+        )
 
     async def _add_knowledge_in_session(
         self,
@@ -1011,13 +1224,25 @@ class MemoryService:
             source_message_ids=source_message_ids,
             metadata_json=metadata_json,
         )
-        vector = (await self.embedding_provider.embed([content]))[0]
+        scope_settings = await ScopeSettingsRepository(session).effective(
+            scope, self._default_scope_settings()
+        )
+        selection = self._select_provider(scope_settings)
+        vector = (
+            await self._embed_texts_in_session(
+                session,
+                selection=selection,
+                texts=[content],
+                operation="embed_knowledge",
+                metadata={"scope": scope.key, "target_type": "knowledge_item", "kind": kind},
+            )
+        )[0]
         await EmbeddingRepository(session).add(
             target_type="knowledge_item",
             target_id=item.id,
             scope=scope,
-            provider=self.embedding_provider.name,
-            model=self._embedding_model_name(),
+            provider=selection.embedding_provider.name,
+            model=selection.embedding_model,
             vector=vector,
         )
         self.markdown.append_daily(
@@ -1067,13 +1292,24 @@ class MemoryService:
         return dedupe_scope_list(scopes)
 
     async def _canonical_entries_for_scope(
-        self, scope: Scope, items: list[KnowledgeItem]
-    ) -> tuple[list[CanonicalMemoryEntry], ChatResult | None, str | None, int]:
+        self, session: AsyncSession, scope: Scope, items: list[KnowledgeItem]
+    ) -> tuple[
+        list[CanonicalMemoryEntry], ChatResult | None, str | None, int, ProviderSelection, str
+    ]:
+        scope_settings = await ScopeSettingsRepository(session).effective(
+            scope, self._default_scope_settings()
+        )
+        selection = self._select_provider(scope_settings, summary=True)
+        reasoning_level = self._reasoning_level(scope_settings)
         prompt = canonical_prompt(scope.key, items)
+        prompt = (
+            f"Reasoning level setting: {reasoning_level}.\n"
+            f"Selected chat model: {selection.chat_model}.\n{prompt}"
+        )
         started = time.perf_counter()
         error: str | None = None
         try:
-            result = await self.chat_provider.generate(
+            result = await selection.chat_provider.generate(
                 [ChatMessage(role="user", content=prompt)], temperature=0.1, max_tokens=1200
             )
             parsed = parse_canonical_response(
@@ -1084,13 +1320,132 @@ class MemoryService:
             error = str(exc)
             result = None
             entries = fallback_entries(items)
-        return entries, result, error, int((time.perf_counter() - started) * 1000)
+        return (
+            entries,
+            result,
+            error,
+            int((time.perf_counter() - started) * 1000),
+            selection,
+            reasoning_level,
+        )
+
+    def _select_provider(
+        self,
+        scope_settings: EffectiveScopeSettings,
+        options: AIRequestOptions | None = None,
+        *,
+        summary: bool = False,
+    ) -> ProviderSelection:
+        request = options or AIRequestOptions()
+        profile_name = request.provider_profile or scope_settings.provider_profile
+        chat_model = request.chat_model or (
+            scope_settings.summary_model if summary else scope_settings.chat_model
+        )
+        embedding_model = request.embedding_model or scope_settings.embedding_model
+        default_profile = self.settings.provider_profile_by_name(self.settings.ai_provider_profile)
+        if (
+            profile_name == default_profile.name
+            and chat_model == default_profile.chat_model
+            and embedding_model == default_profile.embedding_model
+        ):
+            return ProviderSelection(
+                profile=default_profile,
+                chat_provider=self.chat_provider,
+                embedding_provider=self.embedding_provider,
+                chat_model=chat_model,
+                embedding_model=embedding_model,
+            )
+        return self.provider_registry.select(
+            profile_name, chat_model=chat_model, embedding_model=embedding_model
+        )
+
+    def _reasoning_level(
+        self, scope_settings: EffectiveScopeSettings, options: AIRequestOptions | None = None
+    ) -> str:
+        requested = (options.reasoning_level if options else None) or scope_settings.reasoning_level
+        return self.settings.validate_reasoning_level(requested)
+
+    async def _embed_texts_in_session(
+        self,
+        session: AsyncSession,
+        *,
+        selection: ProviderSelection,
+        texts: list[str],
+        operation: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> list[list[float]]:
+        started = time.perf_counter()
+        error: str | None = None
+        vectors: list[list[float]] = []
+        try:
+            vectors = await selection.embedding_provider.embed(texts)
+            return vectors
+        except Exception as exc:
+            error = str(exc)
+            raise
+        finally:
+            dimensions = (
+                len(vectors[0])
+                if vectors
+                else getattr(selection.embedding_provider, "dimensions", None)
+            )
+            usage_metadata = {
+                "count": len(texts),
+                "dimensions": dimensions,
+                "provider_profile": selection.profile.name,
+                "embedding_model": selection.embedding_model,
+                "prompt_version": PROMPT_VERSION,
+            }
+            if metadata:
+                usage_metadata.update(metadata)
+            await EventRepository(session).add_ai_usage(
+                provider=selection.embedding_provider.name,
+                model=selection.embedding_model,
+                operation=operation,
+                latency_ms=int((time.perf_counter() - started) * 1000),
+                error=error,
+                metadata_json=usage_metadata,
+            )
+
+    async def _system_prompt_template_in_session(
+        self, session: AsyncSession, name: str
+    ) -> PromptTemplate:
+        clean_name = name.strip().lower()
+        builtin = BUILTIN_SYSTEM_PROMPTS.get(clean_name)
+        if builtin is not None:
+            return builtin
+        row = await SystemPromptTemplateRepository(session).get(clean_name)
+        if row is None:
+            raise ValueError(f"system prompt template {name!r} was not found")
+        return PromptTemplate(name=row.name, version=row.version, prompt=row.prompt)
+
+    async def _answer_system_prompt_in_session(
+        self,
+        session: AsyncSession,
+        scope_settings: EffectiveScopeSettings,
+        options: AIRequestOptions | None,
+    ) -> PromptTemplate:
+        request = options or AIRequestOptions()
+        if request.system_prompt_override:
+            return PromptTemplate(
+                name="one_shot_override",
+                version=PROMPT_VERSION,
+                prompt=request.system_prompt_override.strip(),
+            )
+        template_name = request.system_prompt_template or scope_settings.system_prompt_template
+        return await self._system_prompt_template_in_session(session, template_name)
 
     def _default_scope_settings(self) -> EffectiveScopeSettings:
+        default_profile = self.settings.provider_profile_by_name(self.settings.ai_provider_profile)
         return EffectiveScopeSettings(
             retrieval_top_k=self.settings.retrieval_top_k,
             summary_batch_size=self.settings.summary_batch_size,
             summary_model=self.settings.chat_model,
+            system_prompt_template=self.settings.system_prompt_template,
+            provider_profile=default_profile.name,
+            chat_model=self.settings.chat_model,
+            embedding_model=self.settings.embedding_model,
+            reasoning_level=self.settings.reasoning_level,
             raw_message_retention_days=self.settings.raw_message_retention_days,
             knowledge_retention_days=self.settings.knowledge_retention_days,
             review_before_compact=self.settings.review_before_compact,
@@ -1104,7 +1459,10 @@ def normalize_text(text: str) -> str:
     return " ".join(text.strip().split())
 
 
-def validate_scope_settings(updates: dict[str, int | str | bool | None]) -> None:
+def validate_scope_settings(
+    updates: dict[str, int | str | bool | None], settings: Settings | None = None
+) -> None:
+    active_settings = settings or Settings()
     positive_int_fields = {"retrieval_top_k", "summary_batch_size"}
     optional_positive_int_fields = {"raw_message_retention_days", "knowledge_retention_days"}
     for field in positive_int_fields:
@@ -1115,11 +1473,26 @@ def validate_scope_settings(updates: dict[str, int | str | bool | None]) -> None
         value = updates.get(field)
         if field in updates and value is not None and (not isinstance(value, int) or value < 1):
             raise ValueError(f"{field} must be a positive integer or off")
-    if "summary_model" in updates and updates["summary_model"] is not None:
-        model = str(updates["summary_model"]).strip()
-        if not model:
-            raise ValueError("summary_model cannot be empty")
-        updates["summary_model"] = model
+    model_fields = {"summary_model", "chat_model", "embedding_model"}
+    for field in model_fields:
+        if field in updates and updates[field] is not None:
+            value = str(updates[field]).strip()
+            if not value:
+                raise ValueError(f"{field} cannot be empty")
+            if field == "chat_model":
+                value = active_settings.validate_chat_model(value)
+            elif field == "embedding_model":
+                value = active_settings.validate_embedding_model(value)
+            updates[field] = value
+    short_name_fields = {"system_prompt_template", "provider_profile", "reasoning_level"}
+    for field in short_name_fields:
+        if field in updates and updates[field] is not None:
+            value = str(updates[field]).strip().lower()
+            if not value:
+                raise ValueError(f"{field} cannot be empty")
+            if field == "reasoning_level":
+                value = active_settings.validate_reasoning_level(value)
+            updates[field] = value
     if "review_before_compact" in updates and not isinstance(
         updates["review_before_compact"], bool
     ):
@@ -1355,6 +1728,14 @@ def parse_scope_settings_args(raw: dict[str, str]) -> dict[str, int | str | bool
         "retrieval_top_k": "retrieval_top_k",
         "summary_batch_size": "summary_batch_size",
         "summary_model": "summary_model",
+        "system_prompt": "system_prompt_template",
+        "system_prompt_template": "system_prompt_template",
+        "provider": "provider_profile",
+        "provider_profile": "provider_profile",
+        "chat_model": "chat_model",
+        "embedding_model": "embedding_model",
+        "reasoning": "reasoning_level",
+        "reasoning_level": "reasoning_level",
         "raw_retention_days": "raw_message_retention_days",
         "raw_message_retention_days": "raw_message_retention_days",
         "knowledge_retention_days": "knowledge_retention_days",
@@ -1433,6 +1814,17 @@ def format_summary_templates(templates: list[SummaryTemplatePreview]) -> str:
         origin = "built-in" if template.builtin else "custom"
         compact = " ".join(template.prompt.split())
         lines.append(f"- {template.name} ({origin}): {compact[:220]}")
+    return "\n".join(lines)
+
+
+def format_system_prompt_templates(templates: list[SystemPromptTemplatePreview]) -> str:
+    if not templates:
+        return "No system prompt templates configured."
+    lines = ["System prompt templates:"]
+    for template in templates:
+        origin = "built-in" if template.builtin else "custom"
+        compact = " ".join(template.prompt.split())
+        lines.append(f"- {template.name} ({origin}, {template.version}): {compact[:260]}")
     return "\n".join(lines)
 
 

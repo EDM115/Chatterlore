@@ -21,6 +21,7 @@ from pzp_ai_bot.db.models import (
     ScopeMetadata,
     ScopeSettings,
     SummaryTemplate,
+    SystemPromptTemplate,
 )
 from pzp_ai_bot.memory.scope import Scope
 from pzp_ai_bot.memory.vector import decode_vector, encode_vector
@@ -53,6 +54,11 @@ class EffectiveScopeSettings:
     retrieval_top_k: int
     summary_batch_size: int
     summary_model: str
+    system_prompt_template: str
+    provider_profile: str
+    chat_model: str
+    embedding_model: str
+    reasoning_level: str
     raw_message_retention_days: int | None
     knowledge_retention_days: int | None
     review_before_compact: bool
@@ -62,6 +68,11 @@ class EffectiveScopeSettings:
             "retrieval_top_k": self.retrieval_top_k,
             "summary_batch_size": self.summary_batch_size,
             "summary_model": self.summary_model,
+            "system_prompt_template": self.system_prompt_template,
+            "provider_profile": self.provider_profile,
+            "chat_model": self.chat_model,
+            "embedding_model": self.embedding_model,
+            "reasoning_level": self.reasoning_level,
             "raw_message_retention_days": self.raw_message_retention_days,
             "knowledge_retention_days": self.knowledge_retention_days,
             "review_before_compact": self.review_before_compact,
@@ -614,6 +625,11 @@ class ScopeSettingsRepository:
         "retrieval_top_k",
         "summary_batch_size",
         "summary_model",
+        "system_prompt_template",
+        "provider_profile",
+        "chat_model",
+        "embedding_model",
+        "reasoning_level",
         "raw_message_retention_days",
         "knowledge_retention_days",
         "review_before_compact",
@@ -664,6 +680,11 @@ class ScopeSettingsRepository:
             retrieval_top_k=_required_int(values["retrieval_top_k"]),
             summary_batch_size=_required_int(values["summary_batch_size"]),
             summary_model=_required_str(values["summary_model"]),
+            system_prompt_template=_required_str(values["system_prompt_template"]),
+            provider_profile=_required_str(values["provider_profile"]),
+            chat_model=_required_str(values["chat_model"]),
+            embedding_model=_required_str(values["embedding_model"]),
+            reasoning_level=_required_str(values["reasoning_level"]),
             raw_message_retention_days=_optional_int(values["raw_message_retention_days"]),
             knowledge_retention_days=_optional_int(values["knowledge_retention_days"]),
             review_before_compact=bool(values["review_before_compact"]),
@@ -951,6 +972,66 @@ class SummaryTemplateRepository:
         )
 
 
+class SystemPromptTemplateRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def upsert(
+        self, *, name: str, prompt: str, version: str, updated_by: int | None = None
+    ) -> SystemPromptTemplate:
+        clean_name = normalize_profile_name(name)
+        clean_prompt = prompt.strip()
+        clean_version = version.strip()
+        if not clean_prompt:
+            raise ValueError("system prompt template cannot be empty")
+        if not clean_version:
+            raise ValueError("system prompt version cannot be empty")
+        rows = list(
+            (
+                await self.session.scalars(
+                    select(SystemPromptTemplate)
+                    .where(SystemPromptTemplate.name == clean_name)
+                    .order_by(SystemPromptTemplate.id.asc())
+                )
+            ).all()
+        )
+        now = utc_now()
+        if not rows:
+            row = SystemPromptTemplate(
+                name=clean_name,
+                prompt=clean_prompt,
+                version=clean_version,
+                created_by=updated_by,
+                created_at=now,
+                updated_at=now,
+            )
+            self.session.add(row)
+        else:
+            row = rows[0]
+            row.prompt = clean_prompt
+            row.version = clean_version
+            row.updated_at = now
+            for duplicate in rows[1:]:
+                await self.session.delete(duplicate)
+        await self.session.flush()
+        return row
+
+    async def get(self, name: str) -> SystemPromptTemplate | None:
+        clean_name = normalize_profile_name(name)
+        return await self.session.scalar(
+            select(SystemPromptTemplate).where(SystemPromptTemplate.name == clean_name)
+        )
+
+    async def list_templates(self) -> list[SystemPromptTemplate]:
+        return list(
+            (
+                await self.session.scalars(
+                    select(SystemPromptTemplate).order_by(SystemPromptTemplate.name.asc())
+                )
+            ).all()
+        )
+
+
 class EventRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -985,6 +1066,7 @@ class EventRepository:
         completion_tokens: int | None = None,
         latency_ms: int | None = None,
         error: str | None = None,
+        metadata_json: dict[str, Any] | None = None,
     ) -> AIUsage:
         usage = AIUsage(
             provider=provider,
@@ -994,6 +1076,7 @@ class EventRepository:
             completion_tokens=completion_tokens,
             latency_ms=latency_ms,
             error=error,
+            metadata_json=metadata_json,
             created_at=utc_now(),
         )
         self.session.add(usage)
