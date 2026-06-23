@@ -13,3 +13,7 @@
 - The fake provider is deterministic and local. The local embedding provider avoids cloud embeddings but still requires downloading a sentence-transformers model
 - Telegram Bot API send failures and retry-after responses are logged with chat/thread/message/method metadata and without export payload text or provider secrets. Update processing should not crash just because an outbound reply failed
 - Telegram Bot API privacy mode must be disabled, or the bot must be a group admin, for the bot to receive normal group messages
+- Runtime settings that are safe to edit are stored in SQLite with the current value, previous value, updater, timestamp and version. Secrets are not accepted as runtime settings
+- Forget confirmations are persisted as hashed one-time challenges with expiry and consumption timestamps. Plain confirmation tokens are only shown to the admin who requested the destructive operation
+- `/audit_events` and `pzp-bot audit-events` expose admin, settings and destructive-operation event metadata from `bot_events` for review. They do not include provider API keys or Telegram bot tokens
+- `/forget` deletes raw messages, durable knowledge and embeddings for the selected scope after confirmation. Audit rows remain so destructive operations can still be reviewed

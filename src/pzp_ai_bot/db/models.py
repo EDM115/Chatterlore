@@ -256,6 +256,41 @@ class SystemPromptTemplate(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class RuntimeSetting(Base):
+    __tablename__ = "runtime_settings"
+    __table_args__ = (UniqueConstraint("key", name="uq_runtime_settings_key"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    key: Mapped[str] = mapped_column(String(64), nullable=False)
+    value: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    previous_value: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    updated_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+class ForgetChallenge(Base):
+    __tablename__ = "forget_challenges"
+    __table_args__ = (
+        Index(
+            "ix_forget_challenges_scope_user",
+            "chat_id",
+            "message_thread_id",
+            "user_id",
+            "expires_at",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    chat_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    message_thread_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class BotEvent(Base):
     __tablename__ = "bot_events"
 

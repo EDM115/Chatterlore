@@ -11,7 +11,11 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from pzp_ai_bot.app_context import AppContext
 from pzp_ai_bot.telegram.commands import register_bot_commands
 from pzp_ai_bot.telegram.dispatcher import build_dispatcher
-from pzp_ai_bot.telegram.scheduler import start_idle_summarizer, stop_idle_summarizer
+from pzp_ai_bot.telegram.scheduler import (
+    start_idle_summarizer,
+    start_runtime_settings_refresher,
+    stop_task,
+)
 
 
 def create_webhook_app(
@@ -29,6 +33,7 @@ def create_webhook_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         idle_task = start_idle_summarizer(context)
+        settings_task = start_runtime_settings_refresher(context)
         try:
             await register_bot_commands(telegram_bot)
             await telegram_bot.set_webhook(
@@ -38,7 +43,8 @@ def create_webhook_app(
             )
             yield
         finally:
-            await stop_idle_summarizer(idle_task)
+            await stop_task(idle_task)
+            await stop_task(settings_task)
             if owns_bot:
                 await telegram_bot.session.close()
 

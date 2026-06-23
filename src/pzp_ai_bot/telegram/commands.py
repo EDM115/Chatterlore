@@ -26,6 +26,8 @@ COMMAND_DESCRIPTIONS: tuple[tuple[str, str], ...] = (
     ("system_prompt_set", "Create or update a system prompt"),
     ("summarize_range", "Summarize a bounded message range"),
     ("stats", "Show memory counts"),
+    ("audit_events", "Show recent bot audit events"),
+    ("runtime_settings", "View or edit safe runtime settings"),
     ("learn_on", "Enable learning for this scope"),
     ("learn_off", "Disable learning for this scope"),
     ("learn_status", "Show learning policy for this scope"),
@@ -84,6 +86,8 @@ def command_help_text() -> str:
             "[reasoning=low|medium|high] [prompt='one-shot instruction']",
             "/summarize_range start=<message_id> end=<message_id> [template=name] "
             "[provider=name] [model=name] [prompt='one-shot instruction']",
+            "/audit_events [scope=this_topic|this_chat|all] [event_type=name] [limit=N]",
+            "/runtime_settings [reload=on] [key=value ...]",
             "/forget scope=this_topic|this_chat|all confirm=<token>",
         ]
     )

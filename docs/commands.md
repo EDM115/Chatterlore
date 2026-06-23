@@ -37,3 +37,9 @@ Configured `BOT_ADMINS` can administer every scope. Telegram chat admins can adm
 CLI additions:
 - `pzp-bot doctor`: checks configured provider profiles, missing OpenAI-compatible keys, missing local optional dependencies, SQLite parent write access and memory directory write access without starting Telegram
 - `pzp-bot show-config`: prints non-secret runtime settings including provider profiles, default system prompt and reasoning level
+- `pzp-bot audit-events --limit N [--event-type name] [--scope scope] [--format text|jsonl] [--out path]`: reviews or exports `bot_events`
+- `pzp-bot runtime-settings [--reload] [--set key=value]...`: views, reloads or edits safe database-backed runtime settings
+- `pzp-bot db-stats`: prints SQLite file size and table row counts
+- `pzp-bot db-integrity`: runs `PRAGMA integrity_check` and exits non-zero unless SQLite reports `ok`
+- `pzp-bot db-vacuum`: runs SQLite `VACUUM`
+- `pzp-bot db-backup --out path`: creates a SQLite online backup

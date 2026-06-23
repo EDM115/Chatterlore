@@ -21,8 +21,10 @@ from pzp_ai_bot.db.repositories import EffectiveScopeSettings, MemoryProfileView
 from pzp_ai_bot.db.session import session_scope
 from pzp_ai_bot.memory.scope import Scope
 from pzp_ai_bot.memory.service import (
+    AuditEventPreview,
     MemoryNotePreview,
     RangeSummaryResult,
+    RuntimeSettingPreview,
     SummaryTemplatePreview,
     SystemPromptTemplatePreview,
 )
@@ -252,6 +254,28 @@ class RouterMemoryDouble:
         self._record("forget", scope)
         return True, f"Forgot scope {scope.key}: 0 messages, 0 knowledge items, 0 embeddings."
 
+    async def audit_events(
+        self, *, limit: int = 50, event_type: str | None = None, scope: Scope | None = None
+    ) -> list[AuditEventPreview]:
+        self._record("audit_events", scope)
+        now = datetime(2026, 6, 23, tzinfo=UTC)
+        return [AuditEventPreview(1, event_type or "test", scope, 111, {"ok": True}, now)]
+
+    async def refresh_runtime_settings(self) -> dict[str, Any]:
+        self._record("refresh_runtime_settings")
+        return {}
+
+    async def set_runtime_settings(
+        self, updates: dict[str, Any], *, updated_by: int | None = None
+    ) -> list[RuntimeSettingPreview]:
+        self._record("set_runtime_settings")
+        return await self.list_runtime_settings()
+
+    async def list_runtime_settings(self) -> list[RuntimeSettingPreview]:
+        self._record("list_runtime_settings")
+        now = datetime(2026, 6, 23, tzinfo=UTC)
+        return [RuntimeSettingPreview("retrieval_top_k", 6, 6, None, 111, now, 1)]
+
     async def ingest(self, incoming: Any) -> Any:
         self._record("ingest", incoming.scope)
         return SimpleNamespace(learned=True, reason="allowed")
@@ -358,6 +382,8 @@ def command_for(name: str) -> str:
         "memory_export": "/memory_export md",
         "memory_settings": "/memory_settings",
         "settings": "/settings",
+        "audit_events": "/audit_events limit=1",
+        "runtime_settings": "/runtime_settings retrieval_top_k=6",
         "memory_prune": "/memory_prune",
         "memory_reviews": "/memory_reviews",
         "memory_approve": "/memory_approve 1",
@@ -461,11 +487,14 @@ async def test_polling_deletes_webhook_before_starting_and_uses_router(
 
     monkeypatch.setattr(polling_module, "build_dispatcher", fake_build_dispatcher)
     monkeypatch.setattr(polling_module, "start_idle_summarizer", lambda app_context: "idle")
+    monkeypatch.setattr(
+        polling_module, "start_runtime_settings_refresher", lambda app_context: "settings"
+    )
 
-    async def fake_stop_idle_summarizer(task: Any) -> None:
-        events.append(f"stop_idle:{task}")
+    async def fake_stop_task(task: Any) -> None:
+        events.append(f"stop_task:{task}")
 
-    monkeypatch.setattr(polling_module, "stop_idle_summarizer", fake_stop_idle_summarizer)
+    monkeypatch.setattr(polling_module, "stop_task", fake_stop_task)
 
     await run_polling(context, bot=cast(Bot, FakePollingBot(events)))
 
@@ -474,7 +503,8 @@ async def test_polling_deletes_webhook_before_starting_and_uses_router(
         "delete_webhook:False",
         "set_my_commands",
         "start_polling",
-        "stop_idle:idle",
+        "stop_task:idle",
+        "stop_task:settings",
     ]
 
 
@@ -658,10 +688,10 @@ def test_export_documents_chunk_below_telegram_document_limit() -> None:
 
 @pytest.mark.asyncio
 async def test_safe_answer_logs_rate_limit(monkeypatch: pytest.MonkeyPatch) -> None:
-    warnings: list[tuple[str, dict[str, Any] | None]] = []
+    warnings: list[tuple[str, dict[str, Any]]] = []
 
-    def record_warning(event: str, *, extra: dict[str, Any] | None = None) -> None:
-        warnings.append((event, extra))
+    def record_warning(event: str, **metadata: Any) -> None:
+        warnings.append((event, metadata))
 
     monkeypatch.setattr(safe_api_module.logger, "warning", record_warning)
 
@@ -669,15 +699,15 @@ async def test_safe_answer_logs_rate_limit(monkeypatch: pytest.MonkeyPatch) -> N
 
     assert not ok
     assert warnings[0][0] == "telegram_rate_limited"
-    assert warnings[0][1] and warnings[0][1]["retry_after"] == 3
+    assert warnings[0][1]["retry_after"] == 3
 
 
 @pytest.mark.asyncio
 async def test_safe_answer_document_logs_api_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    warnings: list[tuple[str, dict[str, Any] | None]] = []
+    warnings: list[tuple[str, dict[str, Any]]] = []
 
-    def record_warning(event: str, *, extra: dict[str, Any] | None = None) -> None:
-        warnings.append((event, extra))
+    def record_warning(event: str, **metadata: Any) -> None:
+        warnings.append((event, metadata))
 
     monkeypatch.setattr(safe_api_module.logger, "warning", record_warning)
 
@@ -689,4 +719,4 @@ async def test_safe_answer_document_logs_api_error(monkeypatch: pytest.MonkeyPat
 
     assert not ok
     assert warnings[0][0] == "telegram_api_error"
-    assert warnings[0][1] and warnings[0][1]["chat_id"] == -10012345
+    assert warnings[0][1]["chat_id"] == -10012345

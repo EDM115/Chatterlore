@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import logging
 from typing import Any
 
+import structlog
 from aiogram.exceptions import TelegramAPIError, TelegramRetryAfter
 from aiogram.types import BufferedInputFile, Message
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 async def safe_answer(message: Message, text: str, **kwargs: Any) -> bool:
@@ -40,12 +40,11 @@ def _log_telegram_error(
 ) -> None:
     logger.warning(
         event,
-        extra={
-            "chat_id": int(message.chat.id),
-            "thread_id": getattr(message, "message_thread_id", None),
-            "message_id": getattr(message, "message_id", None),
-            "method": type(getattr(exc, "method", None)).__name__,
-            "retry_after": retry_after,
-            "error": str(exc),
-        },
+        event_type=event,
+        chat_id=int(message.chat.id),
+        thread_id=getattr(message, "message_thread_id", None),
+        message_id=getattr(message, "message_id", None),
+        method=type(getattr(exc, "method", None)).__name__,
+        retry_after=retry_after,
+        error=str(exc),
     )

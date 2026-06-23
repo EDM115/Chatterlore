@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import sqlite3
 from pathlib import Path
 from typing import Annotated
 
@@ -12,7 +13,13 @@ from pzp_ai_bot.app_context import build_context
 from pzp_ai_bot.config import Settings, get_settings
 from pzp_ai_bot.db.session import upgrade_schema
 from pzp_ai_bot.memory.scope import Scope, parse_scope
-from pzp_ai_bot.memory.service import parse_memory_export_format
+from pzp_ai_bot.memory.service import (
+    audit_events_jsonl,
+    format_audit_events,
+    format_runtime_settings,
+    parse_memory_export_format,
+    parse_runtime_settings_args,
+)
 from pzp_ai_bot.telegram.polling import run_polling
 from pzp_ai_bot.telegram.webhook import run_webhook
 
@@ -123,6 +130,125 @@ def doctor() -> None:
         raise typer.Exit(code=1)
 
 
+@app.command("audit-events")
+def audit_events(
+    limit: Annotated[int, typer.Option(help="Maximum events to return.")] = 50,
+    event_type: Annotated[str | None, typer.Option(help="Optional event type filter.")] = None,
+    scope: Annotated[
+        str, typer.Option(help="Scope: all, <chat_id>, <chat_id>:<thread_id>.")
+    ] = "all",
+    output_format: Annotated[
+        str, typer.Option("--format", help="Output format: text or jsonl.")
+    ] = "text",
+    out: Annotated[Path | None, typer.Option(help="Optional output file path.")] = None,
+) -> None:
+    """Export recent audit events from bot_events."""
+    if output_format not in {"text", "jsonl"}:
+        raise typer.BadParameter("format must be text or jsonl")
+    try:
+        parsed = parse_scope(scope)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    settings = get_settings()
+    context = run(build_context(settings))
+    events = run(
+        context.memory.audit_events(
+            limit=limit, event_type=event_type, scope=None if parsed.is_global else parsed
+        )
+    )
+    payload = (
+        audit_events_jsonl(events) if output_format == "jsonl" else format_audit_events(events)
+    )
+    if out is not None:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(payload, encoding="utf-8")
+        console.print(f"Wrote {out}")
+        return
+    console.print(payload)
+
+
+@app.command("runtime-settings")
+def runtime_settings(
+    set_values: Annotated[
+        list[str] | None,
+        typer.Option("--set", help="Set key=value for a safe non-secret runtime setting."),
+    ] = None,
+    reload_settings: Annotated[
+        bool, typer.Option("--reload", help="Reload runtime settings from the database.")
+    ] = False,
+) -> None:
+    """View, edit, or reload safe database-backed runtime settings."""
+    settings = get_settings()
+    context = run(build_context(settings))
+    if reload_settings:
+        run(context.memory.refresh_runtime_settings())
+    updates: dict[str, str] = {}
+    for item in set_values or []:
+        if "=" not in item:
+            raise typer.BadParameter("runtime settings must use key=value form")
+        key, value = item.split("=", 1)
+        updates[key.strip()] = value.strip()
+    if updates:
+        parsed_updates = parse_runtime_settings_args(updates)
+        unknown = sorted(
+            set(updates)
+            - set(parsed_updates)
+            - {"top_k", "provider", "system_prompt", "raw_retention_days"}
+        )
+        if unknown:
+            raise typer.BadParameter(f"unknown runtime setting: {unknown[0]}")
+        run(context.memory.set_runtime_settings(parsed_updates))
+    console.print(format_runtime_settings(run(context.memory.list_runtime_settings())))
+
+
+@app.command("db-stats")
+def db_stats() -> None:
+    """Show SQLite file and table statistics."""
+    settings = get_settings()
+    path = require_sqlite_path(settings)
+    upgrade_schema(settings)
+    stats = sqlite_stats(path)
+    for key, value in stats.items():
+        console.print(f"{key}: {value}")
+
+
+@app.command("db-integrity")
+def db_integrity() -> None:
+    """Run PRAGMA integrity_check on the SQLite database."""
+    settings = get_settings()
+    path = require_sqlite_path(settings)
+    upgrade_schema(settings)
+    with sqlite3.connect(path) as connection:
+        result = connection.execute("PRAGMA integrity_check").fetchone()
+    value = str(result[0] if result else "unknown")
+    console.print(f"integrity_check: {value}")
+    if value.lower() != "ok":
+        raise typer.Exit(code=1)
+
+
+@app.command("db-vacuum")
+def db_vacuum() -> None:
+    """Run SQLite VACUUM."""
+    settings = get_settings()
+    path = require_sqlite_path(settings)
+    upgrade_schema(settings)
+    with sqlite3.connect(path) as connection:
+        connection.execute("VACUUM")
+    console.print(f"Vacuumed {path}")
+
+
+@app.command("db-backup")
+def db_backup(out: Annotated[Path, typer.Option("--out", help="Backup SQLite file path.")]) -> None:
+    """Back up the SQLite database file."""
+    settings = get_settings()
+    path = require_sqlite_path(settings)
+    upgrade_schema(settings)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(path) as source, sqlite3.connect(out) as destination:
+        source.backup(destination)
+    console.print(f"Backed up {path} to {out}")
+
+
 @app.command("show-config")
 def show_config() -> None:
     """Show non-secret runtime configuration."""
@@ -138,10 +264,43 @@ def show_config() -> None:
         "system_prompt_template": settings.system_prompt_template,
         "reasoning_level": settings.reasoning_level,
         "learning_default_enabled": settings.learning_default_enabled,
+        "runtime_settings_refresh_seconds": settings.runtime_settings_refresh_seconds,
+        "forget_confirm_ttl_seconds": settings.forget_confirm_ttl_seconds,
+        "log_level": settings.log_level,
         "bot_admins_count": len(settings.bot_admin_ids),
     }
     for key, value in visible.items():
         console.print(f"{key}: {value}")
+
+
+def require_sqlite_path(settings: Settings) -> Path:
+    path = settings.sqlite_path
+    if path is None:
+        raise typer.BadParameter("DB maintenance commands require sqlite+aiosqlite DB_URL")
+    return path
+
+
+def quote_sqlite_identifier(identifier: str) -> str:
+    return '"' + identifier.replace('"', '""') + '"'
+
+
+def sqlite_stats(path: Path) -> dict[str, int | str]:
+    stats: dict[str, int | str] = {
+        "path": str(path),
+        "size_bytes": path.stat().st_size if path.exists() else 0,
+    }
+    with sqlite3.connect(path) as connection:
+        rows = connection.execute(
+            "select name from sqlite_master where type='table' "
+            "and name not like 'sqlite_%' order by name"
+        ).fetchall()
+        for (table_name,) in rows:
+            quoted_table_name = quote_sqlite_identifier(str(table_name))
+            count = connection.execute(
+                f"select count(*) from {quoted_table_name}"  # noqa: S608
+            ).fetchone()[0]
+            stats[f"table_{table_name}"] = int(count)
+    return stats
 
 
 def provider_health_checks(settings: Settings) -> list[tuple[str, bool, str]]:

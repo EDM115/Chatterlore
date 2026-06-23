@@ -17,9 +17,16 @@ class LearnDecision:
 class PolicyService:
     """Evaluates chat/topic/user learning policy for a single DB session."""
 
-    def __init__(self, settings: Settings, repository: PolicyRepository) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        repository: PolicyRepository,
+        *,
+        learning_default_enabled: bool | None = None,
+    ) -> None:
         self.settings = settings
         self.repository = repository
+        self.learning_default_enabled = learning_default_enabled
 
     async def set_learning(
         self, scope: Scope | None, enabled: bool, updated_by: int | None = None
@@ -99,6 +106,8 @@ class PolicyService:
         global_policy = _find_policy(policies, "global_learning", Scope.global_scope())
         if global_policy is not None:
             return global_policy.enabled
+        if self.learning_default_enabled is not None:
+            return self.learning_default_enabled
         return self.settings.learning_default_enabled
 
     async def _user_denied(self, scope: Scope, user_id: int) -> bool:
