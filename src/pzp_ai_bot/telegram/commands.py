@@ -8,6 +8,11 @@ COMMAND_DESCRIPTIONS: tuple[tuple[str, str], ...] = (
     ("ask", "Answer from current chat/topic memory"),
     ("memory_search", "Search scoped memory"),
     ("memory_export", "Export memory as Markdown or JSONL"),
+    ("memory_settings", "View or edit scoped memory settings"),
+    ("memory_prune", "Apply retention pruning for this scope"),
+    ("memory_reviews", "List pending memory review proposals"),
+    ("memory_approve", "Approve a memory review proposal"),
+    ("memory_reject", "Reject a memory review proposal"),
     ("stats", "Show memory counts"),
     ("learn_on", "Enable learning for this scope"),
     ("learn_off", "Disable learning for this scope"),
@@ -41,6 +46,12 @@ def command_help_text() -> str:
             "Useful forms:",
             "/ask <question>",
             "/memory_export [md|jsonl] [scope=this_topic|this_chat|all|<chat_id>:<thread_id>]",
+            "/memory_settings [top_k=N] [summary_batch_size=N] [summary_model=name] "
+            "[raw_retention_days=N|off] [knowledge_retention_days=N|off] "
+            "[review_before_compact=on|off]",
+            "/memory_reviews [scope=this_topic|this_chat|all|<chat_id>:<thread_id>]",
+            "/memory_approve <review_id>",
+            "/memory_reject <review_id>",
             "/forget scope=this_topic|this_chat|all confirm=<token>",
         ]
     )

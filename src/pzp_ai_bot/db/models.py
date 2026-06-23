@@ -37,6 +37,10 @@ class Message(Base):
     message_thread_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    chat_title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    chat_username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    topic_title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    message_permalink: Mapped[str | None] = mapped_column(String(512), nullable=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     normalized_text: Mapped[str] = mapped_column(Text, nullable=False)
     learned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -105,6 +109,60 @@ class LearningPolicy(Base):
     value: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     updated_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ScopeMetadata(Base):
+    __tablename__ = "scope_metadata"
+    __table_args__ = (
+        UniqueConstraint("chat_id", "message_thread_id", name="uq_scope_metadata"),
+        Index("ix_scope_metadata_scope", "chat_id", "message_thread_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    message_thread_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    chat_title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    topic_title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    chat_username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ScopeSettings(Base):
+    __tablename__ = "scope_settings"
+    __table_args__ = (
+        UniqueConstraint("chat_id", "message_thread_id", name="uq_scope_settings"),
+        Index("ix_scope_settings_scope", "chat_id", "message_thread_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    chat_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    message_thread_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    retrieval_top_k: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    summary_batch_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    summary_model: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    raw_message_retention_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    knowledge_retention_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    review_before_compact: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    updated_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class MemoryReviewItem(Base):
+    __tablename__ = "memory_review_items"
+    __table_args__ = (
+        Index("ix_memory_review_scope_status", "chat_id", "message_thread_id", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    message_thread_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    source_message_ids: Mapped[list[int]] = mapped_column(JSON, nullable=False, default=list)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    reviewed_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class BotEvent(Base):

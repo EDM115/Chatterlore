@@ -37,7 +37,7 @@ def test_migrate_uses_alembic_revision(monkeypatch: pytest.MonkeyPatch, tmp_path
     assert result.exit_code == 0, result.output
     with sqlite3.connect(db_path) as connection:
         revision = connection.execute("select version_num from alembic_version").fetchone()
-    assert revision == ("0001_initial",)
+    assert revision == ("0002_phase2_memory_quality",)
 
 
 def test_export_memory_rejects_invalid_format_and_scope(

@@ -6,11 +6,22 @@ from aiogram.types import BufferedInputFile, Message
 
 from pzp_ai_bot.app_context import AppContext
 from pzp_ai_bot.memory.scope import Scope, parse_scope
-from pzp_ai_bot.memory.service import IncomingMessage, format_results, parse_memory_export_format
+from pzp_ai_bot.memory.service import (
+    IncomingMessage,
+    format_results,
+    format_review_previews,
+    format_scope_settings,
+    parse_memory_export_format,
+    parse_scope_settings_args,
+)
 from pzp_ai_bot.telegram.commands import command_help_text
 from pzp_ai_bot.telegram.utils import (
     is_command_text,
+    message_chat_title,
+    message_chat_username,
     message_created_at,
+    message_permalink,
+    message_topic_title,
     message_user_id,
     message_username,
     parse_key_values,
@@ -112,6 +123,46 @@ def build_router(context: AppContext) -> Router:
         status = await context.memory.learn_status(scope_from_message(message))
         await message.answer("\n".join(f"{key}: {value}" for key, value in status.items()))
 
+    @router.message(Command("memory_settings"))
+    async def memory_settings(message: Message, command: CommandObject) -> None:
+        if not await require_admin(message):
+            return
+        args = parse_key_values(command.args)
+        try:
+            scope = parse_scope(
+                args.get("scope", "this_topic"), current=scope_from_message(message)
+            )
+            updates = parse_scope_settings_args(args)
+        except ValueError as exc:
+            await message.answer(str(exc))
+            return
+        if not updates:
+            settings = await context.memory.get_scope_settings(scope)
+            await message.answer(format_scope_settings(settings))
+            return
+        settings = await context.memory.set_scope_settings(
+            scope, updates, updated_by=message_user_id(message)
+        )
+        await message.answer("Updated memory settings:\n" + format_scope_settings(settings))
+
+    @router.message(Command("memory_prune"))
+    async def memory_prune(message: Message, command: CommandObject) -> None:
+        if not await require_admin(message):
+            return
+        args = parse_key_values(command.args)
+        try:
+            scope = parse_scope(
+                args.get("scope", "this_topic"), current=scope_from_message(message)
+            )
+        except ValueError as exc:
+            await message.answer(str(exc))
+            return
+        result = await context.memory.prune_retention(scope)
+        await message.answer(
+            "Pruned memory retention:\n"
+            + "\n".join(f"{key}: {value}" for key, value in result.items())
+        )
+
     @router.message(Command("allow_chat"))
     async def allow_chat(message: Message) -> None:
         if not await require_admin(message):
@@ -187,6 +238,47 @@ def build_router(context: AppContext) -> Router:
         count = await context.memory.summarize_now(scope_from_message(message))
         await message.answer(f"Summarized {count} pending messages.")
 
+    @router.message(Command("memory_reviews"))
+    async def memory_reviews(message: Message, command: CommandObject) -> None:
+        if not await require_admin(message):
+            return
+        args = parse_key_values(command.args)
+        try:
+            scope = parse_scope(
+                args.get("scope", "this_topic"), current=scope_from_message(message)
+            )
+        except ValueError as exc:
+            await message.answer(str(exc))
+            return
+        reviews = await context.memory.pending_reviews(scope)
+        await message.answer(format_review_previews(reviews)[:3900])
+
+    @router.message(Command("memory_approve"))
+    async def memory_approve(message: Message, command: CommandObject) -> None:
+        if not await require_admin(message):
+            return
+        try:
+            review_id = int((command.args or "").strip().split()[0])
+            item_id = await context.memory.approve_review(
+                review_id, reviewed_by=message_user_id(message)
+            )
+        except (IndexError, ValueError) as exc:
+            await message.answer(str(exc) if str(exc) else "Usage: /memory_approve <review_id>")
+            return
+        await message.answer(f"Approved memory review #{review_id} as item #{item_id}.")
+
+    @router.message(Command("memory_reject"))
+    async def memory_reject(message: Message, command: CommandObject) -> None:
+        if not await require_admin(message):
+            return
+        try:
+            review_id = int((command.args or "").strip().split()[0])
+            await context.memory.reject_review(review_id, reviewed_by=message_user_id(message))
+        except (IndexError, ValueError) as exc:
+            await message.answer(str(exc) if str(exc) else "Usage: /memory_reject <review_id>")
+            return
+        await message.answer(f"Rejected memory review #{review_id}.")
+
     @router.message(Command("forget"))
     async def forget(message: Message, command: CommandObject) -> None:
         if not await require_admin(message):
@@ -226,6 +318,10 @@ def build_router(context: AppContext) -> Router:
                 is_bot=bool(getattr(getattr(message, "from_user", None), "is_bot", False)),
                 is_command=is_command_text(text),
                 is_chat_admin=is_chat_admin,
+                chat_title=message_chat_title(message),
+                chat_username=message_chat_username(message),
+                topic_title=message_topic_title(message),
+                message_permalink=message_permalink(message),
             )
         )
 
