@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from secrets import token_urlsafe
 from typing import Literal
@@ -18,6 +18,7 @@ from pzp_ai_bot.db.repositories import (
     KnowledgeRepository,
     MessageRepository,
     PolicyRepository,
+    utc_now,
 )
 from pzp_ai_bot.db.session import session_scope
 from pzp_ai_bot.memory.markdown import MarkdownMemoryStore
@@ -46,6 +47,16 @@ class IngestResult:
     reason: str
     message_db_id: int | None = None
     summarized: bool = False
+
+
+MemoryExportFormat = Literal["md", "jsonl"]
+
+
+@dataclass(frozen=True, slots=True)
+class JsonlImportItem:
+    kind: str
+    content: str
+    source_message_ids: list[int]
 
 
 class MemoryService:
@@ -109,7 +120,7 @@ class MemoryService:
                 is_chat_admin=incoming.is_chat_admin,
             )
             message_repo = MessageRepository(session)
-            message = await message_repo.add(
+            message, created = await message_repo.add(
                 telegram_message_id=incoming.telegram_message_id,
                 scope=incoming.scope,
                 user_id=incoming.user_id,
@@ -121,6 +132,8 @@ class MemoryService:
                 reply_to_message_id=incoming.reply_to_message_id,
                 created_at=incoming.created_at,
             )
+            if not created:
+                return IngestResult(message.learned, "duplicate_message", message.id, False)
             if not decision.allowed:
                 return IngestResult(False, decision.reason, message.id)
             vector = (await self.embedding_provider.embed([text]))[0]
@@ -143,11 +156,18 @@ class MemoryService:
 
     async def summarize_now(self, scope: Scope) -> int:
         async with session_scope(self.session_factory) as session:
+            if scope.is_global:
+                return await self._summarize_pending_scopes_in_session(session)
             pending = await MessageRepository(session).pending_for_summary(scope)
             if not pending:
                 return 0
             await self._summarize_pending_in_session(session, scope, pending)
             return len(pending)
+
+    async def summarize_idle(self, *, now: datetime | None = None) -> int:
+        cutoff = (now or utc_now()) - timedelta(seconds=self.settings.summary_idle_seconds)
+        async with session_scope(self.session_factory) as session:
+            return await self._summarize_pending_scopes_in_session(session, idle_before=cutoff)
 
     async def remember(
         self, scope: Scope, content: str, source_message_id: int | None = None
@@ -235,8 +255,10 @@ class MemoryService:
             return path
 
     async def export_memory(
-        self, scope: Scope | None = None, fmt: Literal["md", "jsonl"] = "md"
+        self, scope: Scope | None = None, fmt: MemoryExportFormat = "md"
     ) -> str:
+        if fmt not in {"md", "jsonl"}:
+            raise ValueError("format must be md or jsonl")
         async with session_scope(self.session_factory) as session:
             items = await KnowledgeRepository(session).list_scope(scope)
             if fmt == "jsonl":
@@ -264,45 +286,36 @@ class MemoryService:
             return "\n".join(lines).rstrip() + "\n"
 
     async def import_jsonl(self, path: Path, scope: Scope) -> int:
+        rows = load_jsonl_import(path)
         count = 0
         async with session_scope(self.session_factory) as session:
             knowledge_repo = KnowledgeRepository(session)
             embedding_repo = EmbeddingRepository(session)
-            with path.open("r", encoding="utf-8") as handle:
-                for line in handle:
-                    if not line.strip():
-                        continue
-                    payload = json.loads(line)
-                    content = str(payload.get("content") or payload.get("text") or "").strip()
-                    if not content:
-                        continue
-                    source_ids = [int(value) for value in payload.get("source_message_ids", [])]
-                    item = await knowledge_repo.add(
-                        scope=scope,
-                        kind=str(payload.get("kind") or "imported_note"),
-                        content=content,
-                        source_message_ids=source_ids,
-                    )
-                    vector = (await self.embedding_provider.embed([content]))[0]
-                    await embedding_repo.add(
-                        target_type="knowledge_item",
-                        target_id=item.id,
-                        scope=scope,
-                        provider=self.embedding_provider.name,
-                        model=getattr(
-                            self.embedding_provider,
-                            "embedding_model",
-                            self.embedding_provider.model,
-                        ),
-                        vector=vector,
-                    )
-                    self.markdown.append_daily(
-                        scope=scope,
-                        content=f"- {content}",
-                        source_message_ids=source_ids,
-                        kind="import",
-                    )
-                    count += 1
+            for row in rows:
+                item = await knowledge_repo.add(
+                    scope=scope,
+                    kind=row.kind,
+                    content=row.content,
+                    source_message_ids=row.source_message_ids,
+                )
+                vector = (await self.embedding_provider.embed([row.content]))[0]
+                await embedding_repo.add(
+                    target_type="knowledge_item",
+                    target_id=item.id,
+                    scope=scope,
+                    provider=self.embedding_provider.name,
+                    model=getattr(
+                        self.embedding_provider, "embedding_model", self.embedding_provider.model
+                    ),
+                    vector=vector,
+                )
+                self.markdown.append_daily(
+                    scope=scope,
+                    content=f"- {row.content}",
+                    source_message_ids=row.source_message_ids,
+                    kind="import",
+                )
+                count += 1
         await self.compact_memory()
         return count
 
@@ -343,6 +356,19 @@ class MemoryService:
         await self.compact_memory()
         detail = f"{messages} messages, {items} knowledge items, {embeddings} embeddings."
         return (True, f"Forgot scope {scope.key}: {detail}")
+
+    async def _summarize_pending_scopes_in_session(
+        self, session, *, idle_before: datetime | None = None
+    ) -> int:
+        message_repo = MessageRepository(session)
+        count = 0
+        for scope in await message_repo.pending_scopes(idle_before=idle_before):
+            pending = await message_repo.pending_for_summary(scope)
+            if not pending:
+                continue
+            await self._summarize_pending_in_session(session, scope, pending)
+            count += len(pending)
+        return count
 
     async def _summarize_pending_in_session(self, session, scope: Scope, pending) -> None:
         prompt_lines = [
@@ -405,6 +431,52 @@ class MemoryService:
 
 def normalize_text(text: str) -> str:
     return " ".join(text.strip().split())
+
+
+def parse_memory_export_format(raw: str) -> MemoryExportFormat:
+    if raw == "md":
+        return "md"
+    if raw == "jsonl":
+        return "jsonl"
+    raise ValueError("format must be md or jsonl")
+
+
+def load_jsonl_import(path: Path) -> list[JsonlImportItem]:
+    rows: list[JsonlImportItem] = []
+    with path.open("r", encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            if not line.strip():
+                continue
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"malformed JSONL at line {line_number}: {exc.msg}") from exc
+            if not isinstance(payload, dict):
+                raise ValueError(f"malformed JSONL at line {line_number}: row must be an object")
+            content = str(payload.get("content") or payload.get("text") or "").strip()
+            if not content:
+                raise ValueError(f"malformed JSONL at line {line_number}: content is required")
+            raw_source_ids = payload.get("source_message_ids", [])
+            if not isinstance(raw_source_ids, list):
+                raise ValueError(
+                    f"malformed JSONL at line {line_number}: source_message_ids must be a list"
+                )
+            try:
+                source_ids = [int(value) for value in raw_source_ids]
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"malformed JSONL at line {line_number}: source_message_ids must be integers"
+                ) from exc
+            rows.append(
+                JsonlImportItem(
+                    kind=str(payload.get("kind") or "imported_note"),
+                    content=content,
+                    source_message_ids=source_ids,
+                )
+            )
+    if not rows:
+        raise ValueError("import file contains no memory items")
+    return rows
 
 
 def format_results(results: list[SearchResult]) -> str:

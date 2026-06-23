@@ -39,7 +39,8 @@ class Retriever:
     async def search(self, query: str, scope: Scope, top_k: int = 6) -> list[SearchResult]:
         query_vector = (await self.embedder.embed([query]))[0]
         embeddings = await self.embedding_repo.list_for_retrieval(scope)
-        scored: list[RetrievedItem] = []
+        knowledge_scored: list[RetrievedItem] = []
+        message_scored: list[RetrievedItem] = []
         for embedding, vector in embeddings:
             score = cosine_similarity(query_vector, vector)
             content = ""
@@ -51,8 +52,17 @@ class Retriever:
                 content = item.content
                 source_ids = list(item.source_message_ids)
             elif embedding.target_type == "message":
+                message = await self.message_repo.get(embedding.target_id)
+                if message is None or not message.learned:
+                    continue
+                content = message.text
+                source_ids = [message.telegram_message_id]
+            else:
                 continue
-            scored.append(
+            target = (
+                knowledge_scored if embedding.target_type == "knowledge_item" else message_scored
+            )
+            target.append(
                 RetrievedItem(
                     target_type=embedding.target_type,
                     target_id=embedding.target_id,
@@ -62,7 +72,11 @@ class Retriever:
                     scope=Scope(embedding.chat_id, embedding.message_thread_id),
                 )
             )
-        scored.sort(key=lambda item: item.score, reverse=True)
+        knowledge_scored.sort(key=lambda item: item.score, reverse=True)
+        message_scored.sort(key=lambda item: item.score, reverse=True)
+        scored = knowledge_scored[:top_k]
+        if len(scored) < top_k:
+            scored.extend(message_scored[: top_k - len(scored)])
         results = [
             SearchResult(
                 content=item.content,
@@ -75,7 +89,7 @@ class Retriever:
         ]
         if results:
             return results
-        recent = await self.message_repo.recent(scope, limit=min(3, top_k))
+        recent = await self.message_repo.recent(scope, limit=min(3, top_k), learned_only=True)
         return [
             SearchResult(
                 content=message.text,

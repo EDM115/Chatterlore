@@ -54,9 +54,12 @@ def parse_scope(raw: str | None, *, current: Scope | None = None) -> Scope:
             raise ValueError("this_topic scope is not available")
         return current
     parts = raw.split(":")
-    if len(parts) == 1:
-        return Scope(int(parts[0]), None)
-    if len(parts) == 2:
-        thread = None if parts[1] in {"", "main", "none"} else int(parts[1])
-        return Scope(int(parts[0]), thread)
+    try:
+        if len(parts) == 1:
+            return Scope(int(parts[0]), None)
+        if len(parts) == 2:
+            thread = None if parts[1] in {"", "main", "none"} else int(parts[1])
+            return Scope(int(parts[0]), thread)
+    except ValueError as exc:
+        raise ValueError(f"invalid scope: {raw}") from exc
     raise ValueError(f"invalid scope: {raw}")

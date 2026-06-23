@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-from typing import Literal, cast
-
 from aiogram import F, Router
 from aiogram.filters import Command, CommandObject
 from aiogram.types import BufferedInputFile, Message
 
 from pzp_ai_bot.app_context import AppContext
 from pzp_ai_bot.memory.scope import Scope, parse_scope
-from pzp_ai_bot.memory.service import IncomingMessage, format_results
+from pzp_ai_bot.memory.service import IncomingMessage, format_results, parse_memory_export_format
+from pzp_ai_bot.telegram.commands import command_help_text
 from pzp_ai_bot.telegram.utils import (
     is_command_text,
     message_created_at,
@@ -49,23 +48,35 @@ def build_router(context: AppContext) -> Router:
         results = await context.memory.search(scope_from_message(message), query)
         await message.answer(format_results(results)[:3900])
 
+    @router.message(Command("help"))
+    async def help_command(message: Message) -> None:
+        await message.answer(command_help_text()[:3900])
+
     @router.message(Command("memory_export"))
     async def memory_export(message: Message, command: CommandObject) -> None:
         args = (command.args or "").strip()
-        fmt: Literal["md", "jsonl"] = "md"
+        raw_format = "md"
         raw_scope = "current"
         for token in args.split():
             if token in {"md", "jsonl"}:
-                fmt = cast(Literal["md", "jsonl"], token)
+                raw_format = token
             elif token.startswith("scope="):
                 raw_scope = token.removeprefix("scope=")
-        scope = parse_scope(raw_scope, current=scope_from_message(message))
+            else:
+                await message.answer("Usage: /memory_export [md|jsonl] [scope=...]")
+                return
+        fmt = parse_memory_export_format(raw_format)
+        try:
+            scope = parse_scope(raw_scope, current=scope_from_message(message))
+        except ValueError as exc:
+            await message.answer(str(exc))
+            return
         if scope.is_global and not context.admins.is_bot_admin(message_user_id(message)):
             await message.answer("Only configured bot admins can export all memory.")
             return
         payload = await context.memory.export_memory(
             scope if not scope.is_global else None, fmt=fmt
-        )  # type: ignore[arg-type]
+        )
         suffix = "jsonl" if fmt == "jsonl" else "md"
         document = BufferedInputFile(
             payload.encode("utf-8"), filename=f"memory_{scope.filename_stem}.{suffix}"
@@ -181,7 +192,13 @@ def build_router(context: AppContext) -> Router:
         if not await require_admin(message):
             return
         args = parse_key_values(command.args)
-        scope = parse_scope(args.get("scope", "this_topic"), current=scope_from_message(message))
+        try:
+            scope = parse_scope(
+                args.get("scope", "this_topic"), current=scope_from_message(message)
+            )
+        except ValueError as exc:
+            await message.answer(str(exc))
+            return
         if scope.is_global and not context.admins.is_bot_admin(message_user_id(message)):
             await message.answer("Only configured bot admins can forget all memory.")
             return

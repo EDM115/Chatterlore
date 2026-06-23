@@ -4,6 +4,8 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from alembic import command
+from alembic.config import Config
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -29,6 +31,20 @@ def create_engine(settings: Settings) -> AsyncEngine:
 def create_session_factory(settings: Settings) -> async_sessionmaker[AsyncSession]:
     engine = create_engine(settings)
     return async_sessionmaker(engine, expire_on_commit=False)
+
+
+def create_alembic_config(settings: Settings) -> Config:
+    project_root = Path(__file__).resolve().parents[3]
+    config = Config(str(project_root / "alembic.ini"))
+    config.set_main_option("script_location", str(project_root / "alembic"))
+    config.attributes["settings"] = settings
+    return config
+
+
+def upgrade_schema(settings: Settings, revision: str = "head") -> None:
+    settings.memory_dir.mkdir(parents=True, exist_ok=True)
+    ensure_parent_for_sqlite(settings)
+    command.upgrade(create_alembic_config(settings), revision)
 
 
 async def create_schema(settings: Settings) -> None:

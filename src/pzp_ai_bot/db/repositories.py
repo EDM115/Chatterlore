@@ -58,7 +58,7 @@ class MessageRepository:
         skip_reason: str | None,
         reply_to_message_id: int | None,
         created_at: datetime,
-    ) -> Message:
+    ) -> tuple[Message, bool]:
         existing = await self.session.scalar(
             select(Message).where(
                 Message.chat_id == scope.chat_id,
@@ -69,7 +69,7 @@ class MessageRepository:
             )
         )
         if existing is not None:
-            return existing
+            return existing, False
         message = Message(
             telegram_message_id=telegram_message_id,
             chat_id=int(scope.chat_id or 0),
@@ -86,7 +86,7 @@ class MessageRepository:
         )
         self.session.add(message)
         await self.session.flush()
-        return message
+        return message, True
 
     async def pending_for_summary(self, scope: Scope, limit: int | None = None) -> list[Message]:
         stmt = (
@@ -102,6 +102,18 @@ class MessageRepository:
             stmt = stmt.limit(limit)
         return list((await self.session.scalars(stmt)).all())
 
+    async def pending_scopes(self, *, idle_before: datetime | None = None) -> list[Scope]:
+        stmt = (
+            select(Message.chat_id, Message.message_thread_id)
+            .where(Message.learned.is_(True), Message.summarized_at.is_(None))
+            .group_by(Message.chat_id, Message.message_thread_id)
+            .order_by(Message.chat_id, Message.message_thread_id)
+        )
+        if idle_before is not None:
+            stmt = stmt.having(func.max(Message.ingested_at) <= idle_before)
+        rows = (await self.session.execute(stmt)).all()
+        return [Scope(int(chat_id), thread_id) for chat_id, thread_id in rows]
+
     async def mark_summarized(self, ids: list[int]) -> None:
         if not ids:
             return
@@ -109,13 +121,20 @@ class MessageRepository:
             update(Message).where(Message.id.in_(ids)).values(summarized_at=utc_now())
         )
 
-    async def recent(self, scope: Scope, limit: int = 10) -> list[Message]:
+    async def get(self, message_id: int) -> Message | None:
+        return await self.session.get(Message, message_id)
+
+    async def recent(
+        self, scope: Scope, limit: int = 10, *, learned_only: bool = False
+    ) -> list[Message]:
         stmt = (
             select(Message)
             .where(scope_filter(Message, scope))
             .order_by(Message.created_at.desc(), Message.id.desc())
             .limit(limit)
         )
+        if learned_only:
+            stmt = stmt.where(Message.learned.is_(True))
         rows = list((await self.session.scalars(stmt)).all())
         return list(reversed(rows))
 
@@ -198,6 +217,16 @@ class EmbeddingRepository:
         model: str,
         vector: list[float],
     ) -> Embedding:
+        existing = await self.session.scalar(
+            select(Embedding).where(
+                Embedding.target_type == target_type,
+                Embedding.target_id == target_id,
+                Embedding.provider == provider,
+                Embedding.model == model,
+            )
+        )
+        if existing is not None:
+            return existing
         embedding = Embedding(
             target_type=target_type,
             target_id=target_id,
@@ -253,8 +282,8 @@ class PolicyRepository:
             _nullable_eq(LearningPolicy.user_id, user_id),
             _nullable_eq(LearningPolicy.key, key),
         )
-        row = await self.session.scalar(stmt)
-        if row is None:
+        rows = list((await self.session.scalars(stmt.order_by(LearningPolicy.id.asc()))).all())
+        if not rows:
             row = LearningPolicy(
                 policy_type=policy_type,
                 chat_id=chat_id,
@@ -268,10 +297,13 @@ class PolicyRepository:
             )
             self.session.add(row)
         else:
+            row = rows[0]
             row.enabled = enabled
             row.value = value
             row.updated_by = updated_by
             row.updated_at = utc_now()
+            for duplicate in rows[1:]:
+                await self.session.delete(duplicate)
         await self.session.flush()
         return row
 

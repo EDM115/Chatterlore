@@ -6,7 +6,7 @@ See `PLAN.md` and the files in `docs/` for setup, commands, privacy notes, and d
 ## Quick Start
 
 ```powershell
-uv sync --extra dev
+uv sync --extra dev,local
 Copy-Item .env.example .env
 uv run pzp-bot migrate
 uv run pytest
