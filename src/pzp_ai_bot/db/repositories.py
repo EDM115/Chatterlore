@@ -11,6 +11,7 @@ from pzp_ai_bot.db.models import (
     AIUsage,
     BotEvent,
     Embedding,
+    ForgetChallenge,
     KnowledgeItem,
     LearningPolicy,
     MemoryProfile,
@@ -18,6 +19,7 @@ from pzp_ai_bot.db.models import (
     MemoryReviewItem,
     MemoryScopePermission,
     Message,
+    RuntimeSetting,
     ScopeMetadata,
     ScopeSettings,
     SummaryTemplate,
@@ -1032,6 +1034,158 @@ class SystemPromptTemplateRepository:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class RuntimeSettingView:
+    key: str
+    value: Any
+    previous_value: Any
+    updated_by: int | None
+    updated_at: datetime
+    version: int
+
+
+class RuntimeSettingRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def list_settings(self) -> list[RuntimeSettingView]:
+        rows = list(
+            (
+                await self.session.scalars(
+                    select(RuntimeSetting).order_by(RuntimeSetting.key.asc())
+                )
+            ).all()
+        )
+        return [runtime_setting_view(row) for row in rows]
+
+    async def values(self) -> dict[str, Any]:
+        rows = list((await self.session.scalars(select(RuntimeSetting))).all())
+        return {row.key: _setting_payload_value(row.value) for row in rows}
+
+    async def set_value(
+        self, *, key: str, value: Any, updated_by: int | None = None
+    ) -> RuntimeSettingView:
+        clean_key = key.strip().lower()
+        row = await self.session.scalar(
+            select(RuntimeSetting).where(RuntimeSetting.key == clean_key)
+        )
+        payload = {"value": value}
+        now = utc_now()
+        if row is None:
+            row = RuntimeSetting(
+                key=clean_key,
+                value=payload,
+                previous_value=None,
+                updated_by=updated_by,
+                updated_at=now,
+                version=1,
+            )
+            self.session.add(row)
+        else:
+            row.previous_value = dict(row.value)
+            row.value = payload
+            row.updated_by = updated_by
+            row.updated_at = now
+            row.version += 1
+        await self.session.flush()
+        return runtime_setting_view(row)
+
+
+@dataclass(frozen=True, slots=True)
+class ForgetChallengeView:
+    id: int
+    scope: Scope
+    user_id: int
+    token_hash: str
+    expires_at: datetime
+    consumed_at: datetime | None
+    created_at: datetime
+
+
+class ForgetChallengeRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def latest_active(
+        self, *, scope: Scope, user_id: int, now: datetime | None = None
+    ) -> ForgetChallengeView | None:
+        current = now or utc_now()
+        row = await self.session.scalar(
+            select(ForgetChallenge)
+            .where(
+                _nullable_eq(ForgetChallenge.chat_id, scope.chat_id),
+                _nullable_eq(ForgetChallenge.message_thread_id, scope.thread_id),
+                ForgetChallenge.user_id == user_id,
+                ForgetChallenge.consumed_at.is_(None),
+                ForgetChallenge.expires_at >= current,
+            )
+            .order_by(ForgetChallenge.created_at.desc(), ForgetChallenge.id.desc())
+        )
+        return forget_challenge_view(row) if row is not None else None
+
+    async def create(
+        self, *, scope: Scope, user_id: int, token_hash: str, expires_at: datetime
+    ) -> ForgetChallengeView:
+        current = utc_now()
+        await self.session.execute(
+            update(ForgetChallenge)
+            .where(
+                _nullable_eq(ForgetChallenge.chat_id, scope.chat_id),
+                _nullable_eq(ForgetChallenge.message_thread_id, scope.thread_id),
+                ForgetChallenge.user_id == user_id,
+                ForgetChallenge.consumed_at.is_(None),
+            )
+            .values(consumed_at=current)
+        )
+        row = ForgetChallenge(
+            chat_id=scope.chat_id,
+            message_thread_id=scope.thread_id,
+            user_id=user_id,
+            token_hash=token_hash,
+            expires_at=expires_at,
+            consumed_at=None,
+            created_at=current,
+        )
+        self.session.add(row)
+        await self.session.flush()
+        return forget_challenge_view(row)
+
+    async def consume(self, challenge_id: int) -> None:
+        row = await self.session.get(ForgetChallenge, challenge_id)
+        if row is not None:
+            row.consumed_at = utc_now()
+            await self.session.flush()
+
+
+def runtime_setting_view(row: RuntimeSetting) -> RuntimeSettingView:
+    return RuntimeSettingView(
+        key=row.key,
+        value=_setting_payload_value(row.value),
+        previous_value=_setting_payload_value(row.previous_value),
+        updated_by=row.updated_by,
+        updated_at=row.updated_at,
+        version=row.version,
+    )
+
+
+def forget_challenge_view(row: ForgetChallenge) -> ForgetChallengeView:
+    return ForgetChallengeView(
+        id=row.id,
+        scope=Scope(row.chat_id, row.message_thread_id),
+        user_id=row.user_id,
+        token_hash=row.token_hash,
+        expires_at=row.expires_at,
+        consumed_at=row.consumed_at,
+        created_at=row.created_at,
+    )
+
+
+def _setting_payload_value(payload: dict[str, Any] | None) -> Any:
+    if payload is None:
+        return None
+    return payload.get("value")
+
+
 class EventRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -1082,6 +1236,18 @@ class EventRepository:
         self.session.add(usage)
         await self.session.flush()
         return usage
+
+    async def list_events(
+        self, *, limit: int = 50, event_type: str | None = None, scope: Scope | None = None
+    ) -> list[BotEvent]:
+        stmt = (
+            select(BotEvent).order_by(BotEvent.created_at.desc(), BotEvent.id.desc()).limit(limit)
+        )
+        if event_type is not None:
+            stmt = stmt.where(BotEvent.event_type == event_type)
+        if scope is not None:
+            stmt = stmt.where(scope_filter(BotEvent, scope))
+        return list((await self.session.scalars(stmt)).all())
 
     async def count_events(self) -> int:
         return int(await self.session.scalar(select(func.count(BotEvent.id))) or 0)

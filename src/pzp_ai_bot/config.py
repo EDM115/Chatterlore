@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     openai_base_url: str = "https://api.openai.com/v1"
     provider_retry_attempts: int = Field(default=3, ge=1)
     provider_retry_backoff_seconds: float = Field(default=0.5, ge=0.0)
+    log_level: str = "INFO"
 
     learning_default_enabled: bool = False
     redact_before_ai: bool = True
@@ -64,6 +65,8 @@ class Settings(BaseSettings):
     allowed_reasoning_levels: str = "low,medium,high"
     summary_batch_size: int = Field(default=25, ge=1)
     summary_idle_seconds: int = Field(default=900, ge=1)
+    runtime_settings_refresh_seconds: int = Field(default=60, ge=1)
+    forget_confirm_ttl_seconds: int = Field(default=600, ge=1)
     retrieval_top_k: int = Field(default=6, ge=1)
     raw_message_retention_days: int | None = Field(default=None, ge=1)
     knowledge_retention_days: int | None = Field(default=None, ge=1)

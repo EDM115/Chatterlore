@@ -37,7 +37,7 @@ def test_migrate_uses_alembic_revision(monkeypatch: pytest.MonkeyPatch, tmp_path
     assert result.exit_code == 0, result.output
     with sqlite3.connect(db_path) as connection:
         revision = connection.execute("select version_num from alembic_version").fetchone()
-    assert revision == ("0004_phase3_provider_ai_hardening",)
+    assert revision == ("0005_phase5_operations_settings",)
 
 
 def test_export_memory_rejects_invalid_format_and_scope(
@@ -63,3 +63,29 @@ def test_import_jsonl_rejects_empty_file(monkeypatch: pytest.MonkeyPatch, tmp_pa
 
     assert result.exit_code != 0
     assert "import file contains no memory items" in result.output
+
+
+def test_phase5_runtime_audit_and_db_maintenance_commands(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    configure_cli_env(monkeypatch, tmp_path)
+
+    runtime_result = runner.invoke(app, ["runtime-settings", "--set", "retrieval_top_k=7"])
+    audit_result = runner.invoke(
+        app, ["audit-events", "--event-type", "runtime_settings_update", "--format", "jsonl"]
+    )
+    stats_result = runner.invoke(app, ["db-stats"])
+    integrity_result = runner.invoke(app, ["db-integrity"])
+    backup_path = tmp_path / "backup.db"
+    backup_result = runner.invoke(app, ["db-backup", "--out", str(backup_path)])
+
+    assert runtime_result.exit_code == 0, runtime_result.output
+    assert "retrieval_top_k: 7" in runtime_result.output
+    assert audit_result.exit_code == 0, audit_result.output
+    assert "runtime_settings_update" in audit_result.output
+    assert stats_result.exit_code == 0, stats_result.output
+    assert "table_runtime_settings" in stats_result.output
+    assert integrity_result.exit_code == 0, integrity_result.output
+    assert "integrity_check: ok" in integrity_result.output
+    assert backup_result.exit_code == 0, backup_result.output
+    assert backup_path.exists()

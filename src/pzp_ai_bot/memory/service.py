@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 from collections import defaultdict
@@ -19,12 +20,15 @@ from pzp_ai_bot.db.repositories import (
     EffectiveScopeSettings,
     EmbeddingRepository,
     EventRepository,
+    ForgetChallengeRepository,
     KnowledgeRepository,
     MemoryProfileRepository,
     MemoryProfileView,
     MemoryReviewRepository,
     MessageRepository,
     PolicyRepository,
+    RuntimeSettingRepository,
+    RuntimeSettingView,
     ScopeMetadataRepository,
     ScopeSettingsRepository,
     SummaryTemplateRepository,
@@ -143,6 +147,46 @@ class AIRequestOptions:
     summary_template_override: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class AuditEventPreview:
+    id: int
+    event_type: str
+    scope: Scope | None
+    user_id: int | None
+    payload: dict[str, Any]
+    created_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeSettingPreview:
+    key: str
+    value: Any
+    default_value: Any
+    previous_value: Any
+    updated_by: int | None
+    updated_at: datetime | None
+    version: int | None
+
+
+SAFE_RUNTIME_SETTING_TYPES: dict[str, str] = {
+    "learning_default_enabled": "bool",
+    "retrieval_top_k": "positive_int",
+    "summary_batch_size": "positive_int",
+    "summary_idle_seconds": "positive_int",
+    "summary_model": "str",
+    "system_prompt_template": "str",
+    "provider_profile": "str",
+    "chat_model": "str",
+    "embedding_model": "str",
+    "reasoning_level": "str",
+    "answer_min_score": "non_negative_float",
+    "forget_confirm_ttl_seconds": "positive_int",
+    "raw_message_retention_days": "optional_positive_int",
+    "knowledge_retention_days": "optional_positive_int",
+    "review_before_compact": "bool",
+}
+
+
 BUILTIN_SUMMARY_TEMPLATES: dict[str, str] = {
     "general": "Keep stable facts, decisions, preferences, todos, and open questions.",
     "decisions": "Extract only durable decisions, owners, deadlines, and source-backed rationale.",
@@ -173,13 +217,17 @@ class MemoryService:
         self.embedding_provider = embedding_provider
         self.provider_registry = provider_registry or ProviderRegistry(settings)
         self.markdown = MarkdownMemoryStore(settings.memory_dir)
-        self._forget_tokens: dict[tuple[str, int], str] = {}
+        self._runtime_overrides: dict[str, Any] = {}
 
     async def set_learning(
         self, scope: Scope | None, enabled: bool, updated_by: int | None = None
     ) -> None:
         async with session_scope(self.session_factory) as session:
-            policy = PolicyService(self.settings, PolicyRepository(session))
+            policy = PolicyService(
+                self.settings,
+                PolicyRepository(session),
+                learning_default_enabled=self.runtime_setting("learning_default_enabled"),
+            )
             await policy.set_learning(scope, enabled, updated_by)
             await EventRepository(session).add(
                 event_type="learning_policy",
@@ -192,19 +240,31 @@ class MemoryService:
         self, scope: Scope | None, user_id: int, allowed: bool, updated_by: int | None = None
     ) -> None:
         async with session_scope(self.session_factory) as session:
-            policy = PolicyService(self.settings, PolicyRepository(session))
+            policy = PolicyService(
+                self.settings,
+                PolicyRepository(session),
+                learning_default_enabled=self.runtime_setting("learning_default_enabled"),
+            )
             await policy.set_user(scope, user_id, allowed, updated_by)
 
     async def set_allow_admins(
         self, scope: Scope | None, enabled: bool, updated_by: int | None = None
     ) -> None:
         async with session_scope(self.session_factory) as session:
-            policy = PolicyService(self.settings, PolicyRepository(session))
+            policy = PolicyService(
+                self.settings,
+                PolicyRepository(session),
+                learning_default_enabled=self.runtime_setting("learning_default_enabled"),
+            )
             await policy.set_allow_admins(scope, enabled, updated_by)
 
     async def learn_status(self, scope: Scope) -> dict[str, bool | int | str | None]:
         async with session_scope(self.session_factory) as session:
-            policy = PolicyService(self.settings, PolicyRepository(session))
+            policy = PolicyService(
+                self.settings,
+                PolicyRepository(session),
+                learning_default_enabled=self.runtime_setting("learning_default_enabled"),
+            )
             status: dict[str, bool | int | str | None] = {}
             status.update(await policy.status(scope))
             scope_settings = await ScopeSettingsRepository(session).effective(
@@ -248,6 +308,109 @@ class MemoryService:
             )
             return await repo.effective(scope, self._default_scope_settings())
 
+    async def refresh_runtime_settings(self) -> dict[str, Any]:
+        async with session_scope(self.session_factory) as session:
+            values = await RuntimeSettingRepository(session).values()
+        self._runtime_overrides = validate_runtime_settings_values(values, self.settings)
+        return dict(self._runtime_overrides)
+
+    async def set_runtime_settings(
+        self, updates: dict[str, Any], *, updated_by: int | None = None
+    ) -> list[RuntimeSettingPreview]:
+        validated = validate_runtime_settings_values(updates, self.settings)
+        async with session_scope(self.session_factory) as session:
+            repo = RuntimeSettingRepository(session)
+            rows: list[RuntimeSettingView] = []
+            for key, value in validated.items():
+                rows.append(await repo.set_value(key=key, value=value, updated_by=updated_by))
+            await EventRepository(session).add(
+                event_type="runtime_settings_update",
+                user_id=updated_by,
+                payload={"updates": validated},
+            )
+        await self.refresh_runtime_settings()
+        return [self._runtime_setting_preview(row) for row in rows]
+
+    async def list_runtime_settings(self) -> list[RuntimeSettingPreview]:
+        async with session_scope(self.session_factory) as session:
+            rows = await RuntimeSettingRepository(session).list_settings()
+        stored = {row.key: row for row in rows}
+        previews: list[RuntimeSettingPreview] = []
+        for key in sorted(SAFE_RUNTIME_SETTING_TYPES):
+            row = stored.get(key)
+            if row is None:
+                previews.append(
+                    RuntimeSettingPreview(
+                        key=key,
+                        value=self.runtime_setting(key),
+                        default_value=self.runtime_default(key),
+                        previous_value=None,
+                        updated_by=None,
+                        updated_at=None,
+                        version=None,
+                    )
+                )
+            else:
+                previews.append(self._runtime_setting_preview(row))
+        return previews
+
+    async def audit_events(
+        self, *, limit: int = 50, event_type: str | None = None, scope: Scope | None = None
+    ) -> list[AuditEventPreview]:
+        async with session_scope(self.session_factory) as session:
+            rows = await EventRepository(session).list_events(
+                limit=limit, event_type=event_type, scope=scope
+            )
+        return [
+            AuditEventPreview(
+                id=row.id,
+                event_type=row.event_type,
+                scope=Scope(row.chat_id, row.message_thread_id)
+                if row.chat_id is not None
+                else None,
+                user_id=row.user_id,
+                payload=row.payload or {},
+                created_at=row.created_at,
+            )
+            for row in rows
+        ]
+
+    def runtime_default(self, key: str) -> Any:
+        defaults = {
+            "learning_default_enabled": self.settings.learning_default_enabled,
+            "retrieval_top_k": self.settings.retrieval_top_k,
+            "summary_batch_size": self.settings.summary_batch_size,
+            "summary_idle_seconds": self.settings.summary_idle_seconds,
+            "summary_model": self.settings.chat_model,
+            "system_prompt_template": self.settings.system_prompt_template,
+            "provider_profile": self.settings.ai_provider_profile,
+            "chat_model": self.settings.chat_model,
+            "embedding_model": self.settings.embedding_model,
+            "reasoning_level": self.settings.reasoning_level,
+            "answer_min_score": self.settings.answer_min_score,
+            "forget_confirm_ttl_seconds": self.settings.forget_confirm_ttl_seconds,
+            "raw_message_retention_days": self.settings.raw_message_retention_days,
+            "knowledge_retention_days": self.settings.knowledge_retention_days,
+            "review_before_compact": self.settings.review_before_compact,
+        }
+        if key not in defaults:
+            raise ValueError(f"unknown runtime setting: {key}")
+        return defaults[key]
+
+    def runtime_setting(self, key: str) -> Any:
+        return self._runtime_overrides.get(key, self.runtime_default(key))
+
+    def _runtime_setting_preview(self, row: RuntimeSettingView) -> RuntimeSettingPreview:
+        return RuntimeSettingPreview(
+            key=row.key,
+            value=row.value,
+            default_value=self.runtime_default(row.key),
+            previous_value=row.previous_value,
+            updated_by=row.updated_by,
+            updated_at=row.updated_at,
+            version=row.version,
+        )
+
     async def ingest(self, incoming: IncomingMessage) -> IngestResult:
         text = normalize_text(incoming.text)
         summarized = False
@@ -263,7 +426,11 @@ class MemoryService:
             scope_settings = await ScopeSettingsRepository(session).effective(
                 incoming.scope, self._default_scope_settings()
             )
-            policy = PolicyService(self.settings, PolicyRepository(session))
+            policy = PolicyService(
+                self.settings,
+                PolicyRepository(session),
+                learning_default_enabled=self.runtime_setting("learning_default_enabled"),
+            )
             decision = await policy.decide(
                 scope=incoming.scope,
                 user_id=incoming.user_id,
@@ -355,7 +522,9 @@ class MemoryService:
         return count
 
     async def summarize_idle(self, *, now: datetime | None = None) -> int:
-        cutoff = (now or utc_now()) - timedelta(seconds=self.settings.summary_idle_seconds)
+        cutoff = (now or utc_now()) - timedelta(
+            seconds=int(self.runtime_setting("summary_idle_seconds"))
+        )
         async with session_scope(self.session_factory) as session:
             count, needs_compact = await self._summarize_pending_scopes_in_session(
                 session, idle_before=cutoff
@@ -492,7 +661,7 @@ class MemoryService:
             scope, question, top_k=top_k, profile_name=profile_name, ai_options=ai_options
         )
         best_score = max((result.score for result in results), default=0.0)
-        if not results or best_score < self.settings.answer_min_score:
+        if not results or best_score < float(self.runtime_setting("answer_min_score")):
             return f"{ANSWER_INSUFFICIENT_CONTEXT} Best scoped-memory score: {best_score:.3f}."
         context = format_results(results)
         async with session_scope(self.session_factory) as session:
@@ -1027,17 +1196,41 @@ class MemoryService:
                 payload={"review_id": review_id},
             )
 
-    def arm_forget(self, scope: Scope, user_id: int) -> str:
-        token = token_urlsafe(8)
-        self._forget_tokens[(scope.key, user_id)] = token
-        return token
+    def forget_token_hash(self, scope: Scope, user_id: int, token: str) -> str:
+        payload = f"{scope.key}:{user_id}:{token}".encode()
+        return hashlib.sha256(payload).hexdigest()
 
     async def forget(self, scope: Scope, user_id: int, confirm: str | None) -> tuple[bool, str]:
-        expected = self._forget_tokens.get((scope.key, user_id))
-        if expected is None or expected != confirm:
-            token = self.arm_forget(scope, user_id)
-            return False, f"Confirmation required. Re-run with confirm={token}"
         async with session_scope(self.session_factory) as session:
+            challenge_repo = ForgetChallengeRepository(session)
+            challenge = await challenge_repo.latest_active(scope=scope, user_id=user_id)
+            if (
+                challenge is None
+                or not confirm
+                or challenge.token_hash != self.forget_token_hash(scope, user_id, confirm)
+            ):
+                token = token_urlsafe(8)
+                expires_at = utc_now() + timedelta(
+                    seconds=int(self.runtime_setting("forget_confirm_ttl_seconds"))
+                )
+                await challenge_repo.create(
+                    scope=scope,
+                    user_id=user_id,
+                    token_hash=self.forget_token_hash(scope, user_id, token),
+                    expires_at=expires_at,
+                )
+                await EventRepository(session).add(
+                    event_type="forget_confirmation_created",
+                    scope=scope,
+                    user_id=user_id,
+                    payload={"expires_at": expires_at.isoformat()},
+                )
+                message = (
+                    "Confirmation required. "
+                    f"Re-run with confirm={token} before {expires_at.isoformat()}"
+                )
+                return (False, message)
+            await challenge_repo.consume(challenge.id)
             messages = await MessageRepository(session).delete_scope(scope)
             items = await KnowledgeRepository(session).delete_scope(scope)
             embeddings = await EmbeddingRepository(session).delete_scope(scope)
@@ -1047,7 +1240,6 @@ class MemoryService:
                 user_id=user_id,
                 payload={"messages": messages, "knowledge_items": items, "embeddings": embeddings},
             )
-        self._forget_tokens.pop((scope.key, user_id), None)
         await self.compact_memory()
         detail = f"{messages} messages, {items} knowledge items, {embeddings} embeddings."
         return (True, f"Forgot scope {scope.key}: {detail}")
@@ -1274,7 +1466,11 @@ class MemoryService:
         profile = await profile_repo.get_profile(profile_name)
         if profile is None:
             raise ValueError(f"profile {profile_name!r} was not found")
-        policy = PolicyService(self.settings, PolicyRepository(session))
+        policy = PolicyService(
+            self.settings,
+            PolicyRepository(session),
+            learning_default_enabled=self.runtime_setting("learning_default_enabled"),
+        )
         scopes = [destination]
         for source in profile.source_scopes:
             if source == destination:
@@ -1436,19 +1632,20 @@ class MemoryService:
         return await self._system_prompt_template_in_session(session, template_name)
 
     def _default_scope_settings(self) -> EffectiveScopeSettings:
-        default_profile = self.settings.provider_profile_by_name(self.settings.ai_provider_profile)
+        provider_profile = str(self.runtime_setting("provider_profile"))
+        default_profile = self.settings.provider_profile_by_name(provider_profile)
         return EffectiveScopeSettings(
-            retrieval_top_k=self.settings.retrieval_top_k,
-            summary_batch_size=self.settings.summary_batch_size,
-            summary_model=self.settings.chat_model,
-            system_prompt_template=self.settings.system_prompt_template,
+            retrieval_top_k=int(self.runtime_setting("retrieval_top_k")),
+            summary_batch_size=int(self.runtime_setting("summary_batch_size")),
+            summary_model=str(self.runtime_setting("summary_model")),
+            system_prompt_template=str(self.runtime_setting("system_prompt_template")),
             provider_profile=default_profile.name,
-            chat_model=self.settings.chat_model,
-            embedding_model=self.settings.embedding_model,
-            reasoning_level=self.settings.reasoning_level,
-            raw_message_retention_days=self.settings.raw_message_retention_days,
-            knowledge_retention_days=self.settings.knowledge_retention_days,
-            review_before_compact=self.settings.review_before_compact,
+            chat_model=str(self.runtime_setting("chat_model")),
+            embedding_model=str(self.runtime_setting("embedding_model")),
+            reasoning_level=str(self.runtime_setting("reasoning_level")),
+            raw_message_retention_days=self.runtime_setting("raw_message_retention_days"),
+            knowledge_retention_days=self.runtime_setting("knowledge_retention_days"),
+            review_before_compact=bool(self.runtime_setting("review_before_compact")),
         )
 
     def _embedding_model_name(self) -> str:
@@ -1848,6 +2045,126 @@ def format_review_previews(reviews: list[MemoryReviewPreview]) -> str:
             f"- #{review.id} {review.scope.key} {review.kind} sources:{sources} {compact[:240]}"
         )
     return "\n".join(lines)
+
+
+def parse_runtime_settings_args(raw: dict[str, str]) -> dict[str, Any]:
+    aliases = {
+        "top_k": "retrieval_top_k",
+        "provider": "provider_profile",
+        "system_prompt": "system_prompt_template",
+        "raw_retention_days": "raw_message_retention_days",
+        "knowledge_retention_days": "knowledge_retention_days",
+    }
+    updates: dict[str, Any] = {}
+    for raw_key, raw_value in raw.items():
+        key = aliases.get(raw_key, raw_key)
+        if key not in SAFE_RUNTIME_SETTING_TYPES:
+            continue
+        kind = SAFE_RUNTIME_SETTING_TYPES[key]
+        value = raw_value.strip()
+        if kind == "bool":
+            updates[key] = parse_bool(value)
+        elif kind == "positive_int":
+            updates[key] = int(value)
+        elif kind == "optional_positive_int":
+            updates[key] = None if value.lower() == "off" else int(value)
+        elif kind == "non_negative_float":
+            updates[key] = float(value)
+        else:
+            updates[key] = value
+    return updates
+
+
+def validate_runtime_settings_values(values: dict[str, Any], settings: Settings) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for key, value in values.items():
+        if key not in SAFE_RUNTIME_SETTING_TYPES:
+            raise ValueError(f"unknown runtime setting: {key}")
+        kind = SAFE_RUNTIME_SETTING_TYPES[key]
+        if kind == "bool":
+            if not isinstance(value, bool):
+                raise ValueError(f"{key} must be true or false")
+            out[key] = value
+        elif kind == "positive_int":
+            clean = int(value)
+            if clean < 1:
+                raise ValueError(f"{key} must be >= 1")
+            out[key] = clean
+        elif kind == "optional_positive_int":
+            if value is None:
+                out[key] = None
+            else:
+                clean = int(value)
+                if clean < 1:
+                    raise ValueError(f"{key} must be >= 1 or off")
+                out[key] = clean
+        elif kind == "non_negative_float":
+            clean_float = float(value)
+            if clean_float < 0:
+                raise ValueError(f"{key} must be >= 0")
+            out[key] = clean_float
+        else:
+            clean_str = str(value).strip()
+            if not clean_str:
+                raise ValueError(f"{key} cannot be empty")
+            out[key] = clean_str
+    if "provider_profile" in out:
+        settings.provider_profile_by_name(str(out["provider_profile"]))
+    if "chat_model" in out:
+        settings.validate_chat_model(str(out["chat_model"]))
+    if "summary_model" in out:
+        settings.validate_chat_model(str(out["summary_model"]))
+    if "embedding_model" in out:
+        settings.validate_embedding_model(str(out["embedding_model"]))
+    if "reasoning_level" in out:
+        settings.validate_reasoning_level(str(out["reasoning_level"]))
+    return out
+
+
+def format_runtime_settings(settings: list[RuntimeSettingPreview]) -> str:
+    if not settings:
+        return "No runtime settings are editable."
+    lines = ["Runtime settings:"]
+    for setting in settings:
+        value = setting.value if setting.value is not None else "off"
+        default = setting.default_value if setting.default_value is not None else "off"
+        suffix = "default" if setting.version is None else f"v{setting.version}"
+        lines.append(f"- {setting.key}: {value} (default: {default}, {suffix})")
+    return "\n".join(lines)
+
+
+def format_audit_events(events: list[AuditEventPreview]) -> str:
+    if not events:
+        return "No audit events found."
+    lines = ["Audit events:"]
+    for event in events[:50]:
+        scope = event.scope.key if event.scope is not None else "global"
+        payload = json.dumps(event.payload, ensure_ascii=False, sort_keys=True)
+        user = event.user_id if event.user_id is not None else "system"
+        lines.append(
+            f"- #{event.id} {event.created_at.isoformat()} {event.event_type} "
+            f"scope={scope} user={user} payload={payload[:240]}"
+        )
+    return "\n".join(lines)
+
+
+def audit_events_jsonl(events: list[AuditEventPreview]) -> str:
+    lines = []
+    for event in events:
+        lines.append(
+            json.dumps(
+                {
+                    "id": event.id,
+                    "event_type": event.event_type,
+                    "scope": event.scope.key if event.scope is not None else None,
+                    "user_id": event.user_id,
+                    "payload": event.payload,
+                    "created_at": event.created_at.isoformat(),
+                },
+                ensure_ascii=False,
+            )
+        )
+    return "\n".join(lines) + ("\n" if lines else "")
 
 
 def fallback_answer(results: list[SearchResult]) -> str:

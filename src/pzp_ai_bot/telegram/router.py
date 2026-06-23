@@ -11,18 +11,22 @@ from pzp_ai_bot.memory.scope import Scope, parse_scope
 from pzp_ai_bot.memory.service import (
     AIRequestOptions,
     IncomingMessage,
+    format_audit_events,
     format_memory_profiles,
     format_note_previews,
     format_range_summary,
     format_results,
     format_review_previews,
+    format_runtime_settings,
     format_scope_settings,
     format_summary_templates,
     format_system_prompt_templates,
+    parse_bool,
     parse_memory_export_format,
     parse_note_create_args,
     parse_note_edit_args,
     parse_profile_sources,
+    parse_runtime_settings_args,
     parse_scope_settings_args,
 )
 from pzp_ai_bot.telegram.commands import command_help_text
@@ -161,6 +165,54 @@ def build_router(context: AppContext) -> Router:
         for key, value in counts.items():
             lines.append(f"- {key}: {value}")
         await safe_answer(message, "\n".join(lines))
+
+    @router.message(Command("audit_events"))
+    async def audit_events(message: Message, command: CommandObject) -> None:
+        if not await require_admin(message):
+            return
+        args = parse_key_values(command.args)
+        try:
+            limit = int(args.get("limit", "20"))
+            scope = parse_scope(
+                args.get("scope", "this_topic"), current=scope_from_message(message)
+            )
+        except ValueError as exc:
+            await safe_answer(message, str(exc))
+            return
+        if scope.is_global and not context.admins.is_bot_admin(message_user_id(message)):
+            await safe_answer(message, "Only configured bot admins can audit all memory events.")
+            return
+        events = await context.memory.audit_events(
+            limit=limit, event_type=args.get("event_type"), scope=None if scope.is_global else scope
+        )
+        await safe_answer(message, format_audit_events(events)[:3900])
+
+    @router.message(Command("runtime_settings"))
+    async def runtime_settings(message: Message, command: CommandObject) -> None:
+        if not await require_admin(message):
+            return
+        args = parse_key_values(command.args)
+        try:
+            reload_requested = parse_bool(args.pop("reload")) if "reload" in args else False
+            updates = parse_runtime_settings_args(args)
+            unknown = sorted(
+                set(args)
+                - set(updates)
+                - {"top_k", "provider", "system_prompt", "raw_retention_days"}
+            )
+            if unknown:
+                raise ValueError(f"unknown runtime setting: {unknown[0]}")
+            if reload_requested:
+                await context.memory.refresh_runtime_settings()
+            if updates:
+                await context.memory.set_runtime_settings(
+                    updates, updated_by=message_user_id(message)
+                )
+            settings = await context.memory.list_runtime_settings()
+        except ValueError as exc:
+            await safe_answer(message, str(exc))
+            return
+        await safe_answer(message, format_runtime_settings(settings)[:3900])
 
     @router.message(Command("learn_on"))
     async def learn_on(message: Message) -> None:

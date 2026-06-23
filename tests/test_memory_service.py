@@ -31,7 +31,7 @@ async def test_forget_requires_confirmation_and_deletes_scope(context: AppContex
     await context.memory.remember(scope, "Delete me.")
     ok, prompt = await context.memory.forget(scope, user_id=111, confirm=None)
     assert ok is False
-    token = prompt.split("confirm=", 1)[1]
+    token = prompt.split("confirm=", 1)[1].split(" ", 1)[0]
     ok, result = await context.memory.forget(scope, user_id=111, confirm=token)
     assert ok is True
     assert "Forgot scope" in result

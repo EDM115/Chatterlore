@@ -1,6 +1,6 @@
 ---
 goal: Telegram Group Memory Assistant PoC v1
-version: 0.8
+version: 0.9
 date_created: 2026-06-16
 last_updated: 2026-06-23
 owner: PZP-AI
@@ -73,8 +73,8 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 - **DONE**: `src/pzp_ai_bot/db/` defines async SQLAlchemy models, session helpers and repositories
 - **DONE**: `src/pzp_ai_bot/memory/` defines scopes, policy evaluation, vectors, Markdown persistence, retrieval and memory orchestration
 - **DONE**: `src/pzp_ai_bot/telegram/` defines admin checks, utility parsing, command router, polling runtime and webhook runtime
-- **DONE**: `alembic/versions/0001_initial.py` creates the initial SQLite schema, `alembic/versions/0002_phase2_memory_quality.py` adds Phase 2 metadata/settings/review tables, `alembic/versions/0003_phase2_remaining_memory_tools.py` adds manual-note metadata, profiles, permissions and summary templates, and `alembic/versions/0004_phase3_provider_ai_hardening.py` adds provider/prompt settings and AI usage metadata.
-- **DONE**: `docs/` contains setup, architecture, command, privacy, deployment and test documentation
+- **DONE**: `alembic/versions/0001_initial.py` creates the initial SQLite schema, `alembic/versions/0002_phase2_memory_quality.py` adds Phase 2 metadata/settings/review tables, `alembic/versions/0003_phase2_remaining_memory_tools.py` adds manual-note metadata, profiles, permissions and summary templates, `alembic/versions/0004_phase3_provider_ai_hardening.py` adds provider/prompt settings and AI usage metadata, and `alembic/versions/0005_phase5_operations_settings.py` adds runtime settings and persisted forget challenges.
+- **DONE**: `docs/` contains setup, architecture, command, privacy, deployment, operations, secrets, release and test documentation
 - **DONE**: `tests/` contains offline unit/integration coverage for core behavior
 
 ## 3. Implemented Behavior
@@ -89,6 +89,9 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 - **DONE**: `pzp-bot import-jsonl --file path --chat-id id [--thread-id id]` imports knowledge items into a scope and rejects empty or malformed JSONL with clear errors
 - **DONE**: `pzp-bot show-config` prints non-secret runtime settings, provider profiles, default system prompt and reasoning level
 - **DONE**: `pzp-bot doctor` checks configured provider profiles, missing OpenAI-compatible API keys, missing local optional dependencies, SQLite parent write access and memory directory write access
+- **DONE**: `pzp-bot audit-events --limit N [--event-type name] [--scope scope] [--format text|jsonl] [--out path]` reviews or exports recent `bot_events`
+- **DONE**: `pzp-bot runtime-settings [--reload] [--set key=value]...` views, reloads or edits validated safe database-backed runtime settings
+- **DONE**: `pzp-bot db-stats`, `db-integrity`, `db-vacuum` and `db-backup --out path` provide SQLite stats, integrity check, vacuum and online backup maintenance commands
 
 ### Telegram Commands
 
@@ -111,12 +114,14 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 - **DONE**: `/memory_templates` and `/memory_template_set` list built-in templates and manage custom summary templates
 - **DONE**: `/system_prompts` and `/system_prompt_set` list built-in answer system prompts and manage custom system prompts
 - **DONE**: `/summarize_range start=<message_id> end=<message_id> [template=name] [provider=name] [model=name] [prompt="one-shot instruction"]` summarizes a bounded learned message range and records source IDs, date interval, template and AI settings metadata
-- **DONE**: `/forget scope=this_topic|this_chat|all confirm=<token>` uses two-step confirmation and deletes scoped memory
+- **DONE**: `/forget scope=this_topic|this_chat|all confirm=<token>` uses persisted expiring two-step confirmation and deletes scoped memory
+- **DONE**: `/audit_events [scope=this_topic|this_chat|all] [event_type=name] [limit=N]` exposes recent `bot_events` for admin review
+- **DONE**: `/runtime_settings [reload=on] [key=value ...]` views, reloads or edits validated safe global runtime defaults from Telegram
 - **DONE**: `/help` returns Telegram-native command discovery text
 
 ### Persistence And Memory
 
-- **DONE**: SQLite tables exist for `messages`, `knowledge_items`, `embeddings`, `learning_policies`, `scope_metadata`, `scope_settings`, `memory_review_items`, `memory_profiles`, `memory_profile_scopes`, `memory_scope_permissions`, `summary_templates`, `system_prompt_templates`, `bot_events` and `ai_usage`
+- **DONE**: SQLite tables exist for `messages`, `knowledge_items`, `embeddings`, `learning_policies`, `scope_metadata`, `scope_settings`, `memory_review_items`, `memory_profiles`, `memory_profile_scopes`, `memory_scope_permissions`, `summary_templates`, `system_prompt_templates`, `runtime_settings`, `forget_challenges`, `bot_events` and `ai_usage`
 - **DONE**: Raw messages are stored with Telegram IDs, chat/thread/user IDs, optional chat/topic/source-link metadata, text, normalized text, learned flag, skip reason, reply ID and timestamps
 - **DONE**: Knowledge items store kind, content, scope, source message IDs, JSON metadata and timestamps
 - **DONE**: Embeddings store target type, target ID, scope, provider, model, dimensions, vector blob and timestamp
@@ -150,6 +155,8 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 - **DONE**: Admin service caches `get_chat_administrators` results and honors configured `BOT_ADMINS`
 - **DONE**: Polling and webhook runtimes start a background idle summarizer using `SUMMARY_IDLE_SECONDS`
 - **DONE**: Polling and webhook startup register the current Telegram command list through `set_my_commands`
+- **DONE**: Polling and webhook runtimes start a background runtime-settings refresher using `RUNTIME_SETTINGS_REFRESH_SECONDS`
+- **DONE**: Telegram update handling uses structured `structlog` logging with safe chat/thread/user/message metadata, duration and error fields
 
 ### Documentation
 
@@ -159,18 +166,22 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 - **DONE**: `docs/commands.md` documents command behavior
 - **DONE**: `docs/privacy.md` documents privacy mode, storage, retention, review workflow and provider notes
 - **DONE**: `docs/deployment.md` documents polling, webhook and Docker usage
+- **DONE**: `docs/operations.md` documents structured logs, audit review, runtime settings and DB maintenance
+- **DONE**: `docs/secrets.md` documents `.env`, provider keys, Telegram token/webhook secret rotation and container secret guidance
+- **DONE**: `docs/release.md` documents versioning, release checks, migration state and manual Telegram smoke expectations
 - **DONE**: `docs/testing.md` documents offline verification commands
 
 ### Current Verification Baseline
 
-- **DONE**: `uv sync --extra dev --extra local` passed on 2026-06-23 after Phase 4 implementation
-- **DONE**: `uv run ruff format --check .` passed on 2026-06-23 after Phase 4 implementation
-- **DONE**: `uv run ruff check .` passed on 2026-06-23 after Phase 4 implementation
-- **DONE**: `uv run ty check` passed on 2026-06-23 after Phase 4 implementation
-- **DONE**: `uv run pytest` passed on 2026-06-23 with 83 passed and 1 skipped after Phase 4 implementation
-- **DONE**: `uv run alembic upgrade head` passed on 2026-06-23 through `0004_phase3_provider_ai_hardening` after Phase 4 implementation
-- **DONE**: `uv run pzp-bot --help` displayed all CLI commands on 2026-06-23 after Phase 4 implementation
-- **DONE**: `uv run pzp-bot doctor` passed on 2026-06-23 with the default fake provider after Phase 4 implementation
+- **DONE**: `uv sync --extra dev --extra local` passed on 2026-06-23 after Phase 5
+- **DONE**: `uv run ruff format --check .` passed on 2026-06-23 after Phase 5
+- **DONE**: `uv run ruff check .` passed on 2026-06-23 after Phase 5
+- **DONE**: `uv run ty check` passed on 2026-06-23 after Phase 5
+- **DONE**: `uv run pytest` passed on 2026-06-23 with 92 passed and 1 skipped after Phase 5
+- **DONE**: `uv run alembic upgrade head` passed on 2026-06-23 through `0005_phase5_operations_settings` after Phase 5
+- **DONE**: `uv run pzp-bot --help` displayed all CLI commands on 2026-06-23 after Phase 5
+- **DONE**: `uv run pzp-bot doctor` passed on 2026-06-23 with the default fake provider after Phase 5
+- **DEFERRED**: Docker runtime verification and CI workflow validation are intentionally deferred until Docker is fully installed on this workstation
 - **TODO**: Re-run the full verification baseline after every future code or dependency change and update this section with date and result
 
 ## 4. Known Partial Implementations
@@ -178,11 +189,9 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 These items exist but are not complete enough for production-quality v1.
 
 - **PARTIAL-008**: `/stats` reports counts but not DB size, per-scope counts, AI call totals, error rates, or provider latency percentiles
-- **PARTIAL-009**: Forget confirmation tokens are in process memory only. They are lost on restart and are not audited as pending destructive operations
 - **PARTIAL-010**: Admin cache is in memory only. That is acceptable for PoC but should be tunable and observable before production
 - **PARTIAL-011**: JSONL import supports generic `content` or `text` rows. It does not import Telegram Desktop exports or rich Telegram update dumps yet
-- **PARTIAL-014**: Docker image exists but has not been validated as a complete deployed runtime with mounted data and environment
-- **PARTIAL-015**: `structlog` is installed but structured logging is not implemented
+- **PARTIAL-014**: Docker image exists but runtime verification is explicitly deferred until Docker is fully installed on this workstation
 
 ## 5. Remaining Roadmap
 
@@ -263,18 +272,18 @@ Goal: make the bot safe to run for a real group over time.
 
 | Task     | Status | Description                                                  | Acceptance Criteria                                                                                                                                                  |
 | -------- | ------ | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| TASK-044 | TODO   | Implement structured logging with `structlog`                | Logs include event type, chat_id, thread_id, user_id when safe, duration and error                                                                                  |
-| TASK-045 | TODO   | Add audit views or export for `bot_events`                   | Admin actions and destructive operations can be reviewed                                                                                                             |
-| TASK-046 | TODO   | Persist forget confirmation challenges with expiry           | Restart does not create ambiguous destructive state; expired tokens cannot be reused                                                                                 |
-| TASK-047 | TODO   | Add DB maintenance commands                                  | CLI supports vacuum, backup, stats and integrity check for SQLite                                                                                                   |
-| TASK-048 | TODO   | Add privacy/data-processing documentation for real group use | Docs explain what is stored, sent to providers, retained, exported and deleted                                                                                      |
+| TASK-044 | DONE   | Implement structured logging with `structlog`                | Logs include event type, chat_id, thread_id, user_id when safe, duration and error                                                                                  |
+| TASK-045 | DONE   | Add audit views or export for `bot_events`                   | Admin actions and destructive operations can be reviewed                                                                                                             |
+| TASK-046 | DONE   | Persist forget confirmation challenges with expiry           | Restart does not create ambiguous destructive state; expired tokens cannot be reused                                                                                 |
+| TASK-047 | DONE   | Add DB maintenance commands                                  | CLI supports vacuum, backup, stats and integrity check for SQLite                                                                                                   |
+| TASK-048 | DONE   | Add privacy/data-processing documentation for real group use | Docs explain what is stored, sent to providers, retained, exported and deleted                                                                                      |
 | TASK-049 | DONE   | Add retention pruning command and policy                     | Admin can prune raw messages older than configured window per scope                                                                                                  |
-| TASK-050 | TODO   | Add secrets handling guidance for deployment                 | Docs cover `.env`, Docker secrets, provider keys and Telegram token rotation                                                                                        |
-| TASK-051 | TODO   | Add Docker runtime verification                              | `docker compose up --build` starts with mounted `./data`; documented health check passes                                                                             |
-| TASK-052 | TODO   | Add CI workflow                                              | CI runs `uv sync --extra dev`, `ruff format --check`, `ruff check`, `ty check` and `pytest`                                                                         |
-| TASK-053 | TODO   | Add release checklist and versioning process                 | Releases specify migration state, config changes and manual Telegram smoke tests                                                                                    |
-| TASK-054 | TODO   | Add reloadless runtime settings refresh                      | File/env-backed settings have a validated reload path; long-running polling and webhook runtimes apply non-secret setting changes without process restart where safe |
-| TASK-055 | TODO   | Store editable bot settings in the database                  | Runtime settings that are safe to edit are persisted with schema, validation, defaults, scope overrides, audit events and rollback behavior                         |
+| TASK-050 | DONE   | Add secrets handling guidance for deployment                 | Docs cover `.env`, Docker secrets, provider keys and Telegram token rotation                                                                                        |
+| TASK-051 | DEFERRED | Add Docker runtime verification                            | Deferred until Docker is fully installed on this workstation                                                                                                        |
+| TASK-052 | DEFERRED | Add CI workflow                                            | Deferred with Docker/CI work for a later pass                                                                                                                       |
+| TASK-053 | DONE   | Add release checklist and versioning process                 | Releases specify migration state, config changes and manual Telegram smoke tests                                                                                    |
+| TASK-054 | DONE   | Add reloadless runtime settings refresh                      | File/env-backed settings have a validated reload path; long-running polling and webhook runtimes apply non-secret setting changes without process restart where safe |
+| TASK-055 | DONE   | Store editable bot settings in the database                  | Runtime settings that are safe to edit are persisted with schema, validation, defaults, scope overrides, audit events and rollback behavior                         |
 
 ### Phase 6 - Product Completeness
 
@@ -309,7 +318,8 @@ Goal: make the assistant useful to group admins and participants beyond the mini
 - **DONE**: `tests/test_phase3.py` verifies OpenAI-compatible retry/redaction payloads, local optional-dependency failure messaging, provider-profile fail-closed behavior, CLI doctor diagnostics, embedding usage metadata, insufficient-context answers and prompt/model/reasoning usage metadata
 - **DONE**: `tests/test_phase4_telegram.py` verifies aiogram dispatcher-fed command and normal-message updates, mocked Bot API methods, valid webhook dispatch, polling startup sequencing, command matrix coverage, ingestion edge cases, Telegram API failure/rate-limit handling and export document chunking
 - **DONE**: `tests/test_telegram_live.py` provides optional skipped-by-default `telegram_live` smoke coverage for real Telegram credentials
-- **DONE**: `tests/test_cli.py` verifies Alembic-backed migration and CLI validation errors for invalid export scope/format and empty JSONL import
+- **DONE**: `tests/test_phase5.py` verifies persisted forget confirmations across restarts, expired confirmation rejection, runtime settings refresh/audit events, audit scope filtering, SQLite stats and runtime-settings refresher scheduling
+- **DONE**: `tests/test_cli.py` verifies Alembic-backed migration, CLI validation errors, Phase 5 runtime settings/audit export commands and DB maintenance commands
 - **DONE**: `tests/test_telegram_commands.py` verifies command help text and mocked `set_my_commands` registration
 - **DONE**: `tests/conftest.py` builds isolated SQLite and fake-provider context
 
@@ -317,7 +327,6 @@ Goal: make the assistant useful to group admins and participants beyond the mini
 
 - **TEST-004**: Broader CLI tests for successful `summarize-now`, successful `export-memory`, successful `import-jsonl` and `show-config`
 - **TEST-013**: Docker smoke test or documented manual verification
-- **TEST-018**: Reloadless settings tests for polling and webhook runtimes
 - **TEST-019**: `/settings` command tests for view, edit, preview, confirm, reject and unauthorized cases
 
 ### Required Verification Commands
@@ -331,6 +340,7 @@ uv run ty check
 uv run pytest
 uv run alembic upgrade head
 uv run pzp-bot --help
+uv run pzp-bot doctor
 ```
 
 Use this explicit local binary if the PATH shim is broken on this Windows machine:
@@ -371,19 +381,19 @@ Required before inviting a real private group:
 - **TODO**: Export and forget workflows are tested with a realistic amount of memory
 - **TODO**: Admin policy behavior is tested with both configured bot admins and chat admins
 - **TODO**: Cross-chat learning is disabled by default and explicitly permissioned for every source and destination scope used in beta
-- **TODO**: Logs are structured and do not leak secrets
-- **TODO**: Docker deployment or target-host deployment is verified
+- **DONE**: Logs are structured and do not leak secrets
+- **DEFERRED**: Docker deployment verification is waiting for Docker to be fully installed on this workstation
 
 ### Gate D - v1 Release
 
 Required before calling this v1 complete:
 
-- **DONE**: All Phase 1, Phase 2, Phase 3 and Phase 4 tasks are complete
-- **TODO**: All Phase 5 tasks are complete or explicitly deferred in this plan
+- **DONE**: All Phase 1, Phase 2, Phase 3, Phase 4 and non-deferred Phase 5 tasks are complete
+- **DONE**: Docker runtime verification and CI workflow work are explicitly deferred in this plan
 - **TODO**: CI runs formatting, linting, type checking, tests and migration checks
 - **TODO**: Migration history is stable and tested from an empty database
 - **TODO**: Memory quality is acceptable on a representative imported dataset
-- **TODO**: Privacy and operational documentation is complete
+- **DONE**: Privacy and operational documentation is complete
 - **TODO**: Manual runbook covers install, upgrade, backup, restore, token rotation, provider switching, prompt/template switching, reloadless settings, `/settings` and emergency forget
 
 ## 8. Operational Runbook
@@ -445,21 +455,22 @@ uv run pzp-bot webhook
 
 ### Admin Settings Target
 
-- `/settings` should become the preferred way to view and edit safe runtime settings from Telegram
-- File and environment values should remain the bootstrap and secret source of truth
-- Non-secret runtime choices such as prompt template, summary template, provider profile, model, reasoning level, memory top-k and batch sizes should be editable without a process restart after validation
-- Provider secrets should not be pasted through Telegram unless a future encrypted secret workflow is explicitly designed and documented
+- `/runtime_settings` is the current global safe runtime-settings command from Telegram
+- `/settings` remains the scoped memory/provider/prompt settings command and is still the Phase 6 target for richer preview/confirmation UX
+- File and environment values remain the bootstrap and secret source of truth
+- Non-secret runtime choices such as learning default, provider profile, model, reasoning level, memory top-k, batch sizes, summary cadence and retention defaults are editable without a process restart after validation
+- Provider secrets must not be pasted through Telegram unless a future encrypted secret workflow is explicitly designed and documented
 
 ## 9. File Ownership Map
 
 - **PROJECT-001**: `pyproject.toml`, `uv.lock`, `.env.example`, `.gitignore`, `README.md`
-- **RUNTIME-001**: `src/pzp_ai_bot/main.py`, `src/pzp_ai_bot/app_context.py`, `src/pzp_ai_bot/config.py`
-- **TELEGRAM-001**: `src/pzp_ai_bot/telegram/admin.py`, `src/pzp_ai_bot/telegram/commands.py`, `src/pzp_ai_bot/telegram/dispatcher.py`, `src/pzp_ai_bot/telegram/router.py`, `src/pzp_ai_bot/telegram/safe_api.py`, `src/pzp_ai_bot/telegram/utils.py`, `src/pzp_ai_bot/telegram/polling.py`, `src/pzp_ai_bot/telegram/webhook.py`
+- **RUNTIME-001**: `src/pzp_ai_bot/main.py`, `src/pzp_ai_bot/app_context.py`, `src/pzp_ai_bot/config.py`, `src/pzp_ai_bot/logging.py`
+- **TELEGRAM-001**: `src/pzp_ai_bot/telegram/admin.py`, `src/pzp_ai_bot/telegram/commands.py`, `src/pzp_ai_bot/telegram/dispatcher.py`, `src/pzp_ai_bot/telegram/middleware.py`, `src/pzp_ai_bot/telegram/router.py`, `src/pzp_ai_bot/telegram/safe_api.py`, `src/pzp_ai_bot/telegram/scheduler.py`, `src/pzp_ai_bot/telegram/utils.py`, `src/pzp_ai_bot/telegram/polling.py`, `src/pzp_ai_bot/telegram/webhook.py`
 - **MEMORY-001**: `src/pzp_ai_bot/memory/service.py`, `src/pzp_ai_bot/memory/prompts.py`, `src/pzp_ai_bot/memory/canonical.py`, `src/pzp_ai_bot/memory/policy.py`, `src/pzp_ai_bot/memory/retrieval.py`, `src/pzp_ai_bot/memory/markdown.py`, `src/pzp_ai_bot/memory/scope.py`, `src/pzp_ai_bot/memory/vector.py`
 - **AI-001**: `src/pzp_ai_bot/ai/protocols.py`, `src/pzp_ai_bot/ai/fake.py`, `src/pzp_ai_bot/ai/openai_compatible.py`, `src/pzp_ai_bot/ai/local.py`, `src/pzp_ai_bot/ai/factory.py`, `src/pzp_ai_bot/ai/redaction.py`
-- **DB-001**: `src/pzp_ai_bot/db/models.py`, `src/pzp_ai_bot/db/repositories.py`, `src/pzp_ai_bot/db/session.py`, `alembic/env.py`, `alembic/versions/0001_initial.py`, `alembic/versions/0002_phase2_memory_quality.py`, `alembic/versions/0003_phase2_remaining_memory_tools.py`, `alembic/versions/0004_phase3_provider_ai_hardening.py`
-- **DOCS-001**: `docs/setup.md`, `docs/architecture.md`, `docs/commands.md`, `docs/privacy.md`, `docs/deployment.md`, `docs/testing.md`
-- **TESTS-001**: `tests/conftest.py`, `tests/test_scope.py`, `tests/test_policy_and_ingestion.py`, `tests/test_memory_service.py`, `tests/test_phase1.py`, `tests/test_phase2.py`, `tests/test_phase2_remaining.py`, `tests/test_phase3.py`, `tests/test_phase4_telegram.py`, `tests/test_cli.py`, `tests/test_telegram_commands.py`, `tests/test_telegram_live.py`, `tests/test_webhook.py`
+- **DB-001**: `src/pzp_ai_bot/db/models.py`, `src/pzp_ai_bot/db/repositories.py`, `src/pzp_ai_bot/db/session.py`, `alembic/env.py`, `alembic/versions/0001_initial.py`, `alembic/versions/0002_phase2_memory_quality.py`, `alembic/versions/0003_phase2_remaining_memory_tools.py`, `alembic/versions/0004_phase3_provider_ai_hardening.py`, `alembic/versions/0005_phase5_operations_settings.py`
+- **DOCS-001**: `docs/setup.md`, `docs/architecture.md`, `docs/commands.md`, `docs/privacy.md`, `docs/deployment.md`, `docs/operations.md`, `docs/secrets.md`, `docs/release.md`, `docs/testing.md`
+- **TESTS-001**: `tests/conftest.py`, `tests/test_scope.py`, `tests/test_policy_and_ingestion.py`, `tests/test_memory_service.py`, `tests/test_phase1.py`, `tests/test_phase2.py`, `tests/test_phase2_remaining.py`, `tests/test_phase3.py`, `tests/test_phase4_telegram.py`, `tests/test_phase5.py`, `tests/test_cli.py`, `tests/test_telegram_commands.py`, `tests/test_telegram_live.py`, `tests/test_webhook.py`
 
 ## 10. Risks And Assumptions
 
@@ -468,12 +479,13 @@ uv run pzp-bot webhook
 - **RISK-003**: Provider costs and privacy risks can grow quickly if large raw chats are summarized by external models
 - **RISK-004**: Current fake provider is useful for deterministic tests but does not prove real answer quality
 - **RISK-005**: Current memory compaction performs deterministic heuristic deduplication but can still miss deeper semantic duplicates or keep low-value facts
-- **RISK-006**: Runtime scheduling and long-running polling/webhook behavior are not yet exercised by tests
+- **RISK-006**: Runtime scheduling has focused tests, but true long-running polling/webhook behavior can still differ under real Telegram load
 - **RISK-007**: Optional local embeddings can pull large model dependencies and need explicit deployment sizing
 - **RISK-008**: Live Telegram behavior may surface API or permission details not covered by offline tests
 - **RISK-009**: Cross-chat learning can leak context across communities if profile permissions are misconfigured or tested only on synthetic scopes
 - **RISK-010**: Runtime prompt/provider changes can make answers non-reproducible unless selected templates, models and reasoning levels are logged with AI usage
-- **RISK-011**: Reloadless settings can leave long-running services in a mixed config state unless changes are validated and applied atomically
+- **RISK-011**: Reloadless settings are validated before persistence and refresh, but concurrent admin edits can still surprise operators without a richer preview/confirmation UX
+- **RISK-012**: Docker runtime verification and CI are deferred until Docker is fully installed locally
 
 - **ASSUMPTION-001**: The project remains Python 3.12 and `uv` managed
 - **ASSUMPTION-002**: v1 remains RAG memory, not online fine-tuning
@@ -503,3 +515,4 @@ uv run pzp-bot webhook
 - **2026-06-23 / v0.6**: Finished remaining Phase 2 TODOs: rich manual note metadata/edit/delete, named cross-chat profiles with explicit source-scope permissions, bounded message-range summaries, reusable summary templates and focused Phase 2 remaining tests
 - **2026-06-23 / v0.7**: Implemented Phase 3 provider and AI hardening: OpenAI-compatible retries, embedding usage telemetry, `doctor`, stronger redaction, versioned prompts, insufficient-context answers, system prompt templates, one-shot AI overrides, provider profiles and scoped model/reasoning settings
 - **2026-06-23 / v0.8**: Implemented Phase 4 Telegram integration coverage: dispatcher-fed updates, mocked Bot API calls, valid webhook and polling startup tests, full command matrix coverage, ingestion edge cases, optional live smoke test, Telegram send failure/rate-limit handling and export document chunking
+- **2026-06-23 / v0.9**: Implemented non-Docker/non-CI Phase 5 operations, observability and security: structured logging, audit export, persisted forget confirmations, DB maintenance commands, privacy/secrets/operations/release docs, reloadless runtime settings and database-backed editable safe settings; Docker runtime verification and CI workflow are explicitly deferred until Docker is available locally
