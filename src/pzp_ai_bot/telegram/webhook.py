@@ -8,7 +8,9 @@ from aiogram.types import Update
 from fastapi import FastAPI, Header, HTTPException, Request
 
 from pzp_ai_bot.app_context import AppContext
+from pzp_ai_bot.telegram.commands import register_bot_commands
 from pzp_ai_bot.telegram.router import build_router
+from pzp_ai_bot.telegram.scheduler import start_idle_summarizer, stop_idle_summarizer
 
 
 def create_webhook_app(context: AppContext) -> FastAPI:
@@ -23,14 +25,17 @@ def create_webhook_app(context: AppContext) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        await bot.set_webhook(
-            context.settings.webhook_url,
-            secret_token=context.settings.webhook_secret,
-            drop_pending_updates=False,
-        )
+        idle_task = start_idle_summarizer(context)
         try:
+            await register_bot_commands(bot)
+            await bot.set_webhook(
+                context.settings.webhook_url,
+                secret_token=context.settings.webhook_secret,
+                drop_pending_updates=False,
+            )
             yield
         finally:
+            await stop_idle_summarizer(idle_task)
             await bot.session.close()
 
     app = FastAPI(title="PZP AI Telegram Memory Bot", lifespan=lifespan)

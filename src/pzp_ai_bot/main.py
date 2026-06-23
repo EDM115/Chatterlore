@@ -9,8 +9,9 @@ from rich.console import Console
 
 from pzp_ai_bot.app_context import build_context
 from pzp_ai_bot.config import get_settings
-from pzp_ai_bot.db.session import create_schema
+from pzp_ai_bot.db.session import upgrade_schema
 from pzp_ai_bot.memory.scope import Scope, parse_scope
+from pzp_ai_bot.memory.service import parse_memory_export_format
 from pzp_ai_bot.telegram.polling import run_polling
 from pzp_ai_bot.telegram.webhook import run_webhook
 
@@ -26,7 +27,7 @@ def run(coro):
 def migrate() -> None:
     """Create or upgrade the local database schema."""
     settings = get_settings()
-    run(create_schema(settings))
+    upgrade_schema(settings)
     console.print(f"Schema ready at [bold]{settings.db_url}[/bold]")
 
 
@@ -55,10 +56,14 @@ def summarize_now(
     """Summarize pending messages for a scope and compact MEMORY.md."""
     settings = get_settings()
     context = run(build_context(settings))
-    parsed = parse_scope(scope, current=Scope.global_scope())
+    try:
+        parsed = parse_scope(scope)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
     count = run(context.memory.summarize_now(parsed))
     run(context.memory.compact_memory())
-    console.print(f"Summarized {count} pending messages for {parsed.key}.")
+    target = "all concrete scopes" if parsed.is_global else parsed.key
+    console.print(f"Summarized {count} pending messages for {target}.")
 
 
 @app.command("export-memory")
@@ -72,14 +77,14 @@ def export_memory(
     out: Annotated[Path | None, typer.Option(help="Optional output file path.")] = None,
 ) -> None:
     """Export Markdown or JSONL memory."""
-    if memory_format not in {"md", "jsonl"}:
-        raise typer.BadParameter("format must be md or jsonl")
+    try:
+        fmt = parse_memory_export_format(memory_format)
+        parsed = parse_scope(scope)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
     settings = get_settings()
     context = run(build_context(settings))
-    parsed = parse_scope(scope, current=Scope.global_scope())
-    payload = run(
-        context.memory.export_memory(None if parsed.is_global else parsed, fmt=memory_format)
-    )  # type: ignore[arg-type]
+    payload = run(context.memory.export_memory(None if parsed.is_global else parsed, fmt=fmt))
     if out is not None:
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(payload, encoding="utf-8")
@@ -98,7 +103,10 @@ def import_jsonl(
     settings = get_settings()
     context = run(build_context(settings))
     scope = Scope(chat_id, thread_id)
-    count = run(context.memory.import_jsonl(file, scope))
+    try:
+        count = run(context.memory.import_jsonl(file, scope))
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
     console.print(f"Imported {count} memory items into {scope.key}.")
 
 

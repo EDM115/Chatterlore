@@ -1,8 +1,8 @@
 ---
 goal: Telegram Group Memory Assistant PoC v1
-version: 0.2
+version: 0.4
 date_created: 2026-06-16
-last_updated: 2026-06-22
+last_updated: 2026-06-23
 owner: PZP-AI
 status: In progress
 tags:
@@ -18,7 +18,8 @@ tags:
 
 ![Status: In progress](https://img.shields.io/badge/status-In%20progress-yellow)  
 This is the living North Star for the Telegram group memory assistant. Keep it updated after every meaningful development pass. It must describe what exists, what is partial, what remainsand what must be true before the project can be considered a working v1.  
-The bot learns scoped group memory from live Telegram messages. v1 learning means scoped RAG memory, not model fine-tuning: record allowed messages, summarize durable knowledge, store embeddings, compact Markdown memoryand answer questions from the current chat or forum-topic scope by default.
+The bot learns scoped group memory from live Telegram messages. v1 learning means scoped RAG memory, not model fine-tuning: record allowed messages, summarize durable knowledge, store embeddings, compact Markdown memoryand answer questions from the current chat or forum-topic scope by default.  
+The plan version evolves independently of the pyproject version. Whenever we move to a new Phase, we bump the minor of the pyproject, with patch evolving as bugfixes inside that phase arrive. v1 in the pyproject will be reached when all 6 phases are complete.
 
 ## 1. Product Requirements And Constraints
 
@@ -57,9 +58,9 @@ The bot learns scoped group memory from live Telegram messages. v1 learning mean
 
 - **DONE**: `pyproject.toml` defines Python 3.12 package `pzp-ai`
 - **DONE**: `uv.lock` exists and dependencies are pinned
-- **DONE**: Runtime dependencies include `aiogram==3.29.0`, `fastapi==0.137.1`, `uvicorn[standard]==0.49.0`, `sqlalchemy[asyncio]==2.0.51`, `aiosqlite==0.22.1`, `alembic==1.18.4`, `openai==2.41.1`, `numpy==2.4.6`, `typer==0.26.7`, `rich==15.0.0`, `structlog==26.1.0` and `orjson==3.11.9`
-- **DONE**: Dev dependencies include `pytest==9.1.0`, `pytest-asyncio==1.4.0`, `pytest-cov==7.1.0`, `respx==0.23.1`, `freezegun==1.5.5`, `httpx2==2.4.0`, `ruff==0.15.17` and `ty==0.0.49`
-- **DONE**: Optional local embedding extra includes `sentence-transformers==5.6.0`
+- **DONE**: Runtime dependencies include `aiogram`, `fastapi`, `uvicorn[standard]`, `sqlalchemy[asyncio]`, `aiosqlite`, `alembic`, `openai`, `numpy`, `typer`, `rich`, `structlog` and `orjson`
+- **DONE**: Dev dependencies include `pytest`, `pytest-asyncio`, `pytest-cov`, `respx`, `freezegun`, `httpx2`, `ruff` and `ty`
+- **DONE**: Optional local embedding extra includes `sentence-transformers`
 - **DONE**: `pzp-bot` console script points to `pzp_ai_bot.main:app`
 - **DONE**: `.env.example`, `.gitignore`, `Dockerfile` and `docker-compose.yml` exist
 
@@ -80,19 +81,19 @@ The bot learns scoped group memory from live Telegram messages. v1 learning mean
 
 ### CLI
 
-- **DONE**: `pzp-bot migrate` creates the schema through SQLAlchemy metadata
+- **DONE**: `pzp-bot migrate` applies Alembic migrations to `head` and records `alembic_version`
 - **DONE**: `pzp-bot polling` builds context, deletes Telegram webhookand starts polling
 - **DONE**: `pzp-bot webhook` builds context, sets Telegram webhookand starts FastAPI
 - **DONE**: `pzp-bot summarize-now --scope <scope>` summarizes pending messages and compacts `MEMORY.md`
-- **DONE**: `pzp-bot export-memory --format md|jsonl --scope <scope> [--out path]` exports memory
-- **DONE**: `pzp-bot import-jsonl --file path --chat-id id [--thread-id id]` imports knowledge items into a scope
+- **DONE**: `pzp-bot export-memory --format md|jsonl --scope <scope> [--out path]` exports memory and rejects unsupported formats or invalid scopes before opening the app context
+- **DONE**: `pzp-bot import-jsonl --file path --chat-id id [--thread-id id]` imports knowledge items into a scope and rejects empty or malformed JSONL with clear errors
 - **DONE**: `pzp-bot show-config` prints non-secret runtime settings
 
 ### Telegram Commands
 
 - **DONE**: `/ask <question>` answers from current scope memory
 - **DONE**: `/memory_search <query>` returns formatted retrieval results
-- **DONE**: `/memory_export [md|jsonl] [scope=...]` sends a Markdown or JSONL export
+- **DONE**: `/memory_export [md|jsonl] [scope=...]` sends a Markdown or JSONL export and rejects unknown tokens
 - **DONE**: `/stats` returns message, learned, skipped, knowledge, embeddingand event counts
 - **DONE**: `/learn_on`, `/learn_off`, `/learn_status` control/report current scope
 - **DONE**: `/allow_chat`, `/deny_chat` enable/disable the chat-level scope
@@ -102,6 +103,7 @@ The bot learns scoped group memory from live Telegram messages. v1 learning mean
 - **DONE**: `/remember <text>` creates a manual durable memory note
 - **DONE**: `/summarize_now` summarizes pending messages for the current scope
 - **DONE**: `/forget scope=this_topic|this_chat|all confirm=<token>` uses two-step confirmation and deletes scoped memory
+- **DONE**: `/help` returns Telegram-native command discovery text
 
 ### Persistence And Memory
 
@@ -116,8 +118,10 @@ The bot learns scoped group memory from live Telegram messages. v1 learning mean
 - **DONE**: `FakeProvider` gives deterministic chat and embedding behavior
 - **DONE**: `OpenAICompatibleProvider` supports configurable chat and embedding calls
 - **DONE**: `LocalSentenceTransformerEmbeddingProvider` supports optional local embeddings when the `local` extra is installed
-- **DONE**: Retrieval uses embedding cosine similarity over knowledge-item embeddings, with recent-message fallback when no knowledge is available
+- **DONE**: Retrieval uses embedding cosine similarity over knowledge-item embeddings first and learned raw-message embeddings as the second tier
 - **DONE**: `/ask` falls back to deterministic scoped results if chat generation fails
+- **DONE**: Duplicate Telegram message ingestion no-ops deterministically and does not duplicate message embeddings
+- **DONE**: Global summarization groups pending messages by concrete chat/topic scope instead of creating mixed global knowledge items
 
 ### Telegram Runtime
 
@@ -126,6 +130,8 @@ The bot learns scoped group memory from live Telegram messages. v1 learning mean
 - **DONE**: Webhook endpoint validates `X-Telegram-Bot-Api-Secret-Token`
 - **DONE**: Topic scope extraction uses `is_topic_message` and `message_thread_id`
 - **DONE**: Admin service caches `get_chat_administrators` results and honors configured `BOT_ADMINS`
+- **DONE**: Polling and webhook runtimes start a background idle summarizer using `SUMMARY_IDLE_SECONDS`
+- **DONE**: Polling and webhook startup register the current Telegram command list through `set_my_commands`
 
 ### Documentation
 
@@ -139,21 +145,19 @@ The bot learns scoped group memory from live Telegram messages. v1 learning mean
 
 ### Current Verification Baseline
 
-- **DONE**: `uv sync --extra dev` completed after dependency installation
-- **DONE**: `uv run pytest` passed with 10 tests before this plan update
-- **DONE**: `uv run ruff check .` passed before this plan update
-- **DONE**: `uv run ty check` passed before this plan update
-- **DONE**: `uv run alembic upgrade head` passed before this plan update
-- **DONE**: `uv run pzp-bot --help` displayed all CLI commands before this plan update
+- **DONE**: `uv sync --extra dev,local` passed on 2026-06-23 after Phase 1 implementation
+- **DONE**: `uv run ruff format --check .` passed on 2026-06-23 after Phase 1 implementation
+- **DONE**: `uv run ruff check .` passed on 2026-06-23 after Phase 1 implementation
+- **DONE**: `uv run ty check` passed on 2026-06-23 after Phase 1 implementation
+- **DONE**: `uv run pytest` passed on 2026-06-23 with 21 tests
+- **DONE**: `uv run alembic upgrade head` passed on 2026-06-23 after Phase 1 implementation
+- **DONE**: `uv run pzp-bot --help` displayed all CLI commands on 2026-06-23 after Phase 1 implementation
 - **TODO**: Re-run the full verification baseline after every future code or dependency change and update this section with date and result
 
 ## 4. Known Partial Implementations
 
 These items exist but are not complete enough for production-quality v1.
 
-- **PARTIAL-001**: Summarization is batch-triggered by message count and manual commands. The planned 15-minute idle flush/scheduler is not implemented
-- **PARTIAL-002**: `pzp-bot migrate` uses `Base.metadata.create_all`; Alembic migration files exist but the CLI does not call Alembic upgrade directly
-- **PARTIAL-003**: Retrieval stores message embeddings but searches knowledge-item embeddings only, then falls back to recent raw messages
 - **PARTIAL-004**: `MEMORY.md` compaction rewrites knowledge items into a grouped Markdown view. It does not yet perform semantic deduplication or LLM-assisted canonical memory merging
 - **PARTIAL-005**: Redaction covers simple secret-like key/value patterns for OpenAI-compatible calls. It is not a comprehensive PII or secrets scrubber
 - **PARTIAL-006**: OpenAI-compatible retry/backoff helper exists but is not consistently wrapped around generation and embedding calls
@@ -175,16 +179,16 @@ Goal: make existing behavior deterministic, internally consistentand covered by 
 
 | Task     | Status | Description                                                                                                                                             | Acceptance Criteria                                                                                                                     |
 | -------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| TASK-001 | TODO   | Implement scheduled idle summarization using `SUMMARY_IDLE_SECONDS` in polling and webhook runtimes                                                     | Pending learned messages are summarized after idle timeout without manual command; unit test uses fake clock or direct scheduler hook   |
-| TASK-002 | TODO   | Fix global CLI summarization semantics. `summarize-now --scope all` must either summarize each concrete scope separately or reject with a clear message | No global summary item is created from mixed chat/topic messages unless explicitly requested; tests cover all/current/chat/topic        |
-| TASK-003 | TODO   | Use Alembic in `pzp-bot migrate` or explicitly rename command to `init-schema`                                                                          | CLI migration path and Alembic migration path are not divergent; test verifies fresh SQLite migration                                   |
-| TASK-004 | TODO   | Add idempotent policy upsert behavior that is robust with nullable SQLite unique columns                                                                | Repeated `/learn_on`, `/allow_user`and `/deny_user` update one logical policy row; test verifies no duplicates                        |
-| TASK-005 | TODO   | Remove remaining `type: ignore[arg-type]` from CLI/router export paths by narrowing format types at parse time                                          | `uv run ty check` passes with no local ignore for export format typing                                                                  |
-| TASK-006 | TODO   | Ensure duplicate Telegram messages update or no-op deterministically                                                                                    | Re-ingesting same `(chat_id, thread_id, message_id)` cannot duplicate raw messages or embeddings; test covers duplicate update delivery |
-| TASK-007 | TODO   | Use message embeddings in retrieval as a second tier below knowledge items                                                                              | `/memory_search` can return relevant raw recent messages with source IDs when no summary exists; tests cover ranking and scope          |
-| TASK-008 | TODO   | Prevent import/export edge cases for empty files, malformed JSONL, invalid scopeand unsupported format                                                | CLI and service return clear errors; tests cover malformed and empty inputs                                                             |
-| TASK-009 | TODO   | Add command help text and optional `/help` command                                                                                                      | Users can discover all commands from Telegram without reading docs                                                                      |
-| TASK-010 | TODO   | Add Telegram command registration through `set_my_commands`                                                                                             | Bot registers current command list at startup; test mocks Bot API call                                                                  |
+| TASK-001 | DONE   | Implement scheduled idle summarization using `SUMMARY_IDLE_SECONDS` in polling and webhook runtimes                                                     | Pending learned messages are summarized after idle timeout without manual command; unit test uses fake clock or direct scheduler hook   |
+| TASK-002 | DONE   | Fix global CLI summarization semantics. `summarize-now --scope all` must either summarize each concrete scope separately or reject with a clear message | No global summary item is created from mixed chat/topic messages unless explicitly requested; tests cover all/current/chat/topic        |
+| TASK-003 | DONE   | Use Alembic in `pzp-bot migrate` or explicitly rename command to `init-schema`                                                                          | CLI migration path and Alembic migration path are not divergent; test verifies fresh SQLite migration                                   |
+| TASK-004 | DONE   | Add idempotent policy upsert behavior that is robust with nullable SQLite unique columns                                                                | Repeated `/learn_on`, `/allow_user`and `/deny_user` update one logical policy row; test verifies no duplicates                        |
+| TASK-005 | DONE   | Remove remaining `type: ignore[arg-type]` from CLI/router export paths by narrowing format types at parse time                                          | `uv run ty check` passes with no local ignore for export format typing                                                                  |
+| TASK-006 | DONE   | Ensure duplicate Telegram messages update or no-op deterministically                                                                                    | Re-ingesting same `(chat_id, thread_id, message_id)` cannot duplicate raw messages or embeddings; test covers duplicate update delivery |
+| TASK-007 | DONE   | Use message embeddings in retrieval as a second tier below knowledge items                                                                              | `/memory_search` can return relevant raw recent messages with source IDs when no summary exists; tests cover ranking and scope          |
+| TASK-008 | DONE   | Prevent import/export edge cases for empty files, malformed JSONL, invalid scopeand unsupported format                                                | CLI and service return clear errors; tests cover malformed and empty inputs                                                             |
+| TASK-009 | DONE   | Add command help text and optional `/help` command                                                                                                      | Users can discover all commands from Telegram without reading docs                                                                      |
+| TASK-010 | DONE   | Add Telegram command registration through `set_my_commands`                                                                                             | Bot registers current command list at startup; test mocks Bot API call                                                                  |
 
 ### Phase 2 - Strengthen Memory Quality
 
@@ -207,7 +211,7 @@ Goal: make `MEMORY.md` a useful canonical memory file rather than only a dump of
 
 ### Phase 3 - Provider And AI Hardening
 
-Goal: make provider failures, privacyand costs explicit and manageable.
+Goal: make provider failures, privacy and costs explicit and manageable.
 
 | Task     | Status | Description                                                                    | Acceptance Criteria                                                                                                                                                     |
 | -------- | ------ | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -286,6 +290,9 @@ Goal: make the assistant useful to group admins and participants beyond the mini
 - **DONE**: `tests/test_policy_and_ingestion.py` verifies learning-disabled skip, learning-enabled summarizationand user deny behavior
 - **DONE**: `tests/test_memory_service.py` verifies scoped remember/search/ask, forget confirmationand JSONL import/export
 - **DONE**: `tests/test_webhook.py` verifies bad webhook secret rejection
+- **DONE**: `tests/test_phase1.py` verifies concrete-scope global summarization, idle summarization, duplicate ingestion idempotency, nullable policy cleanup, message-embedding retrieval and JSONL validation
+- **DONE**: `tests/test_cli.py` verifies Alembic-backed migration and CLI validation errors for invalid export scope/format and empty JSONL import
+- **DONE**: `tests/test_telegram_commands.py` verifies command help text and mocked `set_my_commands` registration
 - **DONE**: `tests/conftest.py` builds isolated SQLite and fake-provider context
 
 ### Tests Still Required
@@ -293,14 +300,9 @@ Goal: make the assistant useful to group admins and participants beyond the mini
 - **TEST-001**: Full aiogram dispatcher tests for every command
 - **TEST-002**: Valid webhook update test
 - **TEST-003**: Mocked Telegram Bot API tests for admin lookup, message sending, document sending, webhook setupand webhook deletion
-- **TEST-004**: CLI tests for `migrate`, `summarize-now`, `export-memory`, `import-jsonl`and `show-config`
-- **TEST-005**: Alembic migration test in pytest, not only manual smoke command
-- **TEST-006**: Duplicate Telegram update ingestion test
-- **TEST-007**: Policy upsert/idempotency test
+- **TEST-004**: Broader CLI tests for successful `summarize-now`, successful `export-memory`, successful `import-jsonl`and `show-config`
 - **TEST-008**: OpenAI-compatible provider request/redaction tests
 - **TEST-009**: Local provider missing-extra failure test
-- **TEST-010**: Scheduler/idle summarization test
-- **TEST-011**: Message embedding retrieval test
 - **TEST-012**: Large export file behavior test
 - **TEST-013**: Docker smoke test or documented manual verification
 - **TEST-014**: Optional `telegram_live` test suite, skipped by default
@@ -314,7 +316,7 @@ Goal: make the assistant useful to group admins and participants beyond the mini
 
 Run these after every implementation pass:
 ```powershell
-uv sync --extra dev
+uv sync --extra dev,local
 uv run ruff format --check .
 uv run ruff check .
 uv run ty check
@@ -336,19 +338,19 @@ Use this explicit local binary if the PATH shim is broken on this Windows machin
 - **DONE**: Offline tests pass with fake provider
 - **DONE**: CLI, memory service, DB, Telegram router, pollingand webhook code exist
 - **DONE**: Documentation exists for setup, architecture, commands, privacy, deploymentand testing
-- **TODO**: Keep this gate green after dependency bumps and plan edits
+- **DONE**: Gate verified green on 2026-06-23 after Phase 1 implementation
 
 ### Gate B - Local Alpha
 
 Required before serious local dogfooding:
 
-- **TODO**: Full verification commands pass from a clean checkout
-- **TODO**: CLI migration path is aligned with Alembic
+- **DONE**: Full verification commands passed on 2026-06-23 from the current checkout
+- **DONE**: CLI migration path is aligned with Alembic
 - **TODO**: Dispatcher tests cover command behavior
-- **TODO**: Scheduled idle summarization works
+- **DONE**: Scheduled idle summarization works in polling and webhook runtimes and is covered through the direct scheduler hook
 - **TODO**: `/stats` reports useful per-scope and AI usage information
 - **TODO**: Admins can inspect and update safe settings without editing files for normal local dogfooding changes
-- **TODO**: Duplicate update handling is tested
+- **DONE**: Duplicate update handling is tested
 - **TODO**: Provider failure behavior is tested
 
 ### Gate C - Private Telegram Beta
@@ -380,7 +382,7 @@ Required before calling this v1 complete:
 ### Local Offline
 
 ```powershell
-uv sync --extra dev
+uv sync --extra dev,local
 Copy-Item .env.example .env
 uv run pzp-bot migrate
 uv run pytest
@@ -400,7 +402,7 @@ EMBEDDING_MODEL=text-embedding-3-small
 ### Local Embeddings
 
 ```powershell
-uv sync --extra dev --extra local
+uv sync --extra dev,local
 ```
 
 Then set:
@@ -487,3 +489,4 @@ uv run pzp-bot webhook
 - **2026-06-16 / v0.1**: Initial implementation plan created
 - **2026-06-16 / v0.2**: Plan converted into a lifecycle North Star after PoC scaffold implementation, dependency bumps, `ty` adoptionand warning cleanup
 - **2026-06-22 / v0.3**: Added various roadmap items
+- **2026-06-23 / v0.4**: Implemented Phase 1 correctness work: idle summarization, concrete-scope global summaries, Alembic-backed migration, idempotent policies and duplicate ingestion, message-tier retrieval, import/export validation, `/help`, command registration and 21-test verification baseline
