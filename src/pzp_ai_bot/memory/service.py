@@ -19,11 +19,14 @@ from pzp_ai_bot.db.repositories import (
     EmbeddingRepository,
     EventRepository,
     KnowledgeRepository,
+    MemoryProfileRepository,
+    MemoryProfileView,
     MemoryReviewRepository,
     MessageRepository,
     PolicyRepository,
     ScopeMetadataRepository,
     ScopeSettingsRepository,
+    SummaryTemplateRepository,
     utc_now,
 )
 from pzp_ai_bot.db.session import session_scope
@@ -36,7 +39,7 @@ from pzp_ai_bot.memory.canonical import (
 from pzp_ai_bot.memory.markdown import MarkdownMemoryStore, format_sources
 from pzp_ai_bot.memory.policy import PolicyService
 from pzp_ai_bot.memory.retrieval import Retriever, SearchResult
-from pzp_ai_bot.memory.scope import Scope
+from pzp_ai_bot.memory.scope import Scope, parse_scope
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,6 +85,47 @@ class MemoryReviewPreview:
     kind: str
     content: str
     source_message_ids: list[int]
+
+
+@dataclass(frozen=True, slots=True)
+class MemoryNotePreview:
+    id: int
+    scope: Scope
+    content: str
+    tags: list[str]
+    priority: int | None
+    source: str | None
+    source_message_ids: list[int]
+
+
+@dataclass(frozen=True, slots=True)
+class RangeSummaryResult:
+    knowledge_item_id: int
+    source_message_ids: list[int]
+    started_at: datetime
+    ended_at: datetime
+    template_name: str
+
+
+@dataclass(frozen=True, slots=True)
+class SummaryTemplatePreview:
+    name: str
+    prompt: str
+    builtin: bool
+
+
+BUILTIN_SUMMARY_TEMPLATES: dict[str, str] = {
+    "general": "Keep stable facts, decisions, preferences, todos, and open questions.",
+    "decisions": "Extract only durable decisions, owners, deadlines, and source-backed rationale.",
+    "todos": "Extract action items, owners, due dates when present, blockers, and open follow-ups.",
+    "meeting": (
+        "Write concise meeting notes with decisions, todos, risks, and unresolved questions."
+    ),
+    "incident": (
+        "Write an incident recap with impact, timeline, decisions, remediation todos, "
+        "and open questions."
+    ),
+}
 
 
 class MemoryService:
@@ -238,9 +282,11 @@ class MemoryService:
             await self.compact_memory()
         return result
 
-    async def summarize_now(self, scope: Scope) -> int:
+    async def summarize_now(self, scope: Scope, *, template_name: str | None = None) -> int:
         async with session_scope(self.session_factory) as session:
             if scope.is_global:
+                if template_name is not None:
+                    raise ValueError("template summaries require a concrete scope")
                 count, needs_compact = await self._summarize_pending_scopes_in_session(session)
             else:
                 pending = await MessageRepository(session).pending_for_summary(scope)
@@ -250,7 +296,7 @@ class MemoryService:
                     scope, self._default_scope_settings()
                 )
                 needs_compact = await self._summarize_pending_in_session(
-                    session, scope, pending, scope_settings
+                    session, scope, pending, scope_settings, template_name=template_name
                 )
                 count = len(pending)
         if needs_compact:
@@ -268,8 +314,16 @@ class MemoryService:
         return count
 
     async def remember(
-        self, scope: Scope, content: str, source_message_id: int | None = None
+        self,
+        scope: Scope,
+        content: str,
+        source_message_id: int | None = None,
+        *,
+        tags: list[str] | None = None,
+        priority: int | None = None,
+        source: str | None = None,
     ) -> int:
+        metadata = note_metadata(tags=tags, priority=priority, source=source)
         async with session_scope(self.session_factory) as session:
             item = await self._add_knowledge_in_session(
                 session,
@@ -277,16 +331,96 @@ class MemoryService:
                 kind="manual_note",
                 content=content.strip(),
                 source_message_ids=[] if source_message_id is None else [source_message_id],
+                metadata_json=metadata,
                 daily_kind="manual",
             )
             item_id = item.id
         await self.compact_memory()
         return item_id
 
-    async def ask(self, scope: Scope, question: str, *, top_k: int | None = None) -> str:
+    async def list_notes(
+        self, scope: Scope | None = None, *, tag: str | None = None
+    ) -> list[MemoryNotePreview]:
+        async with session_scope(self.session_factory) as session:
+            rows = await KnowledgeRepository(session).list_manual_notes(scope, tag)
+            return [memory_note_preview(row) for row in rows]
+
+    async def edit_note(
+        self,
+        scope: Scope,
+        item_id: int,
+        *,
+        content: str | None = None,
+        tags: list[str] | None = None,
+        priority: int | None = None,
+        source: str | None = None,
+        clear_priority: bool = False,
+        clear_source: bool = False,
+    ) -> MemoryNotePreview:
+        metadata_updates: dict[str, Any] = {}
+        if tags is not None:
+            metadata_updates["tags"] = normalize_tags(tags)
+        if priority is not None or clear_priority:
+            metadata_updates["priority"] = priority
+        if source is not None or clear_source:
+            metadata_updates["source"] = source
+        async with session_scope(self.session_factory) as session:
+            repo = KnowledgeRepository(session)
+            item = await repo.update_manual_note(
+                item_id,
+                scope=scope,
+                content=content.strip() if content is not None else None,
+                metadata_updates=metadata_updates,
+            )
+            if item is None:
+                raise ValueError(f"manual note #{item_id} was not found in scope {scope.key}")
+            await EmbeddingRepository(session).delete_targets(
+                target_type="knowledge_item", target_ids=[item.id]
+            )
+            vector = (await self.embedding_provider.embed([item.content]))[0]
+            await EmbeddingRepository(session).add(
+                target_type="knowledge_item",
+                target_id=item.id,
+                scope=Scope(item.chat_id, item.message_thread_id),
+                provider=self.embedding_provider.name,
+                model=self._embedding_model_name(),
+                vector=vector,
+            )
+            await EventRepository(session).add(
+                event_type="manual_note_updated",
+                scope=scope,
+                payload={"knowledge_item_id": item.id, "metadata": item.metadata_json or {}},
+            )
+            preview = memory_note_preview(item)
+        await self.compact_memory()
+        return preview
+
+    async def delete_note(self, scope: Scope, item_id: int) -> None:
+        async with session_scope(self.session_factory) as session:
+            deleted = await KnowledgeRepository(session).delete_manual_note(item_id, scope=scope)
+            if not deleted:
+                raise ValueError(f"manual note #{item_id} was not found in scope {scope.key}")
+            await EmbeddingRepository(session).delete_targets(
+                target_type="knowledge_item", target_ids=[item_id]
+            )
+            await EventRepository(session).add(
+                event_type="manual_note_deleted",
+                scope=scope,
+                payload={"knowledge_item_id": item_id},
+            )
+        await self.compact_memory()
+
+    async def ask(
+        self,
+        scope: Scope,
+        question: str,
+        *,
+        top_k: int | None = None,
+        profile_name: str | None = None,
+    ) -> str:
         if top_k is None:
             top_k = (await self.get_scope_settings(scope)).retrieval_top_k
-        results = await self.search(scope, question, top_k=top_k)
+        results = await self.search(scope, question, top_k=top_k, profile_name=profile_name)
         context = format_results(results)
         messages = [
             ChatMessage(
@@ -319,7 +453,9 @@ class MemoryService:
             )
         return content
 
-    async def search(self, scope: Scope, query: str, *, top_k: int = 6) -> list[SearchResult]:
+    async def search(
+        self, scope: Scope, query: str, *, top_k: int = 6, profile_name: str | None = None
+    ) -> list[SearchResult]:
         async with session_scope(self.session_factory) as session:
             retriever = Retriever(
                 embedder=self.embedding_provider,
@@ -327,7 +463,12 @@ class MemoryService:
                 knowledge_repo=KnowledgeRepository(session),
                 message_repo=MessageRepository(session),
             )
-            return await retriever.search(query, scope, top_k)
+            scopes = await self._retrieval_scopes_in_session(session, scope, profile_name)
+            results: list[SearchResult] = []
+            for source_scope in scopes:
+                results.extend(await retriever.search(query, source_scope, top_k))
+            results.sort(key=search_result_rank)
+            return results[:top_k]
 
     async def compact_memory(self) -> Path:
         async with session_scope(self.session_factory) as session:
@@ -397,6 +538,7 @@ class MemoryService:
                                 "kind": item.kind,
                                 "content": item.content,
                                 "source_message_ids": item.source_message_ids,
+                                "metadata": item.metadata_json or {},
                                 "source_references": [
                                     {"message_id": ref.message_id, "url": ref.url}
                                     for ref in references.values()
@@ -416,7 +558,9 @@ class MemoryService:
             lines = [f"# Memory export for {scope_label(scope, metadata)}", ""]
             for item in items:
                 sources = format_sources(item.source_message_ids, references)
-                lines.append(f"- ({item.kind}, source: {sources}) {item.content.strip()}")
+                extra = format_item_metadata(item.metadata_json or {})
+                detail = f"{item.kind}, source: {sources}{extra}"
+                lines.append(f"- ({detail}) {item.content.strip()}")
             return "\n".join(lines).rstrip() + "\n"
 
     async def import_jsonl(self, path: Path, scope: Scope) -> int:
@@ -489,6 +633,169 @@ class MemoryService:
         if needs_compact:
             await self.compact_memory()
         return result
+
+    async def set_memory_profile(
+        self,
+        name: str,
+        source_scopes: list[Scope],
+        *,
+        description: str | None = None,
+        updated_by: int | None = None,
+    ) -> MemoryProfileView:
+        if not source_scopes:
+            raise ValueError("profile must include at least one source scope")
+        async with session_scope(self.session_factory) as session:
+            profile = await MemoryProfileRepository(session).upsert_profile(
+                name=name,
+                source_scopes=source_scopes,
+                description=description,
+                updated_by=updated_by,
+            )
+            await EventRepository(session).add(
+                event_type="memory_profile_set",
+                user_id=updated_by,
+                payload={
+                    "profile": profile.name,
+                    "source_scopes": [scope.key for scope in profile.source_scopes],
+                },
+            )
+            return profile
+
+    async def list_memory_profiles(self) -> list[MemoryProfileView]:
+        async with session_scope(self.session_factory) as session:
+            return await MemoryProfileRepository(session).list_profiles()
+
+    async def allow_memory_profile(
+        self,
+        *,
+        destination: Scope,
+        profile_name: str,
+        can_query: bool,
+        can_learn: bool = False,
+        updated_by: int | None = None,
+    ) -> MemoryProfileView:
+        async with session_scope(self.session_factory) as session:
+            repo = MemoryProfileRepository(session)
+            profile = await repo.get_profile(profile_name)
+            if profile is None:
+                raise ValueError(f"profile {profile_name!r} was not found")
+            for source in profile.source_scopes:
+                await repo.set_permission(
+                    destination=destination,
+                    source=source,
+                    can_query=can_query,
+                    can_learn=can_learn,
+                    updated_by=updated_by,
+                )
+            await EventRepository(session).add(
+                event_type="memory_profile_permission",
+                scope=destination,
+                user_id=updated_by,
+                payload={"profile": profile.name, "can_query": can_query, "can_learn": can_learn},
+            )
+            return profile
+
+    async def set_summary_template(
+        self, name: str, prompt: str, *, updated_by: int | None = None
+    ) -> SummaryTemplatePreview:
+        async with session_scope(self.session_factory) as session:
+            row = await SummaryTemplateRepository(session).upsert(
+                name=name, prompt=prompt, updated_by=updated_by
+            )
+            await EventRepository(session).add(
+                event_type="summary_template_set",
+                user_id=updated_by,
+                payload={"template": row.name},
+            )
+            return SummaryTemplatePreview(row.name, row.prompt, False)
+
+    async def list_summary_templates(self) -> list[SummaryTemplatePreview]:
+        previews = [
+            SummaryTemplatePreview(name, prompt, True)
+            for name, prompt in sorted(BUILTIN_SUMMARY_TEMPLATES.items())
+        ]
+        async with session_scope(self.session_factory) as session:
+            for row in await SummaryTemplateRepository(session).list_templates():
+                previews.append(SummaryTemplatePreview(row.name, row.prompt, False))
+        return previews
+
+    async def summarize_range(
+        self,
+        scope: Scope,
+        *,
+        start_message_id: int,
+        end_message_id: int,
+        template_name: str = "general",
+    ) -> RangeSummaryResult:
+        if scope.chat_id is None:
+            raise ValueError("range summaries require a concrete scope")
+        async with session_scope(self.session_factory) as session:
+            message_repo = MessageRepository(session)
+            start = await message_repo.get_by_telegram_id(scope, start_message_id)
+            end = await message_repo.get_by_telegram_id(scope, end_message_id)
+            if start is None or end is None:
+                raise ValueError("both range boundary messages must exist in the same scope")
+            if start.created_at > end.created_at:
+                raise ValueError("range start message must not be newer than range end message")
+            pending = await message_repo.learned_between_dates(
+                scope, start.created_at, end.created_at
+            )
+            if not pending:
+                raise ValueError("range contains no learned messages")
+            scope_settings = await ScopeSettingsRepository(session).effective(
+                scope, self._default_scope_settings()
+            )
+            content, result, error, latency_ms = await self._summarize_messages_in_session(
+                session,
+                scope,
+                pending,
+                scope_settings,
+                template_name=template_name,
+                context_line=(
+                    f"Range: Telegram messages {start_message_id}..{end_message_id}, "
+                    f"dates {start.created_at.isoformat()}..{end.created_at.isoformat()}."
+                ),
+            )
+            source_ids = [message.telegram_message_id for message in pending]
+            item = await self._add_knowledge_in_session(
+                session,
+                scope=scope,
+                kind="range_summary",
+                content=content,
+                source_message_ids=source_ids,
+                metadata_json={
+                    "template": template_name,
+                    "start_message_id": start_message_id,
+                    "end_message_id": end_message_id,
+                    "started_at": start.created_at.isoformat(),
+                    "ended_at": end.created_at.isoformat(),
+                },
+                daily_kind="range_summary",
+            )
+            await MessageRepository(session).mark_summarized([message.id for message in pending])
+            await EventRepository(session).add_ai_usage(
+                provider=self.chat_provider.name,
+                model=self.chat_provider.model,
+                operation="range_summary",
+                prompt_tokens=result.prompt_tokens if result else None,
+                completion_tokens=result.completion_tokens if result else None,
+                latency_ms=latency_ms,
+                error=error,
+            )
+            await EventRepository(session).add(
+                event_type="range_summary",
+                scope=scope,
+                payload={
+                    "knowledge_item_id": item.id,
+                    "template": template_name,
+                    "source_message_ids": source_ids,
+                },
+            )
+            summary = RangeSummaryResult(
+                item.id, source_ids, start.created_at, end.created_at, template_name
+            )
+        await self.compact_memory()
+        return summary
 
     async def pending_reviews(self, scope: Scope | None = None) -> list[MemoryReviewPreview]:
         async with session_scope(self.session_factory) as session:
@@ -590,13 +897,78 @@ class MemoryService:
         return count, needs_compact
 
     async def _summarize_pending_in_session(
-        self, session: AsyncSession, scope: Scope, pending, scope_settings: EffectiveScopeSettings
+        self,
+        session: AsyncSession,
+        scope: Scope,
+        pending,
+        scope_settings: EffectiveScopeSettings,
+        *,
+        template_name: str | None = None,
     ) -> bool:
+        content, result, error, latency_ms = await self._summarize_messages_in_session(
+            session,
+            scope,
+            pending,
+            scope_settings,
+            template_name=template_name or "general",
+            context_line="Scope summary from pending learned messages.",
+        )
+        source_ids = [message.telegram_message_id for message in pending]
+        await MessageRepository(session).mark_summarized([message.id for message in pending])
+        await EventRepository(session).add_ai_usage(
+            provider=self.chat_provider.name,
+            model=self.chat_provider.model,
+            operation="summarize",
+            prompt_tokens=result.prompt_tokens if result else None,
+            completion_tokens=result.completion_tokens if result else None,
+            latency_ms=latency_ms,
+            error=error,
+        )
+        if scope_settings.review_before_compact:
+            review = await MemoryReviewRepository(session).add(
+                scope=scope, kind="daily_summary", content=content, source_message_ids=source_ids
+            )
+            self.markdown.append_daily(
+                scope=scope, content=content, source_message_ids=source_ids, kind="review_proposal"
+            )
+            await EventRepository(session).add(
+                event_type="memory_review_created",
+                scope=scope,
+                payload={"review_id": review.id, "source_message_ids": source_ids},
+            )
+            return False
+        await self._add_knowledge_in_session(
+            session,
+            scope=scope,
+            kind="daily_summary",
+            content=content,
+            source_message_ids=source_ids,
+            metadata_json={"template": template_name or "general"},
+            daily_kind="daily_summary",
+        )
+        return True
+
+    async def _summarize_messages_in_session(
+        self,
+        session: AsyncSession,
+        scope: Scope,
+        pending,
+        scope_settings: EffectiveScopeSettings,
+        *,
+        template_name: str,
+        context_line: str,
+    ) -> tuple[str, ChatResult | None, str | None, int]:
+        template_instruction = await self._summary_template_prompt_in_session(
+            session, template_name
+        )
         prompt_lines = [
             "Summarize durable group-chat memory.",
-            "Keep stable facts, decisions, preferences, todos, and open questions.",
+            template_instruction,
             "Do not dump raw chat. Preserve source references.",
             f"Preferred summary model setting: {scope_settings.summary_model}.",
+            f"Template: {template_name}.",
+            f"Scope: {scope.key}.",
+            context_line,
             "",
         ]
         for message in pending:
@@ -619,39 +991,7 @@ class MemoryService:
                 for message in pending
             )
             result = None
-        source_ids = [message.telegram_message_id for message in pending]
-        await MessageRepository(session).mark_summarized([message.id for message in pending])
-        await EventRepository(session).add_ai_usage(
-            provider=self.chat_provider.name,
-            model=self.chat_provider.model,
-            operation="summarize",
-            prompt_tokens=result.prompt_tokens if result else None,
-            completion_tokens=result.completion_tokens if result else None,
-            latency_ms=int((time.perf_counter() - started) * 1000),
-            error=error,
-        )
-        if scope_settings.review_before_compact:
-            review = await MemoryReviewRepository(session).add(
-                scope=scope, kind="daily_summary", content=content, source_message_ids=source_ids
-            )
-            self.markdown.append_daily(
-                scope=scope, content=content, source_message_ids=source_ids, kind="review_proposal"
-            )
-            await EventRepository(session).add(
-                event_type="memory_review_created",
-                scope=scope,
-                payload={"review_id": review.id, "source_message_ids": source_ids},
-            )
-            return False
-        await self._add_knowledge_in_session(
-            session,
-            scope=scope,
-            kind="daily_summary",
-            content=content,
-            source_message_ids=source_ids,
-            daily_kind="daily_summary",
-        )
-        return True
+        return content, result, error, int((time.perf_counter() - started) * 1000)
 
     async def _add_knowledge_in_session(
         self,
@@ -661,10 +1001,15 @@ class MemoryService:
         kind: str,
         content: str,
         source_message_ids: list[int],
+        metadata_json: dict[str, Any] | None = None,
         daily_kind: str,
     ) -> KnowledgeItem:
         item = await KnowledgeRepository(session).add(
-            scope=scope, kind=kind, content=content, source_message_ids=source_message_ids
+            scope=scope,
+            kind=kind,
+            content=content,
+            source_message_ids=source_message_ids,
+            metadata_json=metadata_json,
         )
         vector = (await self.embedding_provider.embed([content]))[0]
         await EmbeddingRepository(session).add(
@@ -682,6 +1027,44 @@ class MemoryService:
             kind=daily_kind,
         )
         return item
+
+    async def _summary_template_prompt_in_session(
+        self, session: AsyncSession, template_name: str
+    ) -> str:
+        clean_name = template_name.strip().lower()
+        builtin = BUILTIN_SUMMARY_TEMPLATES.get(clean_name)
+        if builtin is not None:
+            return builtin
+        prompt = await SummaryTemplateRepository(session).get_prompt(clean_name)
+        if prompt is None:
+            raise ValueError(f"summary template {template_name!r} was not found")
+        return prompt
+
+    async def _retrieval_scopes_in_session(
+        self, session: AsyncSession, destination: Scope, profile_name: str | None
+    ) -> list[Scope]:
+        if profile_name is None:
+            return [destination]
+        profile_repo = MemoryProfileRepository(session)
+        profile = await profile_repo.get_profile(profile_name)
+        if profile is None:
+            raise ValueError(f"profile {profile_name!r} was not found")
+        policy = PolicyService(self.settings, PolicyRepository(session))
+        scopes = [destination]
+        for source in profile.source_scopes:
+            if source == destination:
+                continue
+            if not await profile_repo.can_query(destination=destination, source=source):
+                continue
+            if (await policy.status(source)).get("learning_enabled") is not True:
+                continue
+            scopes.append(source)
+        if len(scopes) == 1:
+            raise ValueError(
+                f"profile {profile.name!r} has no permitted learning-enabled source scopes "
+                f"for {destination.key}"
+            )
+        return dedupe_scope_list(scopes)
 
     async def _canonical_entries_for_scope(
         self, scope: Scope, items: list[KnowledgeItem]
@@ -789,6 +1172,170 @@ def load_jsonl_import(path: Path) -> list[JsonlImportItem]:
     return rows
 
 
+def note_metadata(
+    *, tags: list[str] | None = None, priority: int | None = None, source: str | None = None
+) -> dict[str, Any]:
+    metadata: dict[str, Any] = {}
+    normalized_tags = normalize_tags(tags or [])
+    if normalized_tags:
+        metadata["tags"] = normalized_tags
+    if priority is not None:
+        if priority < 1:
+            raise ValueError("priority must be a positive integer")
+        metadata["priority"] = priority
+    if source is not None and source.strip():
+        metadata["source"] = source.strip()
+    return metadata
+
+
+def normalize_tags(tags: list[str]) -> list[str]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw in tags:
+        tag = raw.strip().lower().removeprefix("#")
+        if not tag:
+            continue
+        if any(char.isspace() for char in tag):
+            raise ValueError("tags cannot contain whitespace")
+        if tag in seen:
+            continue
+        seen.add(tag)
+        normalized.append(tag)
+    return normalized
+
+
+def memory_note_preview(item: KnowledgeItem) -> MemoryNotePreview:
+    metadata = item.metadata_json or {}
+    raw_tags = metadata.get("tags", [])
+    tags = [str(tag) for tag in raw_tags] if isinstance(raw_tags, list) else []
+    raw_priority = metadata.get("priority")
+    priority = int(raw_priority) if raw_priority is not None else None
+    raw_source = metadata.get("source")
+    return MemoryNotePreview(
+        id=item.id,
+        scope=Scope(item.chat_id, item.message_thread_id),
+        content=item.content,
+        tags=tags,
+        priority=priority,
+        source=str(raw_source) if raw_source else None,
+        source_message_ids=list(item.source_message_ids),
+    )
+
+
+def parse_note_create_args(raw: str | None) -> tuple[dict[str, Any], str]:
+    tokens = (raw or "").strip().split()
+    options: dict[str, Any] = {}
+    content_start = 0
+    for index, token in enumerate(tokens):
+        if "=" not in token:
+            content_start = index
+            break
+        key, value = token.split("=", 1)
+        if key == "tags":
+            options["tags"] = value.split(",")
+        elif key == "priority":
+            options["priority"] = int(value)
+        elif key == "source":
+            options["source"] = value
+        else:
+            content_start = index
+            break
+    else:
+        content_start = len(tokens)
+    content = " ".join(tokens[content_start:]).strip()
+    if not content:
+        raise ValueError("Usage: /remember [tags=a,b] [priority=N] [source=url] <text>")
+    note_metadata(
+        tags=options.get("tags"), priority=options.get("priority"), source=options.get("source")
+    )
+    return options, content
+
+
+def parse_note_edit_args(raw: str | None) -> tuple[int, dict[str, Any], str | None]:
+    tokens = (raw or "").strip().split()
+    if not tokens:
+        raise ValueError(
+            "Usage: /memory_note_edit <id> [tags=a,b] [priority=N|off] [source=url|off] [text]"
+        )
+    item_id = int(tokens[0])
+    updates: dict[str, Any] = {}
+    content_start = len(tokens)
+    for index, token in enumerate(tokens[1:], start=1):
+        if "=" not in token:
+            content_start = index
+            break
+        key, value = token.split("=", 1)
+        if key == "tags":
+            updates["tags"] = value.split(",") if value.lower() not in {"off", "none", ""} else []
+        elif key == "priority":
+            if value.lower() in {"off", "none", "0"}:
+                updates["clear_priority"] = True
+            else:
+                updates["priority"] = int(value)
+        elif key == "source":
+            if value.lower() in {"off", "none", ""}:
+                updates["clear_source"] = True
+            else:
+                updates["source"] = value
+        else:
+            content_start = index
+            break
+    content = " ".join(tokens[content_start:]).strip() if content_start < len(tokens) else None
+    if not updates and content is None:
+        raise ValueError("memory_note_edit requires metadata changes or new text")
+    note_metadata(
+        tags=updates.get("tags"), priority=updates.get("priority"), source=updates.get("source")
+    )
+    return item_id, updates, content
+
+
+def parse_profile_sources(raw: str, *, current: Scope) -> list[Scope]:
+    scopes = []
+    for part in raw.split(","):
+        value = part.strip()
+        if not value:
+            continue
+        scopes.append(parse_scope(value, current=current))
+    if not scopes:
+        raise ValueError("sources must include at least one scope")
+    return dedupe_scope_list(scopes)
+
+
+def dedupe_scope_list(scopes: list[Scope]) -> list[Scope]:
+    seen: set[str] = set()
+    out: list[Scope] = []
+    for scope in scopes:
+        if scope.key in seen:
+            continue
+        seen.add(scope.key)
+        out.append(scope)
+    return out
+
+
+def format_item_metadata(metadata: dict[str, Any]) -> str:
+    parts: list[str] = []
+    tags = metadata.get("tags")
+    if isinstance(tags, list) and tags:
+        parts.append("tags:" + ",".join(str(tag) for tag in tags))
+    priority = metadata.get("priority")
+    if priority is not None:
+        parts.append(f"priority:{priority}")
+    source = metadata.get("source")
+    if source:
+        parts.append(f"note-source:{source}")
+    template = metadata.get("template")
+    if template:
+        parts.append(f"template:{template}")
+    if not parts:
+        return ""
+    return ", " + ", ".join(parts)
+
+
+def search_result_rank(result: SearchResult) -> tuple[int, float]:
+    tier = 0 if result.source.startswith("knowledge_item:") else 1
+    return tier, -result.score
+
+
 def format_results(results: list[SearchResult]) -> str:
     if not results:
         return "No scoped memory found."
@@ -846,6 +1393,55 @@ def format_scope_settings(settings: EffectiveScopeSettings) -> str:
     return "\n".join(
         f"{key}: {value if value is not None else 'off'}"
         for key, value in settings.as_dict().items()
+    )
+
+
+def format_note_previews(notes: list[MemoryNotePreview]) -> str:
+    if not notes:
+        return "No manual notes found."
+    lines = ["Manual notes:"]
+    for note in notes[:30]:
+        metadata = []
+        if note.tags:
+            metadata.append("tags:" + ",".join(note.tags))
+        if note.priority is not None:
+            metadata.append(f"priority:{note.priority}")
+        if note.source:
+            metadata.append(f"source:{note.source}")
+        suffix = f" ({'; '.join(metadata)})" if metadata else ""
+        compact = " ".join(note.content.split())
+        lines.append(f"- #{note.id} {note.scope.key}{suffix}: {compact[:240]}")
+    return "\n".join(lines)
+
+
+def format_memory_profiles(profiles: list[MemoryProfileView]) -> str:
+    if not profiles:
+        return "No memory profiles configured."
+    lines = ["Memory profiles:"]
+    for profile in profiles:
+        scopes = ", ".join(scope.key for scope in profile.source_scopes) or "none"
+        description = f" - {profile.description}" if profile.description else ""
+        lines.append(f"- {profile.name}: {scopes}{description}")
+    return "\n".join(lines)
+
+
+def format_summary_templates(templates: list[SummaryTemplatePreview]) -> str:
+    if not templates:
+        return "No summary templates configured."
+    lines = ["Summary templates:"]
+    for template in templates:
+        origin = "built-in" if template.builtin else "custom"
+        compact = " ".join(template.prompt.split())
+        lines.append(f"- {template.name} ({origin}): {compact[:220]}")
+    return "\n".join(lines)
+
+
+def format_range_summary(result: RangeSummaryResult) -> str:
+    started = result.started_at.isoformat()
+    ended = result.ended_at.isoformat()
+    return (
+        f"Created range summary #{result.knowledge_item_id} with template {result.template_name}: "
+        f"{len(result.source_message_ids)} source messages from {started} to {ended}."
     )
 
 

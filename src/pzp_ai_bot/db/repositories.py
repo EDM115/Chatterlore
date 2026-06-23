@@ -13,10 +13,14 @@ from pzp_ai_bot.db.models import (
     Embedding,
     KnowledgeItem,
     LearningPolicy,
+    MemoryProfile,
+    MemoryProfileScope,
     MemoryReviewItem,
+    MemoryScopePermission,
     Message,
     ScopeMetadata,
     ScopeSettings,
+    SummaryTemplate,
 )
 from pzp_ai_bot.memory.scope import Scope
 from pzp_ai_bot.memory.vector import decode_vector, encode_vector
@@ -69,6 +73,13 @@ class SourceReference:
     message_id: int
     label: str
     url: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class MemoryProfileView:
+    name: str
+    description: str | None
+    source_scopes: list[Scope]
 
 
 class MessageRepository:
@@ -162,6 +173,28 @@ class MessageRepository:
     async def get(self, message_id: int) -> Message | None:
         return await self.session.get(Message, message_id)
 
+    async def get_by_telegram_id(self, scope: Scope, telegram_message_id: int) -> Message | None:
+        return await self.session.scalar(
+            select(Message).where(
+                scope_filter(Message, scope), Message.telegram_message_id == telegram_message_id
+            )
+        )
+
+    async def learned_between_dates(
+        self, scope: Scope, start: datetime, end: datetime
+    ) -> list[Message]:
+        stmt = (
+            select(Message)
+            .where(
+                scope_filter(Message, scope),
+                Message.learned.is_(True),
+                Message.created_at >= start,
+                Message.created_at <= end,
+            )
+            .order_by(Message.created_at.asc(), Message.id.asc())
+        )
+        return list((await self.session.scalars(stmt)).all())
+
     async def recent(
         self, scope: Scope, limit: int = 10, *, learned_only: bool = False
     ) -> list[Message]:
@@ -247,7 +280,13 @@ class KnowledgeRepository:
         self.session = session
 
     async def add(
-        self, *, scope: Scope, kind: str, content: str, source_message_ids: list[int]
+        self,
+        *,
+        scope: Scope,
+        kind: str,
+        content: str,
+        source_message_ids: list[int],
+        metadata_json: dict[str, Any] | None = None,
     ) -> KnowledgeItem:
         now = utc_now()
         item = KnowledgeItem(
@@ -256,6 +295,7 @@ class KnowledgeRepository:
             kind=kind,
             content=content,
             source_message_ids=source_message_ids,
+            metadata_json=metadata_json,
             created_at=now,
             updated_at=now,
         )
@@ -273,6 +313,72 @@ class KnowledgeRepository:
 
     async def get(self, item_id: int) -> KnowledgeItem | None:
         return await self.session.get(KnowledgeItem, item_id)
+
+    async def list_manual_notes(
+        self, scope: Scope | None = None, tag: str | None = None
+    ) -> list[KnowledgeItem]:
+        stmt = (
+            select(KnowledgeItem)
+            .where(KnowledgeItem.kind == "manual_note")
+            .order_by(KnowledgeItem.created_at.asc(), KnowledgeItem.id.asc())
+        )
+        if scope is not None:
+            stmt = stmt.where(scope_filter(KnowledgeItem, scope))
+        rows = list((await self.session.scalars(stmt)).all())
+        if tag is None:
+            return rows
+        normalized = tag.strip().lower()
+        return [
+            row
+            for row in rows
+            if normalized
+            in {str(value).strip().lower() for value in (row.metadata_json or {}).get("tags", [])}
+        ]
+
+    async def update_manual_note(
+        self,
+        item_id: int,
+        *,
+        scope: Scope,
+        content: str | None = None,
+        metadata_updates: dict[str, Any] | None = None,
+    ) -> KnowledgeItem | None:
+        item = await self.session.scalar(
+            select(KnowledgeItem).where(
+                KnowledgeItem.id == item_id,
+                KnowledgeItem.kind == "manual_note",
+                scope_filter(KnowledgeItem, scope),
+            )
+        )
+        if item is None:
+            return None
+        if content is not None:
+            item.content = content
+        metadata = dict(item.metadata_json or {})
+        if metadata_updates:
+            for key, value in metadata_updates.items():
+                if value is None:
+                    metadata.pop(key, None)
+                else:
+                    metadata[key] = value
+        item.metadata_json = metadata
+        item.updated_at = utc_now()
+        await self.session.flush()
+        return item
+
+    async def delete_manual_note(self, item_id: int, *, scope: Scope) -> bool:
+        item = await self.session.scalar(
+            select(KnowledgeItem).where(
+                KnowledgeItem.id == item_id,
+                KnowledgeItem.kind == "manual_note",
+                scope_filter(KnowledgeItem, scope),
+            )
+        )
+        if item is None:
+            return False
+        await self.session.delete(item)
+        await self.session.flush()
+        return True
 
     async def ids_older_than(self, scope: Scope, older_than: datetime) -> list[int]:
         stmt = select(KnowledgeItem.id).where(
@@ -628,6 +734,223 @@ class MemoryReviewRepository:
         )
 
 
+class MemoryProfileRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def upsert_profile(
+        self,
+        *,
+        name: str,
+        source_scopes: list[Scope],
+        description: str | None = None,
+        updated_by: int | None = None,
+    ) -> MemoryProfileView:
+        clean_name = normalize_profile_name(name)
+        now = utc_now()
+        rows = list(
+            (
+                await self.session.scalars(
+                    select(MemoryProfile)
+                    .where(MemoryProfile.name == clean_name)
+                    .order_by(MemoryProfile.id.asc())
+                )
+            ).all()
+        )
+        if not rows:
+            profile = MemoryProfile(
+                name=clean_name,
+                description=description,
+                created_by=updated_by,
+                created_at=now,
+                updated_at=now,
+            )
+            self.session.add(profile)
+            await self.session.flush()
+        else:
+            profile = rows[0]
+            profile.description = description if description is not None else profile.description
+            profile.updated_at = now
+            for duplicate in rows[1:]:
+                await self.session.delete(duplicate)
+        await self.session.execute(
+            delete(MemoryProfileScope).where(MemoryProfileScope.profile_id == profile.id)
+        )
+        for source_scope in dedupe_scopes(source_scopes):
+            if source_scope.chat_id is None:
+                raise ValueError("profile source scopes must be concrete")
+            self.session.add(
+                MemoryProfileScope(
+                    profile_id=profile.id,
+                    chat_id=source_scope.chat_id,
+                    message_thread_id=source_scope.thread_id,
+                )
+            )
+        await self.session.flush()
+        return await self.get_profile(clean_name) or MemoryProfileView(clean_name, description, [])
+
+    async def get_profile(self, name: str) -> MemoryProfileView | None:
+        clean_name = normalize_profile_name(name)
+        profile = await self.session.scalar(
+            select(MemoryProfile).where(MemoryProfile.name == clean_name)
+        )
+        if profile is None:
+            return None
+        rows = list(
+            (
+                await self.session.scalars(
+                    select(MemoryProfileScope)
+                    .where(MemoryProfileScope.profile_id == profile.id)
+                    .order_by(
+                        MemoryProfileScope.chat_id.asc(), MemoryProfileScope.message_thread_id.asc()
+                    )
+                )
+            ).all()
+        )
+        return MemoryProfileView(
+            name=profile.name,
+            description=profile.description,
+            source_scopes=[Scope(row.chat_id, row.message_thread_id) for row in rows],
+        )
+
+    async def list_profiles(self) -> list[MemoryProfileView]:
+        profiles = list(
+            (
+                await self.session.scalars(select(MemoryProfile).order_by(MemoryProfile.name.asc()))
+            ).all()
+        )
+        views: list[MemoryProfileView] = []
+        for profile in profiles:
+            view = await self.get_profile(profile.name)
+            if view is not None:
+                views.append(view)
+        return views
+
+    async def set_permission(
+        self,
+        *,
+        destination: Scope,
+        source: Scope,
+        can_query: bool | None = None,
+        can_learn: bool | None = None,
+        updated_by: int | None = None,
+    ) -> MemoryScopePermission:
+        if destination.chat_id is None or source.chat_id is None:
+            raise ValueError(
+                "cross-scope permissions require concrete source and destination scopes"
+            )
+        rows = list(
+            (
+                await self.session.scalars(
+                    select(MemoryScopePermission)
+                    .where(
+                        MemoryScopePermission.destination_chat_id == destination.chat_id,
+                        _nullable_eq(
+                            MemoryScopePermission.destination_thread_id, destination.thread_id
+                        ),
+                        MemoryScopePermission.source_chat_id == source.chat_id,
+                        _nullable_eq(MemoryScopePermission.source_thread_id, source.thread_id),
+                    )
+                    .order_by(MemoryScopePermission.id.asc())
+                )
+            ).all()
+        )
+        if not rows:
+            row = MemoryScopePermission(
+                destination_chat_id=destination.chat_id,
+                destination_thread_id=destination.thread_id,
+                source_chat_id=source.chat_id,
+                source_thread_id=source.thread_id,
+                can_query=bool(can_query),
+                can_learn=bool(can_learn),
+                updated_by=updated_by,
+                updated_at=utc_now(),
+            )
+            self.session.add(row)
+        else:
+            row = rows[0]
+            if can_query is not None:
+                row.can_query = can_query
+            if can_learn is not None:
+                row.can_learn = can_learn
+            row.updated_by = updated_by
+            row.updated_at = utc_now()
+            for duplicate in rows[1:]:
+                await self.session.delete(duplicate)
+        await self.session.flush()
+        return row
+
+    async def can_query(self, *, destination: Scope, source: Scope) -> bool:
+        if destination.chat_id is None or source.chat_id is None:
+            return False
+        row = await self.session.scalar(
+            select(MemoryScopePermission).where(
+                MemoryScopePermission.destination_chat_id == destination.chat_id,
+                _nullable_eq(MemoryScopePermission.destination_thread_id, destination.thread_id),
+                MemoryScopePermission.source_chat_id == source.chat_id,
+                _nullable_eq(MemoryScopePermission.source_thread_id, source.thread_id),
+                MemoryScopePermission.can_query.is_(True),
+            )
+        )
+        return row is not None
+
+
+class SummaryTemplateRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def upsert(
+        self, *, name: str, prompt: str, updated_by: int | None = None
+    ) -> SummaryTemplate:
+        clean_name = normalize_profile_name(name)
+        clean_prompt = prompt.strip()
+        if not clean_prompt:
+            raise ValueError("summary template prompt cannot be empty")
+        rows = list(
+            (
+                await self.session.scalars(
+                    select(SummaryTemplate)
+                    .where(SummaryTemplate.name == clean_name)
+                    .order_by(SummaryTemplate.id.asc())
+                )
+            ).all()
+        )
+        now = utc_now()
+        if not rows:
+            row = SummaryTemplate(
+                name=clean_name,
+                prompt=clean_prompt,
+                created_by=updated_by,
+                created_at=now,
+                updated_at=now,
+            )
+            self.session.add(row)
+        else:
+            row = rows[0]
+            row.prompt = clean_prompt
+            row.updated_at = now
+            for duplicate in rows[1:]:
+                await self.session.delete(duplicate)
+        await self.session.flush()
+        return row
+
+    async def get_prompt(self, name: str) -> str | None:
+        clean_name = normalize_profile_name(name)
+        row = await self.session.scalar(
+            select(SummaryTemplate).where(SummaryTemplate.name == clean_name)
+        )
+        return row.prompt if row is not None else None
+
+    async def list_templates(self) -> list[SummaryTemplate]:
+        return list(
+            (
+                await self.session.scalars(
+                    select(SummaryTemplate).order_by(SummaryTemplate.name.asc())
+                )
+            ).all()
+        )
+
+
 class EventRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -729,3 +1052,24 @@ def _nullable_eq(column, value):
     if value is None:
         return column.is_(None)
     return column == value
+
+
+def normalize_profile_name(name: str) -> str:
+    clean = name.strip().lower()
+    if not clean or len(clean) > 64:
+        raise ValueError("name must be 1-64 characters")
+    allowed = set("abcdefghijklmnopqrstuvwxyz0123456789_-")
+    if any(char not in allowed for char in clean):
+        raise ValueError("name may contain only letters, numbers, underscore and dash")
+    return clean
+
+
+def dedupe_scopes(scopes: list[Scope]) -> list[Scope]:
+    seen: set[str] = set()
+    out: list[Scope] = []
+    for scope in scopes:
+        if scope.key in seen:
+            continue
+        seen.add(scope.key)
+        out.append(scope)
+    return out
