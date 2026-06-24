@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+import pzp_ai_bot.main as main_module
 from pzp_ai_bot.app_context import build_context
 from pzp_ai_bot.config import get_settings
 from pzp_ai_bot.main import app
@@ -149,6 +150,29 @@ def test_runtime_audit_and_db_maintenance_commands(
     assert "integrity_check: ok" in integrity_result.output
     assert backup_result.exit_code == 0, backup_result.output
     assert backup_path.exists()
+
+
+def test_cli_redacts_database_url_credentials(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    credentialed_url = "postgresql+asyncpg://user:pass123@example.invalid:5432/pzp"
+    monkeypatch.setenv("DB_URL", credentialed_url)
+    monkeypatch.setenv("MEMORY_DIR", str(tmp_path / "memory"))
+    monkeypatch.setenv("AI_PROVIDER", "fake")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123:fake")
+    monkeypatch.setattr(main_module, "upgrade_schema", lambda settings: None)
+
+    show_config = runner.invoke(app, ["show-config"])
+    doctor = runner.invoke(app, ["doctor"])
+    migrate = runner.invoke(app, ["migrate"])
+
+    assert show_config.exit_code == 0, show_config.output
+    assert doctor.exit_code == 0, doctor.output
+    assert migrate.exit_code == 0, migrate.output
+    combined = show_config.output + doctor.output + migrate.output
+    assert "pass123" not in combined
+    assert "user:" not in combined
+    assert "postgresql+asyncpg://[REDACTED]@example.invalid:5432/pzp" in combined
 
 
 def test_successful_cli_memory_commands(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

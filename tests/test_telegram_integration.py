@@ -661,6 +661,123 @@ async def test_unauthorized_admin_command_is_rejected(context: AppContext) -> No
 
 
 @pytest.mark.asyncio
+async def test_non_admin_cannot_export_foreign_scope(context: AppContext) -> None:
+    memory = RouterMemoryDouble()
+    test_context = cast(Any, context)
+    test_context.memory = memory
+    test_context.admins = AllowingAdmins(allow=False, bot_admin_ids=set())
+    session = RecordingTelegramSession()
+    bot = Bot(context.settings.telegram_bot_token, session=session)
+    dispatcher = build_dispatcher(context)
+
+    await feed(
+        dispatcher,
+        bot,
+        message_update(
+            "/memory_export md scope=-100999", update_id=310, message_id=310, user_id=222
+        ),
+    )
+
+    assert not memory.calls
+    assert any("another chat scope" in text for text in session.sent_texts())
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "/forget scope=-100999 confirm=token",
+        "/settings scope=-100999 top_k=7",
+        "/memory_settings scope=-100999 top_k=8",
+        "/memory_item_delete 1 scope=-100999",
+    ],
+)
+@pytest.mark.asyncio
+async def test_chat_admin_cannot_mutate_foreign_scope(context: AppContext, command: str) -> None:
+    memory = RouterMemoryDouble()
+    test_context = cast(Any, context)
+    test_context.memory = memory
+    test_context.admins = AllowingAdmins(allow=True, bot_admin_ids={111})
+    session = RecordingTelegramSession(chat_admin_ids={222})
+    bot = Bot(context.settings.telegram_bot_token, session=session)
+    dispatcher = build_dispatcher(context)
+
+    await feed(dispatcher, bot, message_update(command, update_id=320, message_id=320, user_id=222))
+
+    assert not memory.calls
+    assert any("another chat scope" in text for text in session.sent_texts())
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "/memory_profile_set steal sources=-100901",
+        "/memory_profile_allow steal scope=-10012345",
+        "/runtime_settings retrieval_top_k=7",
+        "/memory_template_set concise Keep it short",
+        "/system_prompt_set direct Be direct",
+    ],
+)
+@pytest.mark.asyncio
+async def test_chat_admin_cannot_change_global_profile_runtime_or_prompt_state(
+    context: AppContext, command: str
+) -> None:
+    memory = RouterMemoryDouble()
+    test_context = cast(Any, context)
+    test_context.memory = memory
+    test_context.admins = AllowingAdmins(allow=True, bot_admin_ids={111})
+    session = RecordingTelegramSession(chat_admin_ids={222})
+    bot = Bot(context.settings.telegram_bot_token, session=session)
+    dispatcher = build_dispatcher(context)
+
+    await feed(dispatcher, bot, message_update(command, update_id=330, message_id=330, user_id=222))
+
+    assert not memory.calls
+    assert any("configured bot admin" in text for text in session.sent_texts())
+
+
+@pytest.mark.asyncio
+async def test_bot_admin_can_target_foreign_scope(context: AppContext) -> None:
+    memory = RouterMemoryDouble()
+    test_context = cast(Any, context)
+    test_context.memory = memory
+    test_context.admins = AllowingAdmins(allow=False, bot_admin_ids={111})
+    session = RecordingTelegramSession()
+    bot = Bot(context.settings.telegram_bot_token, session=session)
+    dispatcher = build_dispatcher(context)
+
+    await feed(
+        dispatcher,
+        bot,
+        message_update(
+            "/forget scope=-100999 confirm=token", update_id=340, message_id=340, user_id=111
+        ),
+    )
+
+    assert ("forget", Scope(-100999, None)) in memory.calls
+
+
+@pytest.mark.asyncio
+async def test_chat_admin_can_target_current_chat_scope(context: AppContext) -> None:
+    memory = RouterMemoryDouble()
+    test_context = cast(Any, context)
+    test_context.memory = memory
+    test_context.admins = AllowingAdmins(allow=True, bot_admin_ids={111})
+    session = RecordingTelegramSession(chat_admin_ids={222})
+    bot = Bot(context.settings.telegram_bot_token, session=session)
+    dispatcher = build_dispatcher(context)
+
+    await feed(
+        dispatcher,
+        bot,
+        message_update(
+            "/memory_status scope=-10012345", update_id=350, message_id=350, user_id=222
+        ),
+    )
+
+    assert ("memory_status", Scope(-10012345, None)) in memory.calls
+
+
+@pytest.mark.asyncio
 async def test_topic_command_uses_topic_scope(context: AppContext) -> None:
     memory = RouterMemoryDouble()
     test_context = cast(Any, context)

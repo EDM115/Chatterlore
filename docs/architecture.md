@@ -7,12 +7,12 @@ PZP AI is organized around clear runtime boundaries: Telegram update handling, s
 - `telegram`: aiogram routers, dispatcher composition, polling, FastAPI webhook mode, topic scope extraction, admin checks, safe Telegram API send wrappers, export document chunking, memory status/debug/item maintenance commands and Telegram-native settings commands.
 - `memory`: policy evaluation, ingestion, summarization, canonical Markdown compaction, retrieval, import/export, Telegram JSON import, manual note metadata, per-scope settings, cross-chat profiles/permissions, summary templates, system prompt templates, bounded range summaries, retention pruning, review approvals, provider/model selection, usage telemetry and forget confirmation.
 - `db`: async SQLAlchemy models and repositories over SQLite, managed through Alembic migrations.
-- `ai`: provider protocols plus fake, OpenAI-compatible and local embedding providers, provider profile selection, retry/backoff and configurable redaction.
+- `ai`: provider protocols plus fake, OpenAI-compatible and local embedding providers, provider profile selection, retry/backoff and configurable redaction including common key/value, quoted JSON secret fields, bearer/common token, email, phone and custom-pattern forms.
 
 ## Scope Model
 
 Every learned message belongs to a `Scope(chat_id, thread_id)`. Topic messages use Telegram's `message_thread_id` only when `is_topic_message` is true. Retrieval for `/ask` uses the current scope by default.  
-Cross-chat retrieval only happens when a named memory profile is requested and the destination scope has explicit source-scope permission for learning-enabled source scopes.
+Cross-chat retrieval only happens when a named memory profile is requested and the destination scope has explicit source-scope permission for learning-enabled source scopes. Profile creation and profile permission grants are configured-bot-admin operations so a current-chat admin cannot grant access to another chat by passing `scope=`.
 
 ## Memory Model
 

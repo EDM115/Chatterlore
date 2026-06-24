@@ -5,6 +5,7 @@ import importlib.util
 import sqlite3
 from pathlib import Path
 from typing import Annotated
+from urllib.parse import urlsplit, urlunsplit
 
 import typer
 from rich.console import Console
@@ -28,6 +29,20 @@ app = typer.Typer(help="Telegram scoped memory assistant.")
 console = Console()
 
 
+def redact_url_credentials(url: str) -> str:
+    parsed = urlsplit(url)
+    if "@" not in parsed.netloc:
+        return url
+    host = parsed.hostname or ""
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+    if parsed.port is not None:
+        host = f"{host}:{parsed.port}"
+    return urlunsplit(
+        (parsed.scheme, f"[REDACTED]@{host}", parsed.path, parsed.query, parsed.fragment)
+    )
+
+
 def run(coro):
     return asyncio.run(coro)
 
@@ -37,7 +52,7 @@ def migrate() -> None:
     """Create or upgrade the local database schema."""
     settings = get_settings()
     upgrade_schema(settings)
-    console.print(f"Schema ready at [bold]{settings.db_url}[/bold]")
+    console.print(f"Schema ready at [bold]{redact_url_credentials(settings.db_url)}[/bold]")
 
 
 @app.command()
@@ -293,7 +308,7 @@ def show_config() -> None:
     settings = get_settings()
     visible = {
         "runtime_mode": settings.runtime_mode,
-        "db_url": settings.db_url,
+        "db_url": redact_url_credentials(settings.db_url),
         "memory_dir": str(settings.memory_dir),
         "ai_provider": settings.ai_provider,
         "chat_model": settings.chat_model,
@@ -373,7 +388,7 @@ def provider_health_checks(settings: Settings) -> list[tuple[str, bool, str]]:
             )
     sqlite_path = settings.sqlite_path
     if sqlite_path is None:
-        checks.append(("database", True, settings.db_url))
+        checks.append(("database", True, redact_url_credentials(settings.db_url)))
     else:
         parent = sqlite_path.parent
         try:

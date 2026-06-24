@@ -23,7 +23,7 @@ This page is the command reference for Telegram admins, configured bot admins an
 - `/memory_status [scope=...]`: show scoped message, learned, skipped, knowledge, embedding, audit, pending-review and AI usage counts for a chat/topic or all scopes when run by a configured bot admin.
 - `/memory_scopes [scope=this_chat|all|<chat_id>:<thread_id>]`: list known chat/topic scopes, labels, learning status and message/knowledge counts so admins can discover topic allowlists.
 - `/memory_debug [scope=...] [message_id=N] [limit=N]`: explain why recent skipped messages were not learned without returning the skipped message text.
-- `/memory_export [md|jsonl] [scope=...]`: send a memory export file with readable scope/source metadata where available. Large exports are split into document parts below Telegram upload limits. Unknown formats, scopes or extra tokens are rejected with a usage/error message.
+- `/memory_export [md|jsonl] [scope=...]`: send a memory export file with readable scope/source metadata where available. Large exports are split into document parts below Telegram upload limits. Unknown formats, scopes, unauthorized foreign chat scopes or extra tokens are rejected with a usage/error message.
 - `/memory_prune [scope=...]`: apply configured raw-message and knowledge retention for a scope.
 - `/forget scope=this_topic|this_chat|all confirm=<token>`: delete memory after a confirmation round trip.
 
@@ -43,28 +43,28 @@ This page is the command reference for Telegram admins, configured bot admins an
 - `/memory_approve <review_id>`: approve a pending proposal and insert it as durable memory.
 - `/memory_reject <review_id>`: reject a pending proposal.
 - `/memory_profiles`: list named cross-chat memory profiles.
-- `/memory_profile_set <name> sources=<scope,scope>`: create or replace a profile source scopes.
-- `/memory_profile_allow <name> [scope=...] [enabled=on|off] [learn=on|off]`: allow or revoke a destination scope permission to query a profile source scopes. Cross-chat retrieval also requires each source scope learning policy to be enabled.
+- `/memory_profile_set <name> sources=<scope,scope>`: create or replace a profile source scopes. This global cross-scope operation is restricted to configured bot admins.
+- `/memory_profile_allow <name> [scope=...] [enabled=on|off] [learn=on|off]`: allow or revoke a destination scope permission to query a profile source scopes. This global cross-scope operation is restricted to configured bot admins. Cross-chat retrieval also requires each source scope learning policy to be enabled.
 - `/memory_templates`: list built-in and custom summary templates.
-- `/memory_template_set <name> <prompt>`: create or update a reusable custom summary template.
+- `/memory_template_set <name> <prompt>`: create or update a reusable custom summary template. Custom template writes are restricted to configured bot admins.
 - `/system_prompts`: list built-in and custom answer system prompt templates.
-- `/system_prompt_set <name> <prompt>`: create or update a reusable answer system prompt template.
+- `/system_prompt_set <name> <prompt>`: create or update a reusable answer system prompt template. Custom prompt writes are restricted to configured bot admins.
 
 ## Settings And Admin Review
 
 - `/memory_settings [top_k=N] [summary_batch_size=N] [summary_model=name] [provider=name] [chat_model=name] [embedding_model=name] [reasoning=low|medium|high] [system_prompt=name] [raw_retention_days=N|off] [knowledge_retention_days=N|off] [review_before_compact=on|off]`: view or directly edit current-scope memory, provider, prompt and model settings.
 - `/settings [top_k=N] [summary_batch_size=N] [summary_model=name] [provider=name] [chat_model=name] [embedding_model=name] [reasoning=low|medium|high] [system_prompt=name] [raw_retention_days=N|off] [knowledge_retention_days=N|off] [review_before_compact=on|off]`: preview scoped setting changes and return a confirmation token. Re-run `/settings confirm=<token>` before expiry to apply and audit the change.
 - `/audit_events limit=N event_type=name scope=this_topic|this_chat|all`: review audit events. `scope=all` is restricted to configured bot admins.
-- `/runtime_settings reload=on`: force a safe runtime-settings refresh from Telegram.
+- `/runtime_settings reload=on`: force a safe runtime-settings refresh from Telegram. Runtime-setting reads and writes are restricted to configured bot admins because they affect global defaults.
 - `/stats`: show global message, knowledge, embedding and event counts. `/stats scope=...` shows the richer scoped status view and requires admin access.
 - `/help`: show command help inside Telegram.
 
-Configured `BOT_ADMINS` can administer every scope. Telegram chat admins can administer their chat. Only configured bot admins can export or forget `scope=all`. Polling and webhook startup register the current command list with Telegram through `set_my_commands`.
+Configured `BOT_ADMINS` can administer every scope, including `scope=all` and explicit foreign chat/topic scopes. Telegram chat admins can administer only the current chat they administer; commands that accept `scope=` reject foreign chat scopes for chat admins instead of applying current-chat authorization to another target. Global profile, runtime-setting, summary-template and system-prompt mutations are restricted to configured bot admins. Polling and webhook startup register the current command list with Telegram through `set_my_commands`.
 
 ## CLI Reference
 
 - `pzp-bot doctor`: checks configured provider profiles, missing OpenAI-compatible keys, missing local optional dependencies, SQLite parent write access and memory directory write access without starting Telegram.
-- `pzp-bot show-config`: prints non-secret runtime settings including provider profiles, default system prompt, reasoning level and admin-cache TTL.
+- `pzp-bot show-config`: prints non-secret runtime settings including provider profiles, default system prompt, reasoning level and admin-cache TTL. Credential-bearing database URLs are redacted before display.
 - `pzp-bot memory-status --scope all|<chat_id>|<chat_id>:<thread_id>`: prints the same scoped message/memory/AI usage status available through `/memory_status`.
 - `pzp-bot import-telegram-json --file result.json --chat-id <id> [--thread-id <id>]`: imports Telegram Desktop JSON exports or Bot API update dumps as learned raw-message memory for local backfill-free history loading.
 - `pzp-bot audit-events --limit N [--event-type name] [--scope scope] [--format text|jsonl] [--out path]`: reviews or exports `bot_events`.

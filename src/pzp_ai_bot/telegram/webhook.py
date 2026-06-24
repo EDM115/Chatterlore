@@ -17,6 +17,13 @@ from pzp_ai_bot.telegram.scheduler import (
     stop_task,
 )
 
+UNSAFE_WEBHOOK_SECRETS = {"", "change-me", "changeme", "default", "placeholder", "secret"}
+
+
+def require_safe_webhook_secret(secret: str) -> None:
+    if secret.strip().lower() in UNSAFE_WEBHOOK_SECRETS:
+        raise RuntimeError("WEBHOOK_SECRET must be set to a non-default value for webhook mode")
+
 
 def create_webhook_app(
     context: AppContext, *, bot: Bot | None = None, dispatcher: Dispatcher | None = None
@@ -25,6 +32,7 @@ def create_webhook_app(
         raise RuntimeError("TELEGRAM_BOT_TOKEN is required for webhook mode")
     if not context.settings.webhook_url:
         raise RuntimeError("WEBHOOK_URL is required for webhook mode")
+    require_safe_webhook_secret(context.settings.webhook_secret)
 
     owns_bot = bot is None
     telegram_bot: Any = bot or Bot(context.settings.telegram_bot_token)

@@ -116,12 +116,16 @@ async def test_openai_compatible_retries_and_redacts_chat_and_embedding_payloads
             ChatMessage(
                 role="user",
                 content=(
-                    "email me@example.com phone +1 415 555 2671 api_key=secret sk-abcdefgh ACME-123"
+                    "email me@example.com phone +1 415 555 2671 "
+                    "api_key=secret sk-abcdefgh ACME-123 "
+                    'json={"password":"hunter2","api_key":"abcdefghi"}'
                 ),
             )
         ]
     )
-    vectors = await provider.embed(["token:secret2 user@example.com ACME-456"])
+    vectors = await provider.embed(
+        ['token:secret2 user@example.com ACME-456 json={"secret":"embed-secret"}']
+    )
 
     assert result.content == "ok"
     assert vectors == [[0.1, 0.2, 0.3]]
@@ -132,12 +136,15 @@ async def test_openai_compatible_retries_and_redacts_chat_and_embedding_payloads
     assert "me@example.com" not in chat_payload
     assert "+1 415 555 2671" not in chat_payload
     assert "secret" not in chat_payload
+    assert "hunter2" not in chat_payload
+    assert "abcdefghi" not in chat_payload
     assert "ACME-123" not in chat_payload
     assert "[REDACTED_EMAIL]" in chat_payload
     assert "[REDACTED_PHONE]" in chat_payload
     assert "[REDACTED_CUSTOM]" in chat_payload
     assert "user@example.com" not in embedding_payload
     assert "secret2" not in embedding_payload
+    assert "embed-secret" not in embedding_payload
 
 
 @pytest.mark.asyncio

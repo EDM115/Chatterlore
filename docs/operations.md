@@ -21,7 +21,7 @@ Audit events are operational metadata, not memory exports. Treat them as sensiti
 - Safe runtime defaults live in `runtime_settings` and are validated before write and again before refresh.
 - Polling and webhook runtimes run a background refresher using `RUNTIME_SETTINGS_REFRESH_SECONDS`, so safe setting changes take effect without restarting the process.
 - `pzp-bot runtime-settings --set retrieval_top_k=8 --set answer_min_score=0.2` edits safe defaults and writes a `runtime_settings_update` audit event.
-- `/runtime_settings reload=on` forces a refresh from Telegram.
+- `/runtime_settings reload=on` forces a refresh from Telegram and is restricted to configured bot admins because runtime defaults are global.
 
 Secrets are not runtime settings. Keep provider keys, Telegram tokens and webhook secrets in environment variables or deployment secret stores.
 
@@ -44,4 +44,4 @@ Secrets are not runtime settings. Keep provider keys, Telegram tokens and webhoo
 ## Admin Cache
 
 - `ADMIN_CACHE_TTL_SECONDS` controls how long Telegram chat administrator lookups are cached in memory. Set it to `0` for near-immediate refresh during debugging, or keep the default `300` seconds for normal operation.
-- `AdminService.cache_stats()` exposes entry count, expired entry count, TTL and configured bot-admin count for tests and future diagnostics. `pzp-bot show-config` prints the configured TTL without exposing admin IDs.
+- `AdminService.cache_stats()` exposes entry count, expired entry count, TTL and configured bot-admin count for tests and future diagnostics. `pzp-bot show-config` prints the configured TTL without exposing admin IDs and redacts credentials embedded in database URLs.

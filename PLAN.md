@@ -87,7 +87,7 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 - **DONE**: `pzp-bot summarize-now --scope <scope>` summarizes pending messages and compacts `MEMORY.md`
 - **DONE**: `pzp-bot export-memory --format md|jsonl --scope <scope> [--out path]` exports memory and rejects unsupported formats or invalid scopes before opening the app context
 - **DONE**: `pzp-bot import-jsonl --file path --chat-id id [--thread-id id]` imports knowledge items into a scope and rejects empty or malformed JSONL with clear errors
-- **DONE**: `pzp-bot show-config` prints non-secret runtime settings, provider profiles, default system prompt and reasoning level
+- **DONE**: `pzp-bot show-config` prints non-secret runtime settings, provider profiles, default system prompt, reasoning level and redacted credential-bearing database URLs
 - **DONE**: `pzp-bot doctor` checks configured provider profiles, missing OpenAI-compatible API keys, missing local optional dependencies, SQLite parent write access and memory directory write access
 - **DONE**: `pzp-bot audit-events --limit N [--event-type name] [--scope scope] [--format text|jsonl] [--out path]` reviews or exports recent `bot_events`
 - **DONE**: `pzp-bot runtime-settings [--reload] [--set key=value]...` views, reloads or edits validated safe database-backed runtime settings
@@ -116,7 +116,7 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 - **DONE**: `/summarize_range start=<message_id> end=<message_id> [template=name] [provider=name] [model=name] [prompt="one-shot instruction"]` summarizes a bounded learned message range and records source IDs, date interval, template and AI settings metadata
 - **DONE**: `/forget scope=this_topic|this_chat|all confirm=<token>` uses persisted expiring two-step confirmation and deletes scoped memory
 - **DONE**: `/audit_events [scope=this_topic|this_chat|all] [event_type=name] [limit=N]` exposes recent `bot_events` for admin review
-- **DONE**: `/runtime_settings [reload=on] [key=value ...]` views, reloads or edits validated safe global runtime defaults from Telegram
+- **DONE**: `/runtime_settings [reload=on] [key=value ...]` views, reloads or edits validated safe global runtime defaults from Telegram and is restricted to configured bot admins
 - **DONE**: `/memory_scopes`, `/memory_debug`, `/memory_items`, `/memory_item_delete` and `/memory_item_refresh` provide topic/scope discovery, skipped-message diagnostics, memory browsing, item deletion and item refresh workflows from Telegram
 - **DONE**: `/help` returns Telegram-native command discovery text
 
@@ -134,7 +134,7 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 - **DONE**: `OpenAICompatibleProvider` supports configurable chat and embedding calls
 - **DONE**: `LocalSentenceTransformerEmbeddingProvider` supports optional local embeddings when the `local` extra is installed
 - **DONE**: Retrieval uses embedding cosine similarity over knowledge-item embeddings first and learned raw-message embeddings as the second tier
-- **DONE**: Cross-chat retrieval is disabled by default and only expands through named profiles whose source scopes have destination permission and enabled learning policy
+- **DONE**: Cross-chat retrieval is disabled by default and only expands through named profiles whose source scopes have destination permission and enabled learning policy; profile source and permission management is restricted to configured bot admins
 - **DONE**: `/ask` falls back to deterministic scoped results if chat generation fails
 - **DONE**: Duplicate Telegram message ingestion no-ops deterministically and does not duplicate message embeddings
 - **DONE**: Global summarization groups pending messages by concrete chat/topic scope instead of creating mixed global knowledge items
@@ -143,7 +143,7 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 - **DONE**: Optional review-before-compact mode writes proposed summaries and requires approval before durable knowledge insertion
 - **DONE**: Manual notes can be tagged, prioritized, sourced, listed, edited, deleted and exported with metadata
 - **DONE**: Bounded range summaries use built-in, custom or one-shot templates and store boundary message IDs, source IDs, date intervals and AI settings metadata
-- **DONE**: OpenAI-compatible chat and embedding calls use bounded retry/backoff and configurable redaction for secret-like key/value pairs, bearer/common token forms, emails, phone numbers and custom regex patterns
+- **DONE**: OpenAI-compatible chat and embedding calls use bounded retry/backoff and configurable redaction for secret-like key/value pairs, quoted JSON secret fields, bearer/common token forms, emails, phone numbers and custom regex patterns
 - **DONE**: Provider profiles can be configured through `AI_PROVIDER_PROFILES`; missing OpenAI-compatible credentials fail closed and local embedding missing extras raise actionable install guidance
 - **DONE**: `/ask` returns an explicit insufficient-context answer when scoped memory is empty or below the configured score threshold
 
@@ -151,13 +151,14 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 
 - **DONE**: Polling runtime calls `delete_webhook` before `start_polling`
 - **DONE**: Webhook runtime sets the webhook on lifespan startup
-- **DONE**: Webhook endpoint validates `X-Telegram-Bot-Api-Secret-Token`
+- **DONE**: Webhook endpoint validates `X-Telegram-Bot-Api-Secret-Token` and webhook startup rejects blank or placeholder `WEBHOOK_SECRET` values such as `change-me`, `changeme`, `placeholder`, `default` and `secret`
 - **DONE**: Topic scope extraction uses `is_topic_message` and `message_thread_id`
 - **DONE**: Admin service caches `get_chat_administrators` results, honors configured `BOT_ADMINS`, supports configurable `ADMIN_CACHE_TTL_SECONDS` and exposes cache stats for diagnostics
 - **DONE**: Polling and webhook runtimes start a background idle summarizer using `SUMMARY_IDLE_SECONDS`
 - **DONE**: Polling and webhook startup register the current Telegram command list through `set_my_commands`
 - **DONE**: Polling and webhook runtimes start a background runtime-settings refresher using `RUNTIME_SETTINGS_REFRESH_SECONDS`
 - **DONE**: Telegram update handling uses structured `structlog` logging with safe chat/thread/user/message metadata, duration and error fields
+- **DONE**: Telegram commands that accept `scope=` authorize the target scope, so chat admins can operate only on the current chat while configured bot admins can operate across chats and `scope=all`
 
 ### Documentation
 
@@ -179,6 +180,8 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 - **DONE**: `uv run ruff check .` passed on 2026-06-24 after plan v0.11
 - **DONE**: `uv run ty check` passed on 2026-06-24 after plan v0.11
 - **DONE**: `uv run pytest` passed on 2026-06-24 with 118 passed, 1 skipped and 4 existing aiosqlite thread warnings after plan v0.11
+- **DONE**: Security hardening focused validation passed on 2026-06-24 with `uv run pytest tests/test_telegram_integration.py tests/test_webhook.py tests/test_ai_providers.py tests/test_cli.py -q` reporting 97 passed after independent verifier follow-up
+- **DONE**: Post-security-hardening verification passed on 2026-06-24 with `uv run ruff format --check .`, `uv run ruff check .`, `uv run ty check` and `uv run pytest -q` reporting 138 passed and 1 skipped after independent verifier follow-up
 - **DONE**: `uv run alembic upgrade head` passed on 2026-06-24 through `0006_phase6_product_completeness` after plan v0.11
 - **DONE**: `uv run pzp-bot --help` displayed all CLI commands on 2026-06-24 after plan v0.11
 - **DONE**: `uv run pzp-bot doctor` passed on 2026-06-24 with the default fake provider after plan v0.11
@@ -309,7 +312,7 @@ Goal: make the assistant useful to group admins and participants beyond the mini
 - **DONE**: `tests/test_scope.py` verifies topic scope extraction and scope parsing
 - **DONE**: `tests/test_policy_and_ingestion.py` verifies learning-disabled skip, learning-enabled summarization and user deny behavior
 - **DONE**: `tests/test_memory_service.py` verifies scoped remember/search/ask, forget confirmation and JSONL import/export
-- **DONE**: `tests/test_webhook.py` verifies bad webhook secret rejection
+- **DONE**: `tests/test_webhook.py` verifies bad webhook secret rejection and fail-closed rejection of blank/default/placeholder webhook secrets
 - **DONE**: `tests/test_phase1.py` verifies concrete-scope global summarization, idle summarization, duplicate ingestion idempotency, nullable policy cleanup, message-embedding retrieval and JSONL validation
 - **DONE**: `tests/test_phase2.py` verifies canonical compaction grouping/dedup/source links, per-scope settings and review approval, and retention pruning without durable-summary deletion
 - **DONE**: `tests/test_phase2_remaining.py` verifies manual note metadata/edit/delete/export, cross-chat profile permission gating, range summaries with templates and fake-provider template prompt inputs
@@ -318,7 +321,7 @@ Goal: make the assistant useful to group admins and participants beyond the mini
 - **DONE**: `tests/test_telegram_live.py` provides optional skipped-by-default `telegram_live` smoke coverage for real Telegram credentials
 - **DONE**: `tests/test_phase5.py` verifies persisted forget confirmations across restarts, expired confirmation rejection, runtime settings refresh/audit events, audit scope filtering, SQLite stats and runtime-settings refresher scheduling
 - **DONE**: `tests/test_phase6.py` verifies scoped memory status and topic discovery, skipped-message diagnostics, Telegram Desktop JSON import, Bot API update dump import, representative import/export/forget memory quality, memory item browse/delete/refresh, `/settings` preview/confirmation and compact source references
-- **DONE**: `tests/test_cli.py` verifies Alembic-backed migration, CLI validation errors, successful `summarize-now`, `export-memory`, `import-jsonl`, `show-config`, Phase 5 runtime settings/audit export commands and DB maintenance commands
+- **DONE**: `tests/test_cli.py` verifies Alembic-backed migration, CLI validation errors, successful `summarize-now`, `export-memory`, `import-jsonl`, `show-config`, credential-redacted DB URL diagnostics, Phase 5 runtime settings/audit export commands and DB maintenance commands
 - **DONE**: `tests/test_telegram_commands.py` verifies command help text and mocked `set_my_commands` registration
 - **DONE**: `tests/test_admin_service.py` verifies configurable admin-cache TTL, cache reuse and cache stats
 - **DONE**: `tests/test_deployment_artifacts.py` verifies Dockerfile, `.dockerignore`, GitHub Actions quality gates and Alembic runtime root discovery
@@ -327,6 +330,8 @@ Goal: make the assistant useful to group admins and participants beyond the mini
 ### Tests Still Required
 
 - **DONE**: TEST-004 successful CLI `summarize-now`, `export-memory`, `import-jsonl` and `show-config` coverage is implemented
+- **DONE**: TEST-SEC-001 Telegram regressions verify non-admin export rejection, foreign-scope mutation rejection for chat admins, bot-admin foreign-scope allowance and bot-admin-only profile/runtime/template mutations
+- **DONE**: TEST-SEC-002 provider and CLI regressions verify quoted JSON secret redaction and credential-bearing DB URL redaction
 - **DONE**: TEST-013 Docker smoke test and documentation are implemented
 - **DONE**: TEST-019 `/settings` view, direct edit compatibility, preview, confirm, rejection and unauthorized coverage is implemented
 - **TODO**: Optional live Telegram smoke remains skipped by default and requires real credentials
@@ -541,3 +546,4 @@ uv run pzp-bot webhook
 - **2026-06-23 / v0.9**: Implemented non-Docker/non-CI Phase 5 operations, observability and security: structured logging, audit export, persisted forget confirmations, DB maintenance commands, privacy/secrets/operations/release docs, reloadless runtime settings and database-backed editable safe settings; Docker runtime verification and CI workflow are explicitly deferred until Docker is available locally
 - **2026-06-23 / v0.10**: Implemented Phase 6 product completeness: scoped memory status and topic discovery, skipped-message diagnostics, Telegram Desktop JSON import, memory item browse/delete/refresh, supported non-text metadata ingestion, multilingual prompt guidance, compact answer source references and confirmed /settings changes; Docker and CI work remained deferred as previously recorded.
 - **2026-06-24 / v0.11**: Closed deferred Docker and CI work plus remaining offline gaps: package version `0.8.0`, multi-stage non-root Docker image, optional-env compose smoke, GitHub Actions gates, Alembic Docker root fix, broader CLI tests, `/settings` command tests, generic Telegram JSON update dump import, representative memory quality workflow and configurable/observable admin cache.
+- **2026-06-24 / v0.12**: Patched Codex Security scan findings: target-scope authorization for Telegram commands, bot-admin-only global profile/runtime/template mutations, fail-closed webhook default/placeholder secret rejection, quoted JSON secret redaction, DB URL credential masking in CLI diagnostics, independent subagent verification and focused/full validation gates.
