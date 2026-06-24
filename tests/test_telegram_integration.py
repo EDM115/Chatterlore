@@ -513,7 +513,7 @@ async def test_dispatcher_feeds_command_and_normal_message_updates(context: AppC
 
     await feed(dispatcher, bot, message_update("/learn_on", update_id=1, message_id=1, user_id=111))
     await feed(
-        dispatcher, bot, message_update("Phase 4 dispatcher fact", update_id=2, message_id=2)
+        dispatcher, bot, message_update("Telegram dispatcher fact", update_id=2, message_id=2)
     )
 
     stats = await context.memory.stats()
