@@ -68,6 +68,27 @@ def build_router(context: AppContext) -> Router:
             await safe_answer(message, "This command requires a bot admin or Telegram chat admin.")
         return ok
 
+    async def require_bot_admin(message: Message) -> bool:
+        if context.admins.is_bot_admin(message_user_id(message)):
+            return True
+        await safe_answer(message, "This command requires a configured bot admin.")
+        return False
+
+    async def require_scope_admin(message: Message, scope: Scope) -> bool:
+        user_id = message_user_id(message)
+        if context.admins.is_bot_admin(user_id):
+            return True
+        if scope.is_global:
+            await safe_answer(message, "Only configured bot admins can target all scopes.")
+            return False
+        if scope.chat_id != int(message.chat.id):
+            await safe_answer(message, "Only configured bot admins can target another chat scope.")
+            return False
+        ok = await context.admins.can_administer(message.bot, int(message.chat.id), user_id)
+        if not ok:
+            await safe_answer(message, "This command requires a bot admin or Telegram chat admin.")
+        return ok
+
     @router.message(Command("ask"))
     async def ask(message: Message, command: CommandObject) -> None:
         try:
@@ -146,8 +167,7 @@ def build_router(context: AppContext) -> Router:
         except ValueError as exc:
             await safe_answer(message, str(exc))
             return
-        if scope.is_global and not context.admins.is_bot_admin(message_user_id(message)):
-            await safe_answer(message, "Only configured bot admins can export all memory.")
+        if not await require_scope_admin(message, scope):
             return
         payload = await context.memory.export_memory(
             scope if not scope.is_global else None, fmt=fmt
@@ -185,8 +205,7 @@ def build_router(context: AppContext) -> Router:
         except ValueError as exc:
             await safe_answer(message, str(exc))
             return
-        if scope.is_global and not context.admins.is_bot_admin(message_user_id(message)):
-            await safe_answer(message, "Only configured bot admins can view all-scope status.")
+        if not await require_scope_admin(message, scope):
             return
         status = await context.memory.memory_status(None if scope.is_global else scope)
         await safe_answer(message, format_memory_status(status)[:3900])
@@ -203,8 +222,7 @@ def build_router(context: AppContext) -> Router:
         except ValueError as exc:
             await safe_answer(message, str(exc))
             return
-        if scope.is_global and not context.admins.is_bot_admin(message_user_id(message)):
-            await safe_answer(message, "Only configured bot admins can view all-scope status.")
+        if not await require_scope_admin(message, scope):
             return
         status = await context.memory.memory_status(None if scope.is_global else scope)
         await safe_answer(message, format_memory_status(status)[:3900])
@@ -219,8 +237,7 @@ def build_router(context: AppContext) -> Router:
         except ValueError as exc:
             await safe_answer(message, str(exc))
             return
-        if scope.is_global and not context.admins.is_bot_admin(message_user_id(message)):
-            await safe_answer(message, "Only configured bot admins can list all known scopes.")
+        if not await require_scope_admin(message, scope):
             return
         scopes = await context.memory.known_scopes(None if scope.is_global else scope)
         await safe_answer(message, format_scope_statuses(scopes)[:3900])
@@ -238,6 +255,8 @@ def build_router(context: AppContext) -> Router:
             message_id = int(args["message_id"]) if "message_id" in args else None
         except ValueError as exc:
             await safe_answer(message, str(exc))
+            return
+        if not await require_scope_admin(message, scope):
             return
         skipped = await context.memory.skipped_messages(
             scope, limit=limit, telegram_message_id=message_id
@@ -257,8 +276,7 @@ def build_router(context: AppContext) -> Router:
         except ValueError as exc:
             await safe_answer(message, str(exc))
             return
-        if scope.is_global and not context.admins.is_bot_admin(message_user_id(message)):
-            await safe_answer(message, "Only configured bot admins can audit all memory events.")
+        if not await require_scope_admin(message, scope):
             return
         events = await context.memory.audit_events(
             limit=limit, event_type=args.get("event_type"), scope=None if scope.is_global else scope
@@ -267,7 +285,7 @@ def build_router(context: AppContext) -> Router:
 
     @router.message(Command("runtime_settings"))
     async def runtime_settings(message: Message, command: CommandObject) -> None:
-        if not await require_admin(message):
+        if not await require_bot_admin(message):
             return
         args = parse_key_values(command.args)
         try:
@@ -332,6 +350,8 @@ def build_router(context: AppContext) -> Router:
             )
         except ValueError as exc:
             await safe_answer(message, str(exc))
+            return
+        if not await require_scope_admin(message, scope):
             return
         result = await context.memory.prune_retention(scope)
         await safe_answer(
@@ -427,8 +447,7 @@ def build_router(context: AppContext) -> Router:
         except ValueError as exc:
             await safe_answer(message, str(exc))
             return
-        if scope.is_global and not context.admins.is_bot_admin(message_user_id(message)):
-            await safe_answer(message, "Only configured bot admins can browse all memory items.")
+        if not await require_scope_admin(message, scope):
             return
         items = await context.memory.browse_items(
             None if scope.is_global else scope, kind=args.get("kind"), limit=limit
@@ -452,10 +471,7 @@ def build_router(context: AppContext) -> Router:
         except ValueError as exc:
             await safe_answer(message, str(exc))
             return
-        if scope.is_global and not context.admins.is_bot_admin(message_user_id(message)):
-            await safe_answer(
-                message, "Only configured bot admins can delete all-scope memory items."
-            )
+        if not await require_scope_admin(message, scope):
             return
         try:
             deleted = await context.memory.delete_memory_item(
@@ -488,10 +504,7 @@ def build_router(context: AppContext) -> Router:
         except ValueError as exc:
             await safe_answer(message, str(exc))
             return
-        if scope.is_global and not context.admins.is_bot_admin(message_user_id(message)):
-            await safe_answer(
-                message, "Only configured bot admins can refresh all-scope memory items."
-            )
+        if not await require_scope_admin(message, scope):
             return
         try:
             result = await context.memory.refresh_memory_item(
@@ -513,6 +526,8 @@ def build_router(context: AppContext) -> Router:
             )
         except ValueError as exc:
             await safe_answer(message, str(exc))
+            return
+        if not await require_scope_admin(message, scope):
             return
         notes = await context.memory.list_notes(scope, tag=args.get("tag"))
         await safe_answer(message, format_note_previews(notes)[:3900])
@@ -578,6 +593,8 @@ def build_router(context: AppContext) -> Router:
         except ValueError as exc:
             await safe_answer(message, str(exc))
             return
+        if not await require_scope_admin(message, scope):
+            return
         reviews = await context.memory.pending_reviews(scope)
         await safe_answer(message, format_review_previews(reviews)[:3900])
 
@@ -613,14 +630,14 @@ def build_router(context: AppContext) -> Router:
 
     @router.message(Command("memory_profiles"))
     async def memory_profiles(message: Message) -> None:
-        if not await require_admin(message):
+        if not await require_bot_admin(message):
             return
         profiles = await context.memory.list_memory_profiles()
         await safe_answer(message, format_memory_profiles(profiles)[:3900])
 
     @router.message(Command("memory_profile_set"))
     async def memory_profile_set(message: Message, command: CommandObject) -> None:
-        if not await require_admin(message):
+        if not await require_bot_admin(message):
             return
         parts = (command.args or "").strip().split(None, 1)
         if len(parts) < 2:
@@ -652,7 +669,7 @@ def build_router(context: AppContext) -> Router:
 
     @router.message(Command("memory_profile_allow"))
     async def memory_profile_allow(message: Message, command: CommandObject) -> None:
-        if not await require_admin(message):
+        if not await require_bot_admin(message):
             return
         parts = (command.args or "").strip().split(None, 1)
         if not parts or not parts[0]:
@@ -694,7 +711,7 @@ def build_router(context: AppContext) -> Router:
 
     @router.message(Command("memory_template_set"))
     async def memory_template_set(message: Message, command: CommandObject) -> None:
-        if not await require_admin(message):
+        if not await require_bot_admin(message):
             return
         parts = (command.args or "").strip().split(None, 1)
         if len(parts) < 2:
@@ -718,7 +735,7 @@ def build_router(context: AppContext) -> Router:
 
     @router.message(Command("system_prompt_set"))
     async def system_prompt_set(message: Message, command: CommandObject) -> None:
-        if not await require_admin(message):
+        if not await require_bot_admin(message):
             return
         parts = (command.args or "").strip().split(None, 1)
         if len(parts) < 2:
@@ -771,8 +788,7 @@ def build_router(context: AppContext) -> Router:
         except ValueError as exc:
             await safe_answer(message, str(exc))
             return
-        if scope.is_global and not context.admins.is_bot_admin(message_user_id(message)):
-            await safe_answer(message, "Only configured bot admins can forget all memory.")
+        if not await require_scope_admin(message, scope):
             return
         _ok, response = await context.memory.forget(
             scope, message_user_id(message) or 0, args.get("confirm")
@@ -823,6 +839,13 @@ async def _scope_settings_command(
     except ValueError as exc:
         await safe_answer(message, str(exc))
         return
+    if not context.admins.is_bot_admin(user_id):
+        if scope.is_global:
+            await safe_answer(message, "Only configured bot admins can target all scopes.")
+            return
+        if scope.chat_id != int(message.chat.id):
+            await safe_answer(message, "Only configured bot admins can target another chat scope.")
+            return
     if confirm:
         try:
             preview = await context.memory.confirm_scope_settings(

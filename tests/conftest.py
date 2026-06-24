@@ -14,7 +14,7 @@ def test_settings(tmp_path) -> Settings:
         telegram_bot_token="123:fake",  # noqa: S106
         bot_admins="111",
         webhook_url="https://example.test/telegram/webhook",
-        webhook_secret="secret",  # noqa: S106
+        webhook_secret="test-webhook-token",  # noqa: S106
         db_url=f"sqlite+aiosqlite:///{tmp_path / 'bot.db'}",
         memory_dir=tmp_path / "memory",
         ai_provider="fake",

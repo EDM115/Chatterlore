@@ -28,7 +28,7 @@ Then run:
 uv run pzp-bot webhook
 ```
 
-The FastAPI endpoint rejects requests whose `X-Telegram-Bot-Api-Secret-Token` header does not match `WEBHOOK_SECRET`.
+The FastAPI endpoint rejects requests whose `X-Telegram-Bot-Api-Secret-Token` header does not match `WEBHOOK_SECRET`. Webhook startup also rejects blank secrets and common placeholders such as `change-me`, `changeme`, `placeholder`, `default` and `secret`; generate a deployment-specific random value before enabling webhook mode.
 
 ## Docker
 
