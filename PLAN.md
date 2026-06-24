@@ -1,8 +1,8 @@
 ---
 goal: Telegram Group Memory Assistant PoC v1
-version: 0.10
+version: 0.11
 date_created: 2026-06-16
-last_updated: 2026-06-23
+last_updated: 2026-06-24
 owner: PZP-AI
 status: In progress
 tags:
@@ -62,7 +62,7 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 - **DONE**: Dev dependencies include `pytest`, `pytest-asyncio`, `pytest-cov`, `respx`, `freezegun`, `httpx2`, `ruff` and `ty`
 - **DONE**: Optional local embedding extra includes `sentence-transformers`
 - **DONE**: `pzp-bot` console script points to `pzp_ai_bot.main:app`
-- **DONE**: `.env.example`, `.gitignore`, `Dockerfile` and `docker-compose.yml` exist
+- **DONE**: `.env.example`, `.gitignore`, `.dockerignore`, multi-stage non-root `Dockerfile`, `docker-compose.yml` and `.github/workflows/ci.yml` exist
 
 ### Source Layout
 
@@ -153,7 +153,7 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 - **DONE**: Webhook runtime sets the webhook on lifespan startup
 - **DONE**: Webhook endpoint validates `X-Telegram-Bot-Api-Secret-Token`
 - **DONE**: Topic scope extraction uses `is_topic_message` and `message_thread_id`
-- **DONE**: Admin service caches `get_chat_administrators` results and honors configured `BOT_ADMINS`
+- **DONE**: Admin service caches `get_chat_administrators` results, honors configured `BOT_ADMINS`, supports configurable `ADMIN_CACHE_TTL_SECONDS` and exposes cache stats for diagnostics
 - **DONE**: Polling and webhook runtimes start a background idle summarizer using `SUMMARY_IDLE_SECONDS`
 - **DONE**: Polling and webhook startup register the current Telegram command list through `set_my_commands`
 - **DONE**: Polling and webhook runtimes start a background runtime-settings refresher using `RUNTIME_SETTINGS_REFRESH_SECONDS`
@@ -174,24 +174,22 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 
 ### Current Verification Baseline
 
-- **DONE**: `uv sync --extra dev --extra local` passed on 2026-06-23 after Phase 6
-- **DONE**: `uv run ruff format --check .` passed on 2026-06-23 after Phase 6
-- **DONE**: `uv run ruff check .` passed on 2026-06-23 after Phase 6
-- **DONE**: `uv run ty check` passed on 2026-06-23 after Phase 6
-- **DONE**: `uv run pytest` passed on 2026-06-23 with 104 passed and 1 skipped after Phase 6
-- **DONE**: `uv run alembic upgrade head` passed on 2026-06-23 through `0006_phase6_product_completeness` after Phase 6
-- **DONE**: `uv run pzp-bot --help` displayed all CLI commands on 2026-06-23 after Phase 6
-- **DONE**: `uv run pzp-bot doctor` passed on 2026-06-23 with the default fake provider after Phase 6
-- **DEFERRED**: Docker runtime verification and CI workflow validation are intentionally deferred until Docker is fully installed on this workstation
+- **DONE**: `uv sync --extra dev --extra local` passed on 2026-06-24 after plan v0.11
+- **DONE**: `uv run ruff format --check .` passed on 2026-06-24 after plan v0.11
+- **DONE**: `uv run ruff check .` passed on 2026-06-24 after plan v0.11
+- **DONE**: `uv run ty check` passed on 2026-06-24 after plan v0.11
+- **DONE**: `uv run pytest` passed on 2026-06-24 with 118 passed, 1 skipped and 4 existing aiosqlite thread warnings after plan v0.11
+- **DONE**: `uv run alembic upgrade head` passed on 2026-06-24 through `0006_phase6_product_completeness` after plan v0.11
+- **DONE**: `uv run pzp-bot --help` displayed all CLI commands on 2026-06-24 after plan v0.11
+- **DONE**: `uv run pzp-bot doctor` passed on 2026-06-24 with the default fake provider after plan v0.11
+- **DONE**: Docker runtime verification passed on 2026-06-24 with `docker version`, `docker compose config`, `docker build --tag pzp-ai:phase-0.11 .`, container `pzp-bot doctor`, container `pzp-bot migrate` and `docker compose run --rm bot pzp-bot doctor`
+- **DONE**: CI workflow validation passed on 2026-06-24 through static artifact tests; `.github/workflows/ci.yml` runs format, lint, type check, tests, Alembic upgrade, CLI help, doctor and Docker smoke on GitHub Actions
+- **DONE**: Full local and Docker verification baseline was re-run on 2026-06-24 after plan v0.11
 - **TODO**: Re-run the full verification baseline after every future code or dependency change and update this section with date and result
 
 ## 4. Known Partial Implementations
 
-These items exist but are not complete enough for production-quality v1.
-
-- **PARTIAL-010**: Admin cache is in memory only. That is acceptable for PoC but should be tunable and observable before production
-- **PARTIAL-011**: JSONL import supports generic `content` or `text` rows and Telegram Desktop JSON export import supports local historical group loading. Rich Telegram update dumps are not imported yet
-- **PARTIAL-014**: Docker image exists but runtime verification is explicitly deferred until Docker is fully installed on this workstation
+No non-live partial implementations are currently tracked. Live Telegram beta checks remain in Gate C because they require real Telegram connectivity and disposable group administration.
 
 ## 5. Remaining Roadmap
 
@@ -279,8 +277,8 @@ Goal: make the bot safe to run for a real group over time.
 | TASK-048 | DONE     | Add privacy/data-processing documentation for real group use | Docs explain what is stored, sent to providers, retained, exported and deleted                                                                                       |
 | TASK-049 | DONE     | Add retention pruning command and policy                     | Admin can prune raw messages older than configured window per scope                                                                                                  |
 | TASK-050 | DONE     | Add secrets handling guidance for deployment                 | Docs cover `.env`, Docker secrets, provider keys and Telegram token rotation                                                                                         |
-| TASK-051 | DEFERRED | Add Docker runtime verification                              | Deferred until Docker is fully installed on this workstation                                                                                                         |
-| TASK-052 | DEFERRED | Add CI workflow                                              | Deferred with Docker/CI work for a later pass                                                                                                                        |
+| TASK-051 | DONE     | Add Docker runtime verification                              | Docker build, container `doctor`, container migration and compose `doctor` smoke pass locally without starting Telegram polling                                      |
+| TASK-052 | DONE     | Add CI workflow                                              | GitHub Actions runs format, lint, type check, tests, Alembic upgrade, CLI help, doctor and Docker smoke on push and pull request                                    |
 | TASK-053 | DONE     | Add release checklist and versioning process                 | Releases specify migration state, config changes and manual Telegram smoke tests                                                                                     |
 | TASK-054 | DONE     | Add reloadless runtime settings refresh                      | File/env-backed settings have a validated reload path; long-running polling and webhook runtimes apply non-secret setting changes without process restart where safe |
 | TASK-055 | DONE     | Store editable bot settings in the database                  | Runtime settings that are safe to edit are persisted with schema, validation, defaults, scope overrides, audit events and rollback behavior                          |
@@ -294,7 +292,7 @@ Goal: make the assistant useful to group admins and participants beyond the mini
 | TASK-056 | DONE   | Add a `/memory_status` or richer `/stats` by scope                          | Admin can see learned/skipped/messages/knowledge/AI usage per chat/topic                                                                                                      |
 | TASK-057 | DONE   | Add natural-language admin responses that explain why a message was skipped | Admin debug mode can show skip reasons without leaking private data                                                                                                           |
 | TASK-058 | DONE   | Add topic allowlist discovery helper                                        | Admin can list known topics/scopes and current learning status                                                                                                                |
-| TASK-059 | DONE   | Add manual import from Telegram Desktop JSON export                         | User can import exported group history locally without Telegram API backfill                                                                                                  |
+| TASK-059 | DONE   | Add manual import from Telegram JSON exports and update dumps               | User can import Telegram Desktop exports or Bot API update dumps locally without Telegram API backfill                                                                        |
 | TASK-060 | DONE   | Add memory browsing commands                                                | Admin can list recent notes/summaries and inspect item IDs                                                                                                                    |
 | TASK-061 | DONE   | Add item-level deletion                                                     | Admin can delete one memory item without forgetting the entire scope                                                                                                          |
 | TASK-062 | DONE   | Add item-level re-embedding/re-summarization                                | Admin can refresh memory after provider/model changes                                                                                                                         |
@@ -319,16 +317,19 @@ Goal: make the assistant useful to group admins and participants beyond the mini
 - **DONE**: `tests/test_phase4_telegram.py` verifies aiogram dispatcher-fed command and normal-message updates, mocked Bot API methods, valid webhook dispatch, polling startup sequencing, command matrix coverage, ingestion edge cases, Telegram API failure/rate-limit handling and export document chunking
 - **DONE**: `tests/test_telegram_live.py` provides optional skipped-by-default `telegram_live` smoke coverage for real Telegram credentials
 - **DONE**: `tests/test_phase5.py` verifies persisted forget confirmations across restarts, expired confirmation rejection, runtime settings refresh/audit events, audit scope filtering, SQLite stats and runtime-settings refresher scheduling
-- **DONE**: `tests/test_phase6.py` verifies scoped memory status and topic discovery, skipped-message diagnostics, Telegram Desktop JSON import, memory item browse/delete/refresh, `/settings` preview/confirmation and compact source references
-- **DONE**: `tests/test_cli.py` verifies Alembic-backed migration, CLI validation errors, Phase 5 runtime settings/audit export commands and DB maintenance commands
+- **DONE**: `tests/test_phase6.py` verifies scoped memory status and topic discovery, skipped-message diagnostics, Telegram Desktop JSON import, Bot API update dump import, representative import/export/forget memory quality, memory item browse/delete/refresh, `/settings` preview/confirmation and compact source references
+- **DONE**: `tests/test_cli.py` verifies Alembic-backed migration, CLI validation errors, successful `summarize-now`, `export-memory`, `import-jsonl`, `show-config`, Phase 5 runtime settings/audit export commands and DB maintenance commands
 - **DONE**: `tests/test_telegram_commands.py` verifies command help text and mocked `set_my_commands` registration
+- **DONE**: `tests/test_admin_service.py` verifies configurable admin-cache TTL, cache reuse and cache stats
+- **DONE**: `tests/test_deployment_artifacts.py` verifies Dockerfile, `.dockerignore`, GitHub Actions quality gates and Alembic runtime root discovery
 - **DONE**: `tests/conftest.py` builds isolated SQLite and fake-provider context
 
 ### Tests Still Required
 
-- **TEST-004**: Broader CLI tests for successful `summarize-now`, successful `export-memory`, successful `import-jsonl` and `show-config`
-- **TEST-013**: Docker smoke test or documented manual verification
-- **TEST-019**: `/settings` command tests for view, edit, preview, confirm, reject and unauthorized cases
+- **DONE**: TEST-004 successful CLI `summarize-now`, `export-memory`, `import-jsonl` and `show-config` coverage is implemented
+- **DONE**: TEST-013 Docker smoke test and documentation are implemented
+- **DONE**: TEST-019 `/settings` view, direct edit compatibility, preview, confirm, rejection and unauthorized coverage is implemented
+- **TODO**: Optional live Telegram smoke remains skipped by default and requires real credentials
 
 ### Required Verification Commands
 
@@ -379,23 +380,25 @@ Required before serious local dogfooding:
 Required before inviting a real private group:
 
 - **TODO**: Live Telegram smoke test has passed in a disposable group
-- **TODO**: BotFather privacy-mode/admin setup is verified and documented with exact steps
-- **TODO**: Forget behavior and real-group retention behavior are documented and manually tested
-- **TODO**: Export and forget workflows are tested with a realistic amount of memory
-- **TODO**: Admin policy behavior is tested with both configured bot admins and chat admins
-- **TODO**: Cross-chat learning is disabled by default and explicitly permissioned for every source and destination scope used in beta
+- **DONE**: BotFather privacy-mode/admin setup is documented with exact steps in `docs/setup.md`
+- **TODO**: BotFather privacy-mode/admin setup is verified in a disposable group
+- **DONE**: Forget behavior, retention behavior and destructive-operation audit expectations are documented
+- **TODO**: Forget behavior and real-group retention behavior are manually tested in a disposable group
+- **DONE**: Export and forget workflows are tested offline with a representative imported-memory dataset
+- **DONE**: Admin policy behavior is tested with configured bot admins and mocked Telegram chat admins
+- **DONE**: Cross-chat learning is disabled by default and explicitly permissioned for every source and destination scope used in beta
 - **DONE**: Logs are structured and do not leak secrets
-- **DEFERRED**: Docker deployment verification is waiting for Docker to be fully installed on this workstation
+- **DONE**: Docker deployment smoke verification passes locally without starting Telegram polling
 
 ### Gate D - v1 Release
 
 Required before calling this v1 complete:
 
-- **DONE**: All Phase 1, Phase 2, Phase 3, Phase 4 and non-deferred Phase 5 tasks are complete
-- **DONE**: Docker runtime verification and CI workflow work are explicitly deferred in this plan
-- **TODO**: CI runs formatting, linting, type checking, tests and migration checks
+- **DONE**: All Phase 1, Phase 2, Phase 3, Phase 4, Phase 5 and Phase 6 tasks are complete
+- **DONE**: Docker runtime verification is complete locally
+- **DONE**: CI workflow runs formatting, linting, type checking, tests, migration checks, CLI checks and Docker smoke on GitHub Actions
 - **DONE**: Migration history is stable and tested from an empty database through `0006_phase6_product_completeness`
-- **TODO**: Memory quality is acceptable on a representative imported dataset
+- **DONE**: Memory quality is covered by a representative imported dataset test using summarize, ask, export and forget
 - **DONE**: Privacy and operational documentation is complete
 - **DONE**: Manual runbook covers install, upgrade, backup, restore, token rotation, provider switching, prompt/template switching, reloadless settings, `/settings` and emergency forget
 
@@ -411,6 +414,20 @@ uv run pytest
 AI_PROVIDER=fake uv run pzp-bot polling
 ```
 
+
+### Docker Smoke
+
+```powershell
+docker version
+docker compose config
+docker build --tag pzp-ai:phase-0.11 .
+docker run --rm -e AI_PROVIDER=fake -e DB_URL=sqlite+aiosqlite:////tmp/pzp/bot.db -e MEMORY_DIR=/tmp/pzp/memory pzp-ai:phase-0.11 pzp-bot doctor
+docker run --rm -e AI_PROVIDER=fake -e DB_URL=sqlite+aiosqlite:////tmp/pzp/bot.db -e MEMORY_DIR=/tmp/pzp/memory pzp-ai:phase-0.11 pzp-bot migrate
+docker compose run --rm bot pzp-bot doctor
+docker compose down
+```
+
+These commands verify the image and compose runtime without starting Telegram polling.
 ### Cloud AI Provider
 
 ```env
@@ -467,14 +484,14 @@ uv run pzp-bot webhook
 
 ## 9. File Ownership Map
 
-- **PROJECT-001**: `pyproject.toml`, `uv.lock`, `.env.example`, `.gitignore`, `README.md`
+- **PROJECT-001**: `pyproject.toml`, `uv.lock`, `.env.example`, `.gitignore`, `.dockerignore`, `README.md`, `Dockerfile`, `docker-compose.yml`, `.github/workflows/ci.yml`
 - **RUNTIME-001**: `src/pzp_ai_bot/main.py`, `src/pzp_ai_bot/app_context.py`, `src/pzp_ai_bot/config.py`, `src/pzp_ai_bot/logging.py`
 - **TELEGRAM-001**: `src/pzp_ai_bot/telegram/admin.py`, `src/pzp_ai_bot/telegram/commands.py`, `src/pzp_ai_bot/telegram/dispatcher.py`, `src/pzp_ai_bot/telegram/middleware.py`, `src/pzp_ai_bot/telegram/router.py`, `src/pzp_ai_bot/telegram/safe_api.py`, `src/pzp_ai_bot/telegram/scheduler.py`, `src/pzp_ai_bot/telegram/utils.py`, `src/pzp_ai_bot/telegram/polling.py`, `src/pzp_ai_bot/telegram/webhook.py`
 - **MEMORY-001**: `src/pzp_ai_bot/memory/service.py`, `src/pzp_ai_bot/memory/prompts.py`, `src/pzp_ai_bot/memory/canonical.py`, `src/pzp_ai_bot/memory/policy.py`, `src/pzp_ai_bot/memory/retrieval.py`, `src/pzp_ai_bot/memory/markdown.py`, `src/pzp_ai_bot/memory/scope.py`, `src/pzp_ai_bot/memory/vector.py`
 - **AI-001**: `src/pzp_ai_bot/ai/protocols.py`, `src/pzp_ai_bot/ai/fake.py`, `src/pzp_ai_bot/ai/openai_compatible.py`, `src/pzp_ai_bot/ai/local.py`, `src/pzp_ai_bot/ai/factory.py`, `src/pzp_ai_bot/ai/redaction.py`
 - **DB-001**: `src/pzp_ai_bot/db/models.py`, `src/pzp_ai_bot/db/repositories.py`, `src/pzp_ai_bot/db/session.py`, `alembic/env.py`, `alembic/versions/0001_initial.py`, `alembic/versions/0002_phase2_memory_quality.py`, `alembic/versions/0003_phase2_remaining_memory_tools.py`, `alembic/versions/0004_phase3_provider_ai_hardening.py`, `alembic/versions/0005_phase5_operations_settings.py`, `alembic/versions/0006_phase6_product_completeness.py`
 - **DOCS-001**: `docs/setup.md`, `docs/architecture.md`, `docs/commands.md`, `docs/privacy.md`, `docs/deployment.md`, `docs/operations.md`, `docs/secrets.md`, `docs/release.md`, `docs/testing.md`
-- **TESTS-001**: `tests/conftest.py`, `tests/test_scope.py`, `tests/test_policy_and_ingestion.py`, `tests/test_memory_service.py`, `tests/test_phase1.py`, `tests/test_phase2.py`, `tests/test_phase2_remaining.py`, `tests/test_phase3.py`, `tests/test_phase4_telegram.py`, `tests/test_phase5.py`, `tests/test_phase6.py`, `tests/test_cli.py`, `tests/test_telegram_commands.py`, `tests/test_telegram_live.py`, `tests/test_webhook.py`
+- **TESTS-001**: `tests/conftest.py`, `tests/test_scope.py`, `tests/test_policy_and_ingestion.py`, `tests/test_memory_service.py`, `tests/test_phase1.py`, `tests/test_phase2.py`, `tests/test_phase2_remaining.py`, `tests/test_phase3.py`, `tests/test_phase4_telegram.py`, `tests/test_phase5.py`, `tests/test_phase6.py`, `tests/test_cli.py`, `tests/test_admin_service.py`, `tests/test_deployment_artifacts.py`, `tests/test_telegram_commands.py`, `tests/test_telegram_live.py`, `tests/test_webhook.py`
 
 ## 10. Risks And Assumptions
 
@@ -489,8 +506,9 @@ uv run pzp-bot webhook
 - **RISK-009**: Cross-chat learning can leak context across communities if profile permissions are misconfigured or tested only on synthetic scopes
 - **RISK-010**: Runtime prompt/provider changes can make answers non-reproducible unless selected templates, models and reasoning levels are logged with AI usage
 - **RISK-011**: `/settings` preview/confirmation reduces broad-change surprises, but concurrent admins can still preview overlapping scoped changes and apply the latest active token
-- **RISK-012**: Docker runtime verification and CI are deferred until Docker is fully installed locally
-- **RISK-013**: Telegram Desktop JSON exports can contain historical group content that predates bot consent; operators must review export files and target scopes before import
+- **RISK-012**: GitHub Actions has been defined locally but the first hosted run still needs to pass after the branch is pushed
+- **RISK-013**: Telegram Desktop JSON exports and Bot API update dumps can contain historical group content that predates bot consent; operators must review export files and target scopes before import
+- **RISK-014**: Docker smoke proves local image startup, health checks and migrations, but production server sizing and secret injection still need deployment-specific validation
 
 - **ASSUMPTION-001**: The project remains Python 3.12 and `uv` managed
 - **ASSUMPTION-002**: v1 remains RAG memory, not online fine-tuning
@@ -521,4 +539,5 @@ uv run pzp-bot webhook
 - **2026-06-23 / v0.7**: Implemented Phase 3 provider and AI hardening: OpenAI-compatible retries, embedding usage telemetry, `doctor`, stronger redaction, versioned prompts, insufficient-context answers, system prompt templates, one-shot AI overrides, provider profiles and scoped model/reasoning settings
 - **2026-06-23 / v0.8**: Implemented Phase 4 Telegram integration coverage: dispatcher-fed updates, mocked Bot API calls, valid webhook and polling startup tests, full command matrix coverage, ingestion edge cases, optional live smoke test, Telegram send failure/rate-limit handling and export document chunking
 - **2026-06-23 / v0.9**: Implemented non-Docker/non-CI Phase 5 operations, observability and security: structured logging, audit export, persisted forget confirmations, DB maintenance commands, privacy/secrets/operations/release docs, reloadless runtime settings and database-backed editable safe settings; Docker runtime verification and CI workflow are explicitly deferred until Docker is available locally
-- **2026-06-23 / v0.10**: Implemented Phase 6 product completeness: scoped memory status and topic discovery, skipped-message diagnostics, Telegram Desktop JSON import, memory item browse/delete/refresh, supported non-text metadata ingestion, multilingual prompt guidance, compact answer source references and confirmed /settings changes; Docker and CI work remain deferred as previously recorded.
+- **2026-06-23 / v0.10**: Implemented Phase 6 product completeness: scoped memory status and topic discovery, skipped-message diagnostics, Telegram Desktop JSON import, memory item browse/delete/refresh, supported non-text metadata ingestion, multilingual prompt guidance, compact answer source references and confirmed /settings changes; Docker and CI work remained deferred as previously recorded.
+- **2026-06-24 / v0.11**: Closed deferred Docker and CI work plus remaining offline gaps: package version `0.8.0`, multi-stage non-root Docker image, optional-env compose smoke, GitHub Actions gates, Alembic Docker root fix, broader CLI tests, `/settings` command tests, generic Telegram JSON update dump import, representative memory quality workflow and configurable/observable admin cache.

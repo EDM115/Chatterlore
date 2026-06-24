@@ -1196,7 +1196,7 @@ class MemoryService:
                         metadata={
                             "scope": scope.key,
                             "target_type": "message",
-                            "import": "telegram_desktop",
+                            "import": "telegram_json",
                         },
                     )
                 )[0]
@@ -1210,7 +1210,7 @@ class MemoryService:
                 )
                 imported += 1
             await EventRepository(session).add(
-                event_type="telegram_desktop_import",
+                event_type="telegram_json_import",
                 scope=scope,
                 payload={"imported": imported, "skipped": skipped, "path": str(path)},
             )
@@ -2240,12 +2240,24 @@ def load_telegram_desktop_export(path: Path) -> list[TelegramDesktopMessage]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
-        raise ValueError(f"malformed Telegram Desktop JSON export: {exc.msg}") from exc
+        raise ValueError(f"malformed Telegram JSON import: {exc.msg}") from exc
+    rows = telegram_desktop_export_rows(payload)
+    if rows is not None:
+        return rows
+    rows = telegram_update_dump_rows(payload)
+    if rows is not None:
+        return rows
+    raise ValueError(
+        "Telegram JSON import must be a Telegram Desktop export or Bot API update dump"
+    )
+
+
+def telegram_desktop_export_rows(payload: Any) -> list[TelegramDesktopMessage] | None:
     if not isinstance(payload, dict):
-        raise ValueError("Telegram Desktop export must be a JSON object")
+        return None
     messages = payload.get("messages")
     if not isinstance(messages, list):
-        raise ValueError("Telegram Desktop export must contain a messages list")
+        return None
     chat_title = str(payload.get("name") or "").strip() or None
     rows: list[TelegramDesktopMessage] = []
     for raw in messages:
@@ -2269,6 +2281,62 @@ def load_telegram_desktop_export(path: Path) -> list[TelegramDesktopMessage]:
     if not rows:
         raise ValueError("Telegram Desktop export contains no importable messages")
     return rows
+
+
+def telegram_update_dump_rows(payload: Any) -> list[TelegramDesktopMessage] | None:
+    messages = telegram_update_message_payloads(payload)
+    if messages is None:
+        return None
+    rows: list[TelegramDesktopMessage] = []
+    for raw in messages:
+        try:
+            message_id = int(raw["message_id"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("Telegram update message is missing a numeric message_id") from exc
+        rows.append(
+            TelegramDesktopMessage(
+                telegram_message_id=message_id,
+                user_id=telegram_update_user_id(raw),
+                username=telegram_update_username(raw),
+                text=telegram_update_message_text(raw),
+                created_at=telegram_update_datetime(raw),
+                reply_to_message_id=telegram_update_reply_to_message_id(raw),
+                chat_title=telegram_update_chat_title(raw),
+            )
+        )
+    if not rows:
+        raise ValueError("Telegram update dump contains no importable messages")
+    return rows
+
+
+def telegram_update_message_payloads(payload: Any) -> list[dict[str, Any]] | None:
+    if isinstance(payload, dict):
+        if isinstance(payload.get("result"), list):
+            candidates = payload["result"]
+        elif "message_id" in payload or any(key in payload for key in TELEGRAM_UPDATE_MESSAGE_KEYS):
+            candidates = [payload]
+        else:
+            return None
+    elif isinstance(payload, list):
+        candidates = payload
+    else:
+        return None
+    messages: list[dict[str, Any]] = []
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        if "message_id" in candidate:
+            messages.append(candidate)
+            continue
+        for key in TELEGRAM_UPDATE_MESSAGE_KEYS:
+            raw_message = candidate.get(key)
+            if isinstance(raw_message, dict):
+                messages.append(raw_message)
+                break
+    return messages
+
+
+TELEGRAM_UPDATE_MESSAGE_KEYS = ("message", "edited_message", "channel_post", "edited_channel_post")
 
 
 def telegram_desktop_message_text(row: dict[str, Any]) -> str:
@@ -2380,6 +2448,114 @@ def telegram_desktop_username(value: Any) -> str | None:
         return None
     clean = value.strip()
     return clean[:255] if clean else None
+
+
+def telegram_update_message_text(row: dict[str, Any]) -> str:
+    parts: list[str] = []
+    content = str(row.get("text") or row.get("caption") or "").strip()
+    if content:
+        parts.append(content)
+    links = telegram_update_links(row, content)
+    if links:
+        parts.append("Links: " + ", ".join(links[:5]))
+    attachment = telegram_update_attachment_label(row)
+    if attachment:
+        parts.append(attachment)
+    return normalize_text("\n".join(parts))
+
+
+def telegram_update_links(row: dict[str, Any], content: str) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    entities = row.get("entities") if row.get("text") is not None else row.get("caption_entities")
+    if not isinstance(entities, list):
+        return out
+    for entity in entities:
+        if not isinstance(entity, dict):
+            continue
+        candidate = ""
+        entity_type = entity.get("type")
+        if entity_type in {"url", "email"}:
+            candidate = telegram_update_entity_slice(content, entity)
+        elif entity_type == "text_link":
+            candidate = str(entity.get("url") or "")
+        candidate = candidate.strip()
+        if candidate and candidate not in seen:
+            seen.add(candidate)
+            out.append(candidate)
+    return out
+
+
+def telegram_update_entity_slice(content: str, entity: dict[str, Any]) -> str:
+    try:
+        offset = int(entity.get("offset", 0))
+        length = int(entity.get("length", 0))
+    except (TypeError, ValueError):
+        return ""
+    if offset < 0 or length <= 0:
+        return ""
+    return content[offset : offset + length]
+
+
+def telegram_update_attachment_label(row: dict[str, Any]) -> str | None:
+    document = row.get("document")
+    if isinstance(document, dict):
+        file_name = telegram_desktop_filename(document.get("file_name"))
+        if file_name:
+            return f"Attachment: {file_name}"
+    if isinstance(row.get("photo"), list) and row["photo"]:
+        return "Photo attachment"
+    return None
+
+
+def telegram_update_datetime(row: dict[str, Any]) -> datetime:
+    raw_date = row.get("date")
+    if raw_date is None:
+        return utc_now()
+    try:
+        return datetime.fromtimestamp(int(raw_date), tz=UTC)
+    except (TypeError, ValueError):
+        return utc_now()
+
+
+def telegram_update_user_id(row: dict[str, Any]) -> int | None:
+    user = row.get("from")
+    if not isinstance(user, dict):
+        return None
+    return telegram_desktop_optional_int(user.get("id"))
+
+
+def telegram_update_username(row: dict[str, Any]) -> str | None:
+    user = row.get("from")
+    if not isinstance(user, dict):
+        return None
+    username = str(user.get("username") or "").strip()
+    if username:
+        return username[:255]
+    name = " ".join(
+        part
+        for part in [
+            str(user.get("first_name") or "").strip(),
+            str(user.get("last_name") or "").strip(),
+        ]
+        if part
+    )
+    return name[:255] if name else None
+
+
+def telegram_update_reply_to_message_id(row: dict[str, Any]) -> int | None:
+    reply = row.get("reply_to_message")
+    if not isinstance(reply, dict):
+        return None
+    return telegram_desktop_optional_int(reply.get("message_id"))
+
+
+def telegram_update_chat_title(row: dict[str, Any]) -> str | None:
+    chat = row.get("chat")
+    if not isinstance(chat, dict):
+        return None
+    title = str(chat.get("title") or chat.get("username") or "").strip()
+    return title[:255] if title else None
 
 
 def note_metadata(

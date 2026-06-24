@@ -36,7 +36,7 @@ async def build_context(settings: Settings, *, ensure_schema: bool = True) -> Ap
     )
     memory.markdown.ensure()
     await memory.refresh_runtime_settings()
-    admins = AdminService(settings.bot_admin_ids)
+    admins = AdminService(settings.bot_admin_ids, ttl_seconds=settings.admin_cache_ttl_seconds)
     return AppContext(
         settings=settings, session_factory=session_factory, memory=memory, admins=admins
     )

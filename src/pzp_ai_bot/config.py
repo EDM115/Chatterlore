@@ -66,6 +66,7 @@ class Settings(BaseSettings):
     summary_batch_size: int = Field(default=25, ge=1)
     summary_idle_seconds: int = Field(default=900, ge=1)
     runtime_settings_refresh_seconds: int = Field(default=60, ge=1)
+    admin_cache_ttl_seconds: int = Field(default=300, ge=0)
     forget_confirm_ttl_seconds: int = Field(default=600, ge=1)
     retrieval_top_k: int = Field(default=6, ge=1)
     raw_message_retention_days: int | None = Field(default=None, ge=1)

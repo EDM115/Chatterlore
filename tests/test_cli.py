@@ -1,15 +1,20 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import sqlite3
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
+from pzp_ai_bot.app_context import build_context
 from pzp_ai_bot.config import get_settings
 from pzp_ai_bot.main import app
+from pzp_ai_bot.memory.scope import Scope
+from pzp_ai_bot.memory.service import IncomingMessage
 
 runner = CliRunner()
 
@@ -28,6 +33,24 @@ def configure_cli_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     monkeypatch.setenv("AI_PROVIDER", "fake")
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123:fake")
     return db_path
+
+
+def seed_cli_message(scope: Scope, text: str, *, message_id: int = 1) -> None:
+    async def seed() -> None:
+        context = await build_context(get_settings())
+        await context.memory.set_learning(scope, True, updated_by=111)
+        await context.memory.ingest(
+            IncomingMessage(
+                telegram_message_id=message_id,
+                scope=scope,
+                user_id=222,
+                username="cli-user",
+                text=text,
+                created_at=datetime(2026, 6, 24, tzinfo=UTC),
+            )
+        )
+
+    asyncio.run(seed())
 
 
 def test_migrate_uses_alembic_revision(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -96,7 +119,7 @@ def test_phase6_memory_status_and_telegram_json_import_commands(
     status_result = runner.invoke(app, ["memory-status", "--scope", "-100900"])
 
     assert import_result.exit_code == 0, import_result.output
-    assert "Imported 1 Telegram Desktop messages" in import_result.output
+    assert "Imported 1 Telegram JSON messages" in import_result.output
     assert status_result.exit_code == 0, status_result.output
     assert "messages: 1" in status_result.output
     assert "learned: 1" in status_result.output
@@ -126,3 +149,36 @@ def test_phase5_runtime_audit_and_db_maintenance_commands(
     assert "integrity_check: ok" in integrity_result.output
     assert backup_result.exit_code == 0, backup_result.output
     assert backup_path.exists()
+
+
+def test_successful_cli_memory_commands(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    configure_cli_env(monkeypatch, tmp_path)
+    scope = Scope(-100701, None)
+    seed_cli_message(scope, "Decision: CLI summarize-now covers successful command execution.")
+    import_path = tmp_path / "items.jsonl"
+    import_path.write_text(
+        json.dumps({"content": "CLI imported memory item.", "kind": "manual_note"}) + "\n",
+        encoding="utf-8",
+    )
+    export_path = tmp_path / "memory.jsonl"
+
+    summarize_result = runner.invoke(app, ["summarize-now", "--scope", scope.key])
+    import_result = runner.invoke(
+        app, ["import-jsonl", "--file", str(import_path), "--chat-id", str(scope.chat_id)]
+    )
+    export_result = runner.invoke(
+        app, ["export-memory", "--format", "jsonl", "--scope", scope.key, "--out", str(export_path)]
+    )
+    config_result = runner.invoke(app, ["show-config"])
+
+    assert summarize_result.exit_code == 0, summarize_result.output
+    assert "Summarized 1 pending messages" in summarize_result.output
+    assert import_result.exit_code == 0, import_result.output
+    assert "Imported 1 memory items" in import_result.output
+    assert export_result.exit_code == 0, export_result.output
+    assert export_path.exists()
+    assert "CLI imported memory item" in export_path.read_text(encoding="utf-8")
+    assert config_result.exit_code == 0, config_result.output
+    assert "ai_provider: fake" in config_result.output
+    assert "admin_cache_ttl_seconds: 300" in config_result.output
+    assert "123:fake" not in config_result.output

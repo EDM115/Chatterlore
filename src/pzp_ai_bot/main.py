@@ -125,7 +125,7 @@ def import_telegram_json(
     chat_id: Annotated[int, typer.Option("--chat-id")],
     thread_id: Annotated[int | None, typer.Option("--thread-id")] = None,
 ) -> None:
-    """Import a Telegram Desktop JSON export into learned raw-message memory."""
+    """Import Telegram Desktop JSON or Bot API updates into learned raw-message memory."""
     settings = get_settings()
     context = run(build_context(settings))
     scope = Scope(chat_id, thread_id)
@@ -134,7 +134,7 @@ def import_telegram_json(
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
     console.print(
-        f"Imported {result.imported} Telegram Desktop messages into {scope.key}; "
+        f"Imported {result.imported} Telegram JSON messages into {scope.key}; "
         f"skipped {result.skipped}."
     )
 
@@ -303,6 +303,7 @@ def show_config() -> None:
         "reasoning_level": settings.reasoning_level,
         "learning_default_enabled": settings.learning_default_enabled,
         "runtime_settings_refresh_seconds": settings.runtime_settings_refresh_seconds,
+        "admin_cache_ttl_seconds": settings.admin_cache_ttl_seconds,
         "forget_confirm_ttl_seconds": settings.forget_confirm_ttl_seconds,
         "log_level": settings.log_level,
         "bot_admins_count": len(settings.bot_admin_ids),

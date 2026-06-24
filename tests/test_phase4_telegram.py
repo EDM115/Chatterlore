@@ -213,6 +213,8 @@ class RouterMemoryDouble:
         self, scope: Scope, *, user_id: int, confirm: str
     ) -> SettingsChangePreview:
         self._record("confirm_scope_settings", scope)
+        if confirm == "bad":
+            raise ValueError("No matching pending settings confirmation.")
         return SettingsChangePreview(
             scope, {"retrieval_top_k": 7}, {"retrieval_top_k": 6}, None, None, True
         )
@@ -809,3 +811,55 @@ async def test_safe_answer_document_logs_api_error(monkeypatch: pytest.MonkeyPat
     assert not ok
     assert warnings[0][0] == "telegram_api_error"
     assert warnings[0][1]["chat_id"] == -10012345
+
+
+@pytest.mark.parametrize(
+    ("command", "expected_call", "expected_fragment"),
+    [
+        ("/settings", "get_scope_settings", "retrieval_top_k: 6"),
+        ("/memory_settings top_k=8", "set_scope_settings", "Updated memory settings"),
+        ("/settings top_k=7", "preview_scope_settings", "Preview only"),
+        ("/settings confirm=token", "confirm_scope_settings", "Applied and audited"),
+        (
+            "/settings confirm=bad",
+            "confirm_scope_settings",
+            "No matching pending settings confirmation",
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_settings_command_view_edit_preview_confirm_and_reject(
+    context: AppContext, command: str, expected_call: str, expected_fragment: str
+) -> None:
+    memory = RouterMemoryDouble()
+    test_context = cast(Any, context)
+    test_context.memory = memory
+    test_context.admins = AllowingAdmins(allow=True)
+    session = RecordingTelegramSession(chat_admin_ids={111})
+    bot = Bot(context.settings.telegram_bot_token, session=session)
+    dispatcher = build_dispatcher(context)
+
+    await feed(dispatcher, bot, message_update(command, update_id=900, message_id=900, user_id=111))
+
+    assert any(call_name == expected_call for call_name, _scope in memory.calls)
+    assert any(expected_fragment in text for text in session.sent_texts())
+
+
+@pytest.mark.asyncio
+async def test_settings_command_rejects_unauthorized_admin(context: AppContext) -> None:
+    memory = RouterMemoryDouble()
+    test_context = cast(Any, context)
+    test_context.memory = memory
+    test_context.admins = AllowingAdmins(allow=False, bot_admin_ids={111})
+    session = RecordingTelegramSession()
+    bot = Bot(context.settings.telegram_bot_token, session=session)
+    dispatcher = build_dispatcher(context)
+
+    await feed(
+        dispatcher,
+        bot,
+        message_update("/settings top_k=7", update_id=901, message_id=901, user_id=222),
+    )
+
+    assert not memory.calls
+    assert any("requires a bot admin" in text for text in session.sent_texts())
