@@ -33,4 +33,9 @@
 - Use `/memory_debug limit=10` to review why recent updates were skipped. The response is intentionally metadata-only and does not echo skipped message bodies.
 - Use `/memory_items`, `/memory_item_delete` and `/memory_item_refresh` for item-level memory maintenance when a single bad summary or stale embedding should be fixed without forgetting an entire chat/topic.
 - Use `/settings key=value` to preview broad scoped settings changes, then `/settings confirm=<token>` to apply. The direct `/memory_settings` command is retained for local dogfooding and scripted admin work.
-- Use `pzp-bot import-telegram-json --file result.json --chat-id <id> [--thread-id <id>]` for local Telegram Desktop exports. Import into a deliberate scope and run `/memory_status` after import to confirm counts.
+- Use `pzp-bot import-telegram-json --file result.json --chat-id <id> [--thread-id <id>]` for local Telegram Desktop exports or Bot API update dumps. Import into a deliberate scope and run `/memory_status` after import to confirm counts.
+
+## Admin Cache
+
+- `ADMIN_CACHE_TTL_SECONDS` controls how long Telegram chat administrator lookups are cached in memory. Set it to `0` for near-immediate refresh during debugging, or keep the default `300` seconds for normal operation.
+- `AdminService.cache_stats()` exposes entry count, expired entry count, TTL and configured bot-admin count for tests and future diagnostics. `pzp-bot show-config` prints the configured TTL without exposing admin IDs.

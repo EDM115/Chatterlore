@@ -1,7 +1,12 @@
 services:
   bot:
     build: .
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DB_URL: sqlite+aiosqlite:///data/bot.db
+      MEMORY_DIR: data/memory
     volumes:
       - ./data:/app/data
     command: ["pzp-bot", "polling"]

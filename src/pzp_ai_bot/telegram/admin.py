@@ -44,5 +44,15 @@ class AdminService:
             self._cache[chat_id] = cached
         return user_id in cached.user_ids
 
+    def cache_stats(self) -> dict[str, int]:
+        now = time.time()
+        expired = sum(1 for entry in self._cache.values() if entry.expires_at < now)
+        return {
+            "entries": len(self._cache),
+            "expired_entries": expired,
+            "ttl_seconds": self.ttl_seconds,
+            "bot_admins": len(self.bot_admin_ids),
+        }
+
     async def can_administer(self, bot: Any, chat_id: int, user_id: int | None) -> bool:
         return self.is_bot_admin(user_id) or await self.is_chat_admin(bot, chat_id, user_id)

@@ -22,6 +22,7 @@
 
 - `/memory_debug` explains skip reasons by message id and policy reason only; it does not return the skipped message body, so admins can debug policy without redistributing private text.
 - `pzp-bot import-telegram-json` imports Telegram Desktop JSON exports locally into the configured SQLite database and embeddings provider. This is an operator-controlled local import path, not Telegram API historical backfill. Review the export file before importing because it may contain old group content outside the bot's live-learning consent moment.
-- Telegram Desktop import preserves message text plus selected metadata such as links, document file names and photo attachment labels. It does not import binary media files into the bot storage.
+- Telegram JSON import preserves message text plus selected metadata such as links, document file names and photo attachment labels from Telegram Desktop exports or Bot API update dumps. It does not import binary media files into the bot storage.
 - `/ask` may append compact source references such as `<scope>#<message_id>` when the generated answer does not already cite sources. These are identifiers for auditability, not raw message dumps.
 - `/settings` stores pending scoped setting changes with a hashed confirmation token and expires them using the configured confirmation TTL. Applied changes write `scope_settings_confirmed` audit events.
+- Admin cache entries contain Telegram user IDs for chat administrators and expire according to ADMIN_CACHE_TTL_SECONDS. They are process-local and are not written to SQLite or Markdown memory.

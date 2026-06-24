@@ -15,7 +15,7 @@ The default `AI_PROVIDER=fake` does not call external services and is suitable f
 
 1. Create a bot with BotFather and set `TELEGRAM_BOT_TOKEN`.
 2. Add the bot to the target supergroup.
-3. Disable BotFather privacy mode, or make the bot an admin, if it must read ordinary non-command group messages.
+3. In BotFather, run `/setprivacy`, choose the bot and select `Disable` if it must read ordinary non-command group messages; alternatively make the bot a group admin so Telegram delivers those updates.
 4. In the chat, run `/allow_chat`. In a forum topic, run `/allow_topic`.
 
-Telegram does not expose arbitrary historical group backfill through the Bot API. This bot learns live updates and supports manual JSONL imports.
+Telegram does not expose arbitrary historical group backfill through the Bot API. This bot learns live updates and supports manual JSONL imports plus reviewed Telegram Desktop exports or Bot API update dumps through `pzp-bot import-telegram-json`.

@@ -33,8 +33,16 @@ def create_session_factory(settings: Settings) -> async_sessionmaker[AsyncSessio
     return async_sessionmaker(engine, expire_on_commit=False)
 
 
+def alembic_project_root() -> Path:
+    source_root = Path(__file__).resolve().parents[3]
+    for candidate in (Path.cwd(), source_root):
+        if (candidate / "alembic.ini").is_file() and (candidate / "alembic").is_dir():
+            return candidate
+    return source_root
+
+
 def create_alembic_config(settings: Settings) -> Config:
-    project_root = Path(__file__).resolve().parents[3]
+    project_root = alembic_project_root()
     config = Config(str(project_root / "alembic.ini"))
     config.set_main_option("script_location", str(project_root / "alembic"))
     config.attributes["settings"] = settings
