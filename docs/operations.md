@@ -26,7 +26,7 @@
 - `pzp-bot db-backup --out data/backups/pzp.sqlite` creates an online backup without copying a hot database file directly
 - `pzp-bot db-vacuum` can reclaim SQLite space after large forget/prune operations; run it during a quiet maintenance window
 
-## Phase 6 Admin Operations
+## Admin Memory Operations
 
 - Use `/memory_status scope=this_topic` or `pzp-bot memory-status --scope <scope>` to inspect per-scope learned, skipped, knowledge and AI usage counts before changing policy.
 - Use `/memory_scopes scope=this_chat` to discover known forum topics and their effective learning state before allowing or denying a topic.

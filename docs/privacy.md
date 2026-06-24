@@ -18,7 +18,7 @@
 - `/audit_events` and `pzp-bot audit-events` expose admin, settings and destructive-operation event metadata from `bot_events` for review. They do not include provider API keys or Telegram bot tokens
 - `/forget` deletes raw messages, durable knowledge and embeddings for the selected scope after confirmation. Audit rows remain so destructive operations can still be reviewed
 
-## Phase 6 Product Controls
+## Product Controls
 
 - `/memory_debug` explains skip reasons by message id and policy reason only; it does not return the skipped message body, so admins can debug policy without redistributing private text.
 - `pzp-bot import-telegram-json` imports Telegram Desktop JSON exports locally into the configured SQLite database and embeddings provider. This is an operator-controlled local import path, not Telegram API historical backfill. Review the export file before importing because it may contain old group content outside the bot's live-learning consent moment.

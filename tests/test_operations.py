@@ -38,7 +38,7 @@ async def test_persisted_forget_confirmation_survives_context_restart(
     context: AppContext, test_settings: Settings
 ) -> None:
     scope = Scope(-505, 5)
-    await context.memory.remember(scope, "Phase 5 forget target", source_message_id=10)
+    await context.memory.remember(scope, "Operations forget target", source_message_id=10)
 
     ok, prompt = await context.memory.forget(scope, user_id=111, confirm=None)
     assert ok is False
@@ -49,7 +49,7 @@ async def test_persisted_forget_confirmation_survives_context_restart(
 
     assert ok is True
     assert "Forgot scope -505:5" in result
-    assert not await restarted.memory.search(scope, "Phase 5 forget target")
+    assert not await restarted.memory.search(scope, "Operations forget target")
 
 
 @pytest.mark.asyncio
@@ -123,7 +123,7 @@ async def test_audit_events_can_filter_by_scope(context: AppContext) -> None:
 
 
 @pytest.mark.asyncio
-async def test_sqlite_stats_include_phase5_tables(context: AppContext) -> None:
+async def test_sqlite_stats_include_operations_tables(context: AppContext) -> None:
     path = context.settings.sqlite_path
     assert path is not None
 

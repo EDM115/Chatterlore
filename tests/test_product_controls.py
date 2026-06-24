@@ -27,7 +27,9 @@ def incoming(
 @pytest.mark.asyncio
 async def test_memory_status_known_scopes_and_skip_debug(context: AppContext) -> None:
     scope = Scope(-601, 10)
-    await context.memory.set_scope_metadata(scope, chat_title="Phase 6", topic_title="Status")
+    await context.memory.set_scope_metadata(
+        scope, chat_title="Product Controls", topic_title="Status"
+    )
     await context.memory.set_learning(scope, True, updated_by=111)
     await context.memory.ingest(
         incoming(scope, "Decision: keep scoped status visible.", message_id=1)
@@ -40,7 +42,7 @@ async def test_memory_status_known_scopes_and_skip_debug(context: AppContext) ->
     scopes = await context.memory.known_scopes(Scope(-601, None))
     skipped = await context.memory.skipped_messages(scope)
 
-    assert status.scope_label.startswith("Phase 6 / Status")
+    assert status.scope_label.startswith("Product Controls / Status")
     assert status.messages == 2
     assert status.learned == 1
     assert status.skipped == 1
@@ -140,7 +142,7 @@ async def test_settings_preview_requires_confirmation(context: AppContext) -> No
 async def test_ask_keeps_compact_source_references(context: AppContext) -> None:
     scope = Scope(-605, None)
     await context.memory.remember(
-        scope, "Phase 6 source references should be compact.", source_message_id=77
+        scope, "Source references should be compact.", source_message_id=77
     )
 
     answer = await context.memory.ask(scope, "What should source references be?")

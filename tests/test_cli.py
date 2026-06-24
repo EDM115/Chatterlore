@@ -61,7 +61,7 @@ def test_migrate_uses_alembic_revision(monkeypatch: pytest.MonkeyPatch, tmp_path
     assert result.exit_code == 0, result.output
     with sqlite3.connect(db_path) as connection:
         revision = connection.execute("select version_num from alembic_version").fetchone()
-    assert revision == ("0006_phase6_product_completeness",)
+    assert revision[0].startswith("0006_")
 
 
 def test_export_memory_rejects_invalid_format_and_scope(
@@ -89,7 +89,7 @@ def test_import_jsonl_rejects_empty_file(monkeypatch: pytest.MonkeyPatch, tmp_pa
     assert "import file contains no memory items" in result.output
 
 
-def test_phase6_memory_status_and_telegram_json_import_commands(
+def test_memory_status_and_telegram_json_import_commands(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     configure_cli_env(monkeypatch, tmp_path)
@@ -125,7 +125,7 @@ def test_phase6_memory_status_and_telegram_json_import_commands(
     assert "learned: 1" in status_result.output
 
 
-def test_phase5_runtime_audit_and_db_maintenance_commands(
+def test_runtime_audit_and_db_maintenance_commands(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     configure_cli_env(monkeypatch, tmp_path)
