@@ -1,0 +1,78 @@
+# Plan 016: Turn existing coverage tooling into a conservative CI regression gate
+> **Executor instructions**: Follow each step and gate. Do not add low-value tests merely to raise a percentage. Update plans/README.md when complete unless a reviewer owns it.
+> **Drift check (run first)**: <code>git diff --stat beda837..HEAD -- pyproject.toml .github/workflows/ci.yml tests/test_deployment_artifacts.py docs/testing.md PLAN.md</code>.
+## Status
+- **Audit finding**: 16
+- **Priority**: P3
+- **Effort**: S
+- **Risk**: LOW
+- **Depends on**: none
+- **Category**: tests
+- **Planned at**: commit beda837, 2026-07-13
+## Why this matters
+pytest-cov is installed and branch coverage is configured, but CI runs plain pytest. Coverage can regress without any signal. The audited baseline was 79 percent with branch measurement enabled; introduce a conservative 78-percent floor and visible missing-line report, while keeping critical-path behavior more important than maximizing the global number.
+## Current state
+- pyproject.toml:33 includes pytest-cov.
+- pyproject.toml:74-76 enables branch coverage over pzp_ai_bot.
+- ci.yml:43-44 runs uv run pytest without coverage.
+- docs/testing.md:5-10 documents plain pytest.
+- tests/test_deployment_artifacts.py:26-41 asserts the plain command.
+## Commands you will need
+| Purpose | Command | Expected on success |
+|---|---|---|
+| Measure baseline | <code>.\.venv\Scripts\python.exe -m pytest -q --cov=pzp_ai_bot --cov-branch --cov-report=term-missing</code> | tests pass; total remains at least 79 before threshold change |
+| Artifact tests | <code>.\.venv\Scripts\python.exe -m pytest -q tests/test_deployment_artifacts.py</code> | all pass |
+| Format/lint/type | <code>.\.venv\Scripts\ruff.exe format --check .; .\.venv\Scripts\ruff.exe check .; .\.venv\Scripts\ty.exe check</code> | each exits 0 |
+| Full coverage gate | <code>.\.venv\Scripts\python.exe -m pytest -q --cov=pzp_ai_bot --cov-branch --cov-report=term-missing</code> | tests pass and coverage is at least configured floor |
+## Scope
+**In scope**:
+- pyproject.toml
+- .github/workflows/ci.yml
+- tests/test_deployment_artifacts.py
+- docs/testing.md
+- PLAN.md
+**Out of scope**:
+- New tests written solely to inflate coverage
+- A third-party coverage SaaS, token, badge, or upload
+- Raising the threshold above the measured baseline
+- Changing telegram_live default exclusion
+- Git mutations
+## Git workflow
+- Read-only git inspection only; no staging, commits, pushes, branches, resets, or worktrees.
+## Steps
+### Step 1: Re-measure before editing
+Run the exact baseline command. If total coverage is below 79 at the live commit, stop and investigate drift instead of choosing a lower threshold silently. Record uncovered critical paths separately; this plan adds the signal, not broad test implementation.
+**Verify**: report is captured in terminal and total is at least 79.
+### Step 2: Configure a conservative floor
+Add tool.coverage.report configuration with fail_under = 78 and show_missing = true. Keep branch = true and source unchanged. Do not add omit rules for low-coverage production modules.
+**Verify**: rerun the coverage command and confirm exit 0.
+### Step 3: Make CI collect coverage
+Replace the plain pytest CI command with uv run pytest --cov=pzp_ai_bot --cov-branch --cov-report=term-missing. Keep default tests offline and telegram_live skipped. Do not generate an unconsumed XML artifact.
+**Verify**: workflow contains the exact coverage command and no plain duplicate test step.
+### Step 4: Update artifact test and testing docs
+Require the coverage command in test_deployment_artifacts.py. Document local use, the 78 floor, the measured starting baseline, branch coverage, and the policy that behavior-critical tests outrank percentage chasing.
+**Verify**: artifact test passes and docs contain baseline/floor distinctions.
+### Step 5: Update PLAN
+Record coverage signal, measured baseline, current test gap notes, release gate, version/date, and changelog. Do not mark known critical test gaps complete merely because global coverage passes.
+**Verify**: <code>rg -n "coverage|79|78|branch" pyproject.toml .github/workflows/ci.yml docs/testing.md PLAN.md</code> → configuration and docs agree.
+### Step 6: Run all gates
+Run artifact tests, format, lint, ty, and the full coverage gate.
+**Verify**: all exit 0 and only in-scope files are modified.
+## Test plan
+- Artifact test enforces the coverage-enabled command.
+- Coverage floor passes at current baseline.
+- A local temporary threshold above measured total proves pytest-cov exits non-zero, but do not commit that temporary value.
+- telegram_live remains skipped by default.
+## Done criteria
+- [ ] CI collects branch coverage and shows missing lines.
+- [ ] A conservative 78-percent floor prevents major silent regression.
+- [ ] No production modules are omitted to game the number.
+- [ ] Docs and PLAN distinguish baseline, floor, and critical-path quality.
+- [ ] All gates pass.
+## STOP conditions
+- Fresh measured coverage is below 79 before changes.
+- Enabling coverage changes test behavior or external-network isolation.
+- The proposed threshold requires superficial tests or omission rules.
+## Maintenance notes
+- Raise the floor only after meaningful tests land and the new stable baseline is measured.
+- Reviewers should still prioritize auth, privacy, destructive operations, migrations, and concurrency over global percentage.
