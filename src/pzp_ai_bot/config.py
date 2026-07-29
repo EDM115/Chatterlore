@@ -5,7 +5,7 @@ import os
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -154,7 +154,7 @@ class Settings(BaseSettings):
             )
             profiles[name] = ProviderProfile(
                 name=name,
-                provider=cast(ProviderKind, provider),
+                provider=provider,
                 chat_model=str(raw_profile.get("chat_model") or default.chat_model),
                 embedding_model=str(raw_profile.get("embedding_model") or default.embedding_model),
                 openai_api_key=api_key or default.openai_api_key,
