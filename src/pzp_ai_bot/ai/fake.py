@@ -26,7 +26,12 @@ class FakeProvider:
         self.dimensions = dimensions
 
     async def generate(
-        self, messages: Sequence[ChatMessage], *, temperature: float = 0.2, max_tokens: int = 700
+        self,
+        messages: Sequence[ChatMessage],
+        *,
+        temperature: float = 0.2,
+        max_tokens: int = 700,
+        reasoning_effort: str | None = None,
     ) -> ChatResult:
         joined = "\n".join(message.content for message in messages)
         if "Summarize durable group-chat memory" in joined:

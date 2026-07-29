@@ -9,23 +9,59 @@ PZP AI is organized around clear runtime boundaries: Telegram update handling, s
 - `db`: async SQLAlchemy models and repositories over SQLite, managed through Alembic migrations.
 - `ai`: provider protocols plus fake, OpenAI-compatible and local embedding providers, provider profile selection, retry/backoff and configurable redaction including common key/value, quoted JSON secret fields, bearer/common token, email, phone and custom-pattern forms.
 
+## Module Ownership And Compatibility Facades
+
+`build_context(Settings)` still constructs the public `MemoryService` facade, and callers continue importing its established methods, contracts, parsers and formatters from `memory.service`. Shared immutable service value objects now live in `memory.contracts`; streamed import/export and Telegram JSON transfer orchestration lives in `memory.transfer`; provider execution, immutable call telemetry construction and usage persistence live in `memory.provider_operations`. The facade delegates to the transfer and provider collaborators with explicit dependencies while retrieval, mutation/review/retention, summary/compaction and settings/profile/template orchestration remain in `memory.service` pending the remaining behavior-preserving Plan 020 slices.
+
+Repository implementations live under `db.repos`: `messages`, `knowledge`, `canonical`, `embeddings`, `policy`, `settings`, `profiles`, `challenges` and `events` own their cohesive persistence surfaces, while `db.repos.shared` owns common filters and value types. `db.repositories` is intentionally retained as a compatibility facade that re-exports the same public objects, so existing application and local-tool imports remain valid during migration.
+
+Transaction ownership remains at the service/collaborator boundary through `session_scope(...)`: repositories receive a session and never commit independently, transfer checkpoints use short service-owned transactions around fixed batches, and provider calls execute outside write transactions before telemetry or successful business results are persisted. Telegram continues to depend on `MemoryService`; memory and database modules must not depend on Telegram. The root Telegram router is still monolithic at this checkpoint and is the next Plan 020 extraction target.
+
 ## Scope Model
 
 Every learned message belongs to a `Scope(chat_id, thread_id)`. Topic messages use Telegram's `message_thread_id` only when `is_topic_message` is true. Retrieval for `/ask` uses the current scope by default.  
-Cross-chat retrieval only happens when a named memory profile is requested and the destination scope has explicit source-scope permission for learning-enabled source scopes. Profile creation and profile permission grants are configured-bot-admin operations so a current-chat admin cannot grant access to another chat by passing `scope=`.
+Cross-chat retrieval only happens when a named memory profile is requested, the destination scope has explicit query permission for each source scope and each source scope's own learning policy is enabled. Profiles never copy or learn content into the destination scope. Profile creation and query-permission grants are configured-bot-admin operations so a current-chat admin cannot grant access to another chat by passing `scope=`.
+
+## Policy Snapshots
+
+Each enabled learning decision or standalone policy status loads `learning_policies` once into an immutable value snapshot, then evaluates scope precedence, user denial/allowlist rules and admin allowance without further database queries. Multi-scope status reporting reuses the same transaction-local snapshot for scope discovery and every status calculation. The snapshot is never cached across operations, so a policy mutation committed by one operation is visible to the next.
+
+## Message Idempotency
+
+A Telegram message's logical database key is `(chat_id, message_thread_id, telegram_message_id)`, with main-chat `NULL` normalized only inside the authoritative SQLite unique expression index as `COALESCE(message_thread_id, -1)`. Stored scopes keep their existing `NULL` semantics; `-1` is a reserved internal index sentinel rather than a persisted topic ID. The older nullable unique constraint remains because dropping it would require an otherwise unnecessary SQLite table rebuild, but it is not authoritative for main-chat uniqueness.
+
+Message insertion uses one SQLite `INSERT ... ON CONFLICT DO NOTHING ... RETURNING` operation and fetches the logical existing row only on conflict, so concurrent redeliveries resolve to one `Message.id` without rolling back the caller's transaction. Migration `0008_message_logical_uniqueness` reconciles pre-existing duplicates by keeping the lowest message ID, retaining one message embedding per provider/model and repointing it to the keeper before creating the index. SQLite cannot reflect expression indexes for Alembic comparison, so migration coverage also asserts the exact index directly from `sqlite_master` while `alembic check` continues to guard every reflectable model/history surface.
+
+## Retrieval Bounds
+
+The v1 retrieval backend remains a deterministic SQLite brute-force scan, but each source scope is bounded by `retrieval_candidate_limit` with a default of 5,000. Candidate selection admits valid durable `knowledge_item` embeddings first, then fills the remaining capacity with the most recent learned-message embeddings. Deleted targets and unlearned messages do not consume the raw-message quota. Retrieval normalizes the query vector once and batch-hydrates each target tier in one query, while the final rank still places durable knowledge before raw messages and applies one global `top_k` after profile results are merged.
+
+The cap applies independently to every authorized profile source scope, so a profile spanning four scopes can inspect up to four times the configured candidate count. This preserves the existing scope and permission model but makes profile breadth an explicit CPU/memory multiplier. If corpus growth makes the cap exclude required durable recall or produces unacceptable measured latency, migrate to a native approximate vector index instead of raising the brute-force limit indefinitely.
 
 ## Memory Model
 
-Raw messages remain in SQLite with optional chat/topic/source-link metadata. Knowledge items carry content, kind, scope, source message IDs and JSON metadata for manual note tags, priorities, range-summary boundaries and import provenance.  
-Durable Markdown memory is written to:
+SQLite is the authoritative store for both raw messages and durable `knowledge_items`. Knowledge items carry content, kind, scope, source message IDs and JSON metadata for manual note tags, priorities, range-summary boundaries and import provenance. Pending review content remains in SQLite and is not projected until approval creates a committed knowledge item.  
+Markdown is a rebuildable projection of committed knowledge:
 - `data/memory/daily/YYYY-MM-DD/<chat_id>_<thread_id>.md`
 - `data/memory/MEMORY.md`
 
-AI usage metadata records embedding counts/dimensions, prompt versions, provider profiles, selected models and reasoning levels for cost visibility and audit review.
+Daily files are deterministically grouped by each knowledge item's committed `created_at` date and scope. Durable mutations rebuild daily files only after the database transaction commits; startup through `build_context(Settings)` also reconciles the projection without contacting an AI provider, removing stale review proposals or deleted items. `MEMORY.md` remains the categorized canonical view and is rebuilt separately.  
+Canonical output is cached in validated `canonical_scope_snapshots` rows, one per exact `Scope.key`, but `knowledge_items` remains authoritative. Each snapshot fingerprint covers the exact item IDs, kinds, content hashes, source IDs and update times plus the canonical prompt version, provider kind/profile/base URL, selected model, reasoning level, redaction configuration, temperature and token bound. Routine mutations pass only their concrete dirty scopes, unchanged fingerprints reuse committed entries without provider calls, and the final deterministic render combines every current snapshot with current metadata and source references. Provider work runs outside a transaction; the result is persisted only if a fresh fingerprint still matches, with up to three retries after concurrent drift. A failed refresh retains the last valid snapshot and its mismatched fingerprint makes the scope retryable; corrupt snapshot JSON fails validation and is recomputed before rendering; empty/deleted scopes have stale snapshots removed. `compact_memory(force=True)` deliberately recomputes every non-empty scope for repair and testing.  
+AI usage metadata records embedding counts/dimensions, prompt versions, provider profiles, selected models and reasoning levels for cost visibility and audit review. Every new `ai_usage` row also stores normalized nullable `chat_id` and `message_thread_id` columns matching its controlled metadata scope. Revision 0012 backfills recognized legacy `all`, chat and topic forms while leaving missing or invalid legacy values unscoped instead of blocking upgrade. Status aggregation executes as two bounded SQL aggregate queries—counts/errors/average latency plus grouped operation counts—so global status includes all rows, chat status includes its main thread and topics, and topic status remains exact. Composite indexes cover usage scope/time, operation/time and error/time plus event type/scope/time and event scope/time access paths.
+
+## Summary Claim Lifecycle
+
+Pending learned messages move through a persisted `pending → claimed → summarized` state machine. A short claim transaction atomically assigns at most the effective `summary_batch_size` oldest eligible messages in one concrete scope to a random claim token; the chat and embedding provider calls then run without a live database session; a short compare-and-set finalization transaction creates exactly one knowledge item or review proposal, marks only the token-owned source rows summarized and clears the claim. A stale result that no longer owns every source is discarded without durable memory content.
+
+Claims become reclaimable after 900 seconds, which is deliberately longer than expected provider latency. A failed or empty provider response releases the claim immediately and leaves every source pending. Reclaiming an abandoned token records content-free `summary_stale_claims_recovered` metadata; it never marks a message summarized by itself.
+
+Manual `summarize_now` drains all eligible batches, while ingestion processes at most one batch per update and each idle-summarizer tick processes at most one batch per eligible concrete scope. Every provider prompt is therefore capped independently by that scope's effective `summary_batch_size`, and one busy scope cannot monopolize an idle tick.
+
+The same no-provider-inside-transaction boundary applies to message/note/import embeddings, retrieval query embeddings, asks, range summaries, review approval, item refresh and canonical compaction: immutable inputs are read first, provider work occurs after the read transaction closes, and successful results are persisted in a fresh short transaction. Every chat and embedding helper returns the same immutable provider-call telemetry record. If provider work fails, the service first rolls back or releases the business state, then commits that record in a separate short transaction; no competing telemetry writer is opened while another service write transaction is active, and no partial message, knowledge item or embedding is committed.
 
 ## Provider Model
 
-Provider profiles are configured from the default environment variables plus optional `AI_PROVIDER_PROFILES` JSON. Missing OpenAI-compatible credentials fail closed before provider calls. Local embeddings fail with an actionable `uv sync --extra local` message when `sentence-transformers` is not installed.
+Provider profiles are configured from the default environment variables plus optional `AI_PROVIDER_PROFILES` JSON. The effective chat model and reasoning level can come from environment defaults, safe runtime settings, per-scope settings or a one-shot command override; recognized OpenAI reasoning-model IDs receive that level as the outbound Chat Completions `reasoning_effort` parameter. Missing OpenAI-compatible credentials fail closed before provider calls. Local embeddings fail with an actionable `uv sync --extra local` message when `sentence-transformers` is not installed.
 
 ## Telegram Runtime
 

@@ -2,6 +2,7 @@
 > **Executor instructions**: Follow this plan step by step, run every verification command, and stop on any STOP condition. When complete, update this plan's row in plans/README.md unless a reviewer owns the index.
 > **Drift check (run first)**: <code>git diff --stat beda837..HEAD -- src/pzp_ai_bot/memory/markdown.py src/pzp_ai_bot/memory/service.py src/pzp_ai_bot/app_context.py tests/test_memory_quality.py tests/test_memory_service.py tests/test_operations.py docs/privacy.md docs/architecture.md docs/operations.md PLAN.md</code>. Reconcile any changed lifecycle excerpt before editing.
 ## Status
+- **Implementation status**: DONE (2026-07-29)
 - **Audit finding**: 2
 - **Priority**: P1
 - **Effort**: L
@@ -89,14 +90,16 @@ Run the format, lint, type, targeted, and full test commands.
 - Force an exception before commit and assert no new Markdown appears.
 - Seed stale historical daily content before context construction and prove startup reconciliation removes it.
 ## Done criteria
-- [ ] No review proposal is written to Markdown before approval.
-- [ ] No content-bearing Markdown write occurs inside a business transaction.
-- [ ] Daily Markdown can be deterministically rebuilt from committed KnowledgeItem rows.
-- [ ] Rejection, deletion, retention, scoped forget, and global forget remove all affected Markdown content.
-- [ ] Existing stale generated files are reconciled safely on startup without provider calls.
-- [ ] bot_events remain as documented metadata and contain no memory content.
-- [ ] Privacy/architecture/operations docs and PLAN.md match behavior.
-- [ ] Targeted and full gates pass.
+- [x] No review proposal is written to Markdown before approval.
+- [x] No content-bearing Markdown write occurs inside a business transaction.
+- [x] Daily Markdown can be deterministically rebuilt from committed KnowledgeItem rows.
+- [x] Rejection, deletion, retention, scoped forget, and global forget remove all affected Markdown content.
+- [x] Existing stale generated files are reconciled safely on startup without provider calls.
+- [x] bot_events remain as documented metadata and contain no memory content.
+- [x] Privacy/architecture/operations docs and PLAN.md match behavior.
+- [x] Targeted and full gates pass.
+
+Verification on 2026-07-29 used `uv run`: the complete lifecycle target across `tests/test_memory_quality.py`, `tests/test_memory_service.py` and `tests/test_operations.py` passed, Ruff format and lint passed, `ty check` passed, the full offline pytest suite passed, and the production source contains no `append_daily` or `review_proposal` references.
 ## STOP conditions
 - Daily Markdown contains information not reconstructible from KnowledgeItem rows and no documented source of truth exists.
 - Safe reconciliation would require deleting files outside the resolved Settings.memory_dir daily tree.

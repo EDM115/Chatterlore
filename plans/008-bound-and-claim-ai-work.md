@@ -2,6 +2,7 @@
 > **Executor instructions**: This is a high-risk architecture correction. Follow the order exactly, run each gate, and stop rather than improvising. Update plans/README.md when complete unless a reviewer owns it.
 > **Drift check (run first)**: <code>git diff --stat beda837..HEAD -- src/pzp_ai_bot/db/models.py src/pzp_ai_bot/db/repositories.py src/pzp_ai_bot/db/session.py src/pzp_ai_bot/memory/service.py alembic/versions tests/test_memory_correctness.py tests/test_memory_quality.py tests/test_operations.py docs/architecture.md docs/operations.md docs/privacy.md PLAN.md</code>.
 ## Status
+- **Status**: DONE
 - **Audit finding**: 5
 - **Priority**: P1
 - **Effort**: L
@@ -85,14 +86,14 @@ Run migration, targeted, format, lint, ty, and full tests.
 - A blocked provider does not hold a SQLite write lock.
 - Review mode and direct-knowledge mode both preserve source IDs.
 ## Done criteria
-- [ ] summary_batch_size is a hard per-request cap.
-- [ ] Pending work is atomically claimed and finalization is idempotent.
-- [ ] Provider calls run without a live write transaction.
-- [ ] Failures and stale workers leave work retryable.
-- [ ] Ingest, manual, idle, review, and direct-summary paths share the same state machine.
-- [ ] Migration and Alembic drift checks pass.
-- [ ] Architecture/privacy/operations docs and PLAN are current.
-- [ ] Targeted and full gates pass.
+- [x] summary_batch_size is a hard per-request cap.
+- [x] Pending work is atomically claimed and finalization is idempotent.
+- [x] Provider calls run without a live write transaction.
+- [x] Failures and stale workers leave work retryable.
+- [x] Ingest, manual, idle, review, and direct-summary paths share the same state machine.
+- [x] Migration and Alembic drift checks pass.
+- [x] Architecture/privacy/operations docs and PLAN are current.
+- [x] Targeted and full gates pass.
 ## STOP conditions
 - The supported SQLite version lacks the atomic update/returning behavior needed for claims.
 - Moving provider calls exposes a new partial-write behavior not covered by the stated atomicity rule.

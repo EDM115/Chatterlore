@@ -1,16 +1,21 @@
 FROM python:3.12-slim AS builder
 
+ARG UV_VERSION=0.12.0
+
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
+    UV_PROJECT_ENVIRONMENT=/opt/venv \
     UV_PYTHON_DOWNLOADS=never
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir uv
+RUN pip install --no-cache-dir "uv==$UV_VERSION"
 
-COPY pyproject.toml README.md ./
+COPY pyproject.toml uv.lock README.md ./
+RUN uv sync --frozen --no-dev --no-install-project
+
 COPY src ./src
-RUN uv venv /opt/venv && uv pip install --python /opt/venv/bin/python .
+RUN uv sync --frozen --no-dev
 
 FROM python:3.12-slim AS runtime
 

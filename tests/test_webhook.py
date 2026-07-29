@@ -1,10 +1,29 @@
 from __future__ import annotations
 
+import asyncio
+from types import SimpleNamespace
+from typing import Any, cast
+
 import pytest
+from aiogram import Bot, Dispatcher
 from fastapi.testclient import TestClient
 
 from pzp_ai_bot.app_context import AppContext
 from pzp_ai_bot.telegram.webhook import create_webhook_app
+
+
+class HealthBotDouble:
+    def __init__(self) -> None:
+        self.session = SimpleNamespace(close=self.close)
+
+    async def set_my_commands(self, commands: Any) -> None:
+        return None
+
+    async def set_webhook(self, *args: Any, **kwargs: Any) -> bool:
+        return True
+
+    async def close(self) -> None:
+        return None
 
 
 def test_webhook_rejects_bad_secret(context: AppContext) -> None:
@@ -26,3 +45,36 @@ def test_webhook_rejects_default_or_blank_secret(context: AppContext, secret: st
 
     with pytest.raises(RuntimeError, match="WEBHOOK_SECRET"):
         create_webhook_app(context)
+
+
+def test_health_reports_running_critical_background_tasks(context: AppContext) -> None:
+    app = create_webhook_app(
+        context, bot=cast(Bot, HealthBotDouble()), dispatcher=cast(Dispatcher, SimpleNamespace())
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "ok": True,
+        "tasks": {"pzp-idle-summarizer": True, "pzp-runtime-settings-refresher": True},
+    }
+
+
+def test_health_returns_503_when_critical_background_task_is_dead(context: AppContext) -> None:
+    app = create_webhook_app(
+        context, bot=cast(Bot, HealthBotDouble()), dispatcher=cast(Dispatcher, SimpleNamespace())
+    )
+
+    with TestClient(app) as client:
+        idle_handle = app.state.background_tasks["pzp-idle-summarizer"]
+        cast(Any, client).portal.call(idle_handle.task.cancel)
+        cast(Any, client).portal.call(asyncio.sleep, 0)
+        response = client.get("/health")
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "ok": False,
+        "tasks": {"pzp-idle-summarizer": False, "pzp-runtime-settings-refresher": True},
+    }

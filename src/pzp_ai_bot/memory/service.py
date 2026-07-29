@@ -2,22 +2,21 @@ from __future__ import annotations
 
 import hashlib
 import json
-import time
-from collections import defaultdict
-from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from collections.abc import AsyncIterator
+from datetime import datetime, timedelta
 from pathlib import Path
 from secrets import token_urlsafe
-from typing import Any, Literal
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from pzp_ai_bot.ai.factory import ProviderRegistry, ProviderSelection
-from pzp_ai_bot.ai.protocols import ChatMessage, ChatProvider, ChatResult, EmbeddingProvider
+from pzp_ai_bot.ai.protocols import ChatMessage, ChatProvider, EmbeddingProvider
 from pzp_ai_bot.config import Settings
 from pzp_ai_bot.db.models import KnowledgeItem
 from pzp_ai_bot.db.repositories import (
     AIUsageStats,
+    CanonicalScopeSnapshotRepository,
     EffectiveScopeSettings,
     EmbeddingRepository,
     EventRepository,
@@ -41,225 +40,66 @@ from pzp_ai_bot.db.session import session_scope
 from pzp_ai_bot.memory.canonical import (
     CanonicalMemoryEntry,
     canonical_prompt,
+    canonical_scope_fingerprint,
     fallback_entries,
     parse_canonical_response,
 )
-from pzp_ai_bot.memory.markdown import MarkdownMemoryStore, format_sources
+from pzp_ai_bot.memory.contracts import (
+    AIRequestOptions,
+    AuditEventPreview,
+    CanonicalScopeInput,
+    CanonicalScopeRefresh,
+    ChatProviderExecution,
+    EmbeddingGenerationResult,
+    IncomingMessage,
+    IngestResult,
+    MemoryItemPreview,
+    MemoryItemRefreshResult,
+    MemoryNotePreview,
+    MemoryReviewPreview,
+    MemoryStatusPreview,
+    PendingSummaryOutcome,
+    ProviderCallTelemetry,
+    ProviderOperationError,
+    RangeSummaryResult,
+    RuntimeSettingPreview,
+    ScopeStatusPreview,
+    SettingsChangePreview,
+    SkippedMessagePreview,
+    SummaryBatchOutcome,
+    SummaryClaim,
+    SummaryGenerationResult,
+    SummaryTemplatePreview,
+    SystemPromptTemplatePreview,
+)
+from pzp_ai_bot.memory.markdown import MarkdownMemoryStore
 from pzp_ai_bot.memory.policy import PolicyService
 from pzp_ai_bot.memory.prompts import (
     ANSWER_INSUFFICIENT_CONTEXT,
     BUILTIN_SYSTEM_PROMPTS,
+    CANONICAL_PROMPT_VERSION,
     PROMPT_VERSION,
     SUMMARY_BASE_PROMPT,
     PromptTemplate,
     prompt_metadata,
 )
+from pzp_ai_bot.memory.provider_operations import ProviderOperations, provider_call_telemetry
+from pzp_ai_bot.memory.provider_operations import telemetry_scope as telemetry_scope
 from pzp_ai_bot.memory.retrieval import Retriever, SearchResult
 from pzp_ai_bot.memory.scope import Scope, parse_scope
-
-
-@dataclass(frozen=True, slots=True)
-class IncomingMessage:
-    telegram_message_id: int
-    scope: Scope
-    user_id: int | None
-    username: str | None
-    text: str
-    created_at: datetime
-    reply_to_message_id: int | None = None
-    is_bot: bool = False
-    is_command: bool = False
-    is_chat_admin: bool = False
-    chat_title: str | None = None
-    chat_username: str | None = None
-    topic_title: str | None = None
-    message_permalink: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class IngestResult:
-    learned: bool
-    reason: str
-    message_db_id: int | None = None
-    summarized: bool = False
-
-
-MemoryExportFormat = Literal["md", "jsonl"]
-
-
-@dataclass(frozen=True, slots=True)
-class JsonlImportItem:
-    kind: str
-    content: str
-    source_message_ids: list[int]
-
-
-@dataclass(frozen=True, slots=True)
-class TelegramDesktopMessage:
-    telegram_message_id: int
-    user_id: int | None
-    username: str | None
-    text: str
-    created_at: datetime
-    reply_to_message_id: int | None
-    chat_title: str | None
-
-
-@dataclass(frozen=True, slots=True)
-class MemoryReviewPreview:
-    id: int
-    scope: Scope
-    kind: str
-    content: str
-    source_message_ids: list[int]
-
-
-@dataclass(frozen=True, slots=True)
-class MemoryNotePreview:
-    id: int
-    scope: Scope
-    content: str
-    tags: list[str]
-    priority: int | None
-    source: str | None
-    source_message_ids: list[int]
-
-
-@dataclass(frozen=True, slots=True)
-class RangeSummaryResult:
-    knowledge_item_id: int
-    source_message_ids: list[int]
-    started_at: datetime
-    ended_at: datetime
-    template_name: str
-
-
-@dataclass(frozen=True, slots=True)
-class SummaryTemplatePreview:
-    name: str
-    prompt: str
-    builtin: bool
-
-
-@dataclass(frozen=True, slots=True)
-class SystemPromptTemplatePreview:
-    name: str
-    version: str
-    prompt: str
-    builtin: bool
-
-
-@dataclass(frozen=True, slots=True)
-class AIRequestOptions:
-    provider_profile: str | None = None
-    chat_model: str | None = None
-    embedding_model: str | None = None
-    reasoning_level: str | None = None
-    system_prompt_template: str | None = None
-    system_prompt_override: str | None = None
-    summary_template_override: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class AuditEventPreview:
-    id: int
-    event_type: str
-    scope: Scope | None
-    user_id: int | None
-    payload: dict[str, Any]
-    created_at: datetime
-
-
-@dataclass(frozen=True, slots=True)
-class RuntimeSettingPreview:
-    key: str
-    value: Any
-    default_value: Any
-    previous_value: Any
-    updated_by: int | None
-    updated_at: datetime | None
-    version: int | None
-
-
-@dataclass(frozen=True, slots=True)
-class MemoryStatusPreview:
-    scope: Scope | None
-    scope_label: str
-    messages: int
-    learned: int
-    skipped: int
-    knowledge_items: int
-    embeddings: int
-    events: int
-    pending_reviews: int
-    ai_usage_total: int
-    ai_usage_errors: int
-    ai_usage_average_latency_ms: int | None
-    ai_usage_operations: dict[str, int]
-
-
-@dataclass(frozen=True, slots=True)
-class ScopeStatusPreview:
-    scope: Scope
-    label: str
-    learning_enabled: bool | None
-    allow_admins: bool | None
-    messages: int
-    learned: int
-    skipped: int
-    knowledge_items: int
-    last_message_at: datetime | None
-
-
-@dataclass(frozen=True, slots=True)
-class SkippedMessagePreview:
-    scope: Scope
-    telegram_message_id: int
-    reason: str
-    explanation: str
-    created_at: datetime
-
-
-@dataclass(frozen=True, slots=True)
-class MemoryItemPreview:
-    id: int
-    scope: Scope
-    kind: str
-    content: str
-    source_message_ids: list[int]
-    metadata: dict[str, Any]
-    created_at: datetime
-    updated_at: datetime
-
-
-@dataclass(frozen=True, slots=True)
-class MemoryItemRefreshResult:
-    id: int
-    scope: Scope
-    kind: str
-    mode: str
-    summarized: bool
-    embeddings_refreshed: int
-
-
-@dataclass(frozen=True, slots=True)
-class SettingsChangePreview:
-    scope: Scope
-    updates: dict[str, int | str | bool | None]
-    current_values: dict[str, int | str | bool | None]
-    token: str | None
-    expires_at: datetime | None
-    applied: bool
-
-
-@dataclass(frozen=True, slots=True)
-class TelegramDesktopImportResult:
-    imported: int
-    skipped: int
-
+from pzp_ai_bot.memory.transfer import (
+    MemoryExportChunk,
+    MemoryExportFormat,
+    MemoryTransferService,
+    TelegramDesktopImportResult,
+    normalize_text,
+)
+from pzp_ai_bot.memory.transfer import format_item_metadata as format_item_metadata
+from pzp_ai_bot.memory.transfer import parse_memory_export_format as parse_memory_export_format
 
 SAFE_RUNTIME_SETTING_TYPES: dict[str, str] = {
     "learning_default_enabled": "bool",
+    "retrieval_candidate_limit": "positive_int",
     "retrieval_top_k": "positive_int",
     "summary_batch_size": "positive_int",
     "summary_idle_seconds": "positive_int",
@@ -275,6 +115,8 @@ SAFE_RUNTIME_SETTING_TYPES: dict[str, str] = {
     "knowledge_retention_days": "optional_positive_int",
     "review_before_compact": "bool",
 }
+
+SUMMARY_CLAIM_TIMEOUT_SECONDS = 15 * 60
 
 
 BUILTIN_SUMMARY_TEMPLATES: dict[str, str] = {
@@ -308,6 +150,16 @@ class MemoryService:
         self.provider_registry = provider_registry or ProviderRegistry(settings)
         self.markdown = MarkdownMemoryStore(settings.memory_dir)
         self._runtime_overrides: dict[str, Any] = {}
+        self._provider_operations = ProviderOperations()
+        self._transfer = MemoryTransferService(
+            session_factory=self.session_factory,
+            markdown=self.markdown,
+            default_scope_settings=self._default_scope_settings,
+            select_provider=self._select_provider,
+            generate_embeddings=self._generate_embeddings,
+            add_embedding_usage_in_session=self._add_embedding_usage_in_session,
+            compact_memory=self.compact_memory,
+        )
 
     async def set_learning(
         self, scope: Scope | None, enabled: bool, updated_by: int | None = None
@@ -580,6 +432,7 @@ class MemoryService:
                 PolicyRepository(session),
                 learning_default_enabled=self.runtime_setting("learning_default_enabled"),
             )
+            policy_snapshot = await policies.load_snapshot()
             scopes_by_key: dict[str, Scope] = {}
             for row in message_counts.values():
                 scopes_by_key[row.scope.key] = row.scope
@@ -587,7 +440,7 @@ class MemoryService:
                 scopes_by_key[row.scope.key] = row.scope
             for key, metadata in metadata_by_scope.items():
                 scopes_by_key[key] = Scope(metadata.chat_id, metadata.message_thread_id)
-            for policy in await PolicyRepository(session).list_policies():
+            for policy in policy_snapshot.rules:
                 if policy.chat_id is not None:
                     policy_scope = Scope(policy.chat_id, policy.message_thread_id)
                     scopes_by_key[policy_scope.key] = policy_scope
@@ -604,7 +457,7 @@ class MemoryService:
             ):
                 counts = message_counts.get(scope.key)
                 knowledge = knowledge_counts.get(scope.key)
-                status = await policies.status(scope)
+                status = await policies.status(scope, snapshot=policy_snapshot)
                 learning_enabled = status.get("learning_enabled")
                 allow_admins = status.get("allow_admins")
                 metadata = metadata_by_scope.get(scope.key) or await ScopeMetadataRepository(
@@ -648,6 +501,7 @@ class MemoryService:
     def runtime_default(self, key: str) -> Any:
         defaults = {
             "learning_default_enabled": self.settings.learning_default_enabled,
+            "retrieval_candidate_limit": self.settings.retrieval_candidate_limit,
             "retrieval_top_k": self.settings.retrieval_top_k,
             "summary_batch_size": self.settings.summary_batch_size,
             "summary_idle_seconds": self.settings.summary_idle_seconds,
@@ -685,14 +539,13 @@ class MemoryService:
         text = normalize_text(incoming.text)
         summarized = False
         needs_compact = False
+        trigger_summary = False
         async with session_scope(self.session_factory) as session:
-            if any((incoming.chat_title, incoming.topic_title, incoming.chat_username)):
-                await ScopeMetadataRepository(session).upsert(
-                    incoming.scope,
-                    chat_title=incoming.chat_title,
-                    topic_title=incoming.topic_title,
-                    chat_username=incoming.chat_username,
-                )
+            existing = await MessageRepository(session).get_logical(
+                incoming.scope, incoming.telegram_message_id
+            )
+            if existing is not None:
+                return IngestResult(existing.learned, "duplicate_message", existing.id, False)
             scope_settings = await ScopeSettingsRepository(session).effective(
                 incoming.scope, self._default_scope_settings()
             )
@@ -709,6 +562,36 @@ class MemoryService:
                 text=text,
                 is_chat_admin=incoming.is_chat_admin,
             )
+        if decision.allowed:
+            selection = self._select_provider(scope_settings)
+            embedding_generation = await self._generate_embeddings(
+                selection,
+                [text],
+                operation="embed_message",
+                metadata={"scope": incoming.scope.key, "target_type": "message"},
+            )
+            if embedding_generation.error is not None:
+                async with session_scope(self.session_factory) as session:
+                    await self._add_embedding_usage_in_session(
+                        session,
+                        selection=selection,
+                        generation=embedding_generation,
+                        texts_count=1,
+                        operation="embed_message",
+                        metadata={"scope": incoming.scope.key, "target_type": "message"},
+                    )
+                raise embedding_generation.error
+        else:
+            selection = None
+            embedding_generation = None
+        async with session_scope(self.session_factory) as session:
+            if any((incoming.chat_title, incoming.topic_title, incoming.chat_username)):
+                await ScopeMetadataRepository(session).upsert(
+                    incoming.scope,
+                    chat_title=incoming.chat_title,
+                    topic_title=incoming.topic_title,
+                    chat_username=incoming.chat_username,
+                )
             message_repo = MessageRepository(session)
             message, created = await message_repo.add(
                 telegram_message_id=incoming.telegram_message_id,
@@ -730,34 +613,36 @@ class MemoryService:
                 return IngestResult(message.learned, "duplicate_message", message.id, False)
             if not decision.allowed:
                 return IngestResult(False, decision.reason, message.id)
-            selection = self._select_provider(scope_settings)
-            vector = (
-                await self._embed_texts_in_session(
-                    session,
-                    selection=selection,
-                    texts=[text],
-                    operation="embed_message",
-                    metadata={"scope": incoming.scope.key, "target_type": "message"},
-                )
-            )[0]
+            assert selection is not None
+            assert embedding_generation is not None
+            await self._add_embedding_usage_in_session(
+                session,
+                selection=selection,
+                generation=embedding_generation,
+                texts_count=1,
+                operation="embed_message",
+                metadata={"scope": incoming.scope.key, "target_type": "message"},
+            )
             await EmbeddingRepository(session).add(
                 target_type="message",
                 target_id=message.id,
                 scope=incoming.scope,
                 provider=selection.embedding_provider.name,
                 model=selection.embedding_model,
-                vector=vector,
+                vector=embedding_generation.vectors[0],
             )
-            pending = await message_repo.pending_for_summary(incoming.scope)
-            if len(pending) >= scope_settings.summary_batch_size:
-                needs_compact = await self._summarize_pending_in_session(
-                    session, incoming.scope, pending, scope_settings
-                )
-                summarized = True
-            result = IngestResult(True, decision.reason, message.id, summarized)
+            pending = await message_repo.pending_for_summary(
+                incoming.scope, limit=scope_settings.summary_batch_size
+            )
+            trigger_summary = len(pending) >= scope_settings.summary_batch_size
+            message_id = message.id
+        if trigger_summary:
+            summary_outcome = await self._process_summary_batch(incoming.scope)
+            needs_compact = summary_outcome.needs_compact
+            summarized = summary_outcome.completed_messages > 0
         if needs_compact:
-            await self.compact_memory()
-        return result
+            await self.compact_memory(dirty_scopes={incoming.scope})
+        return IngestResult(True, decision.reason, message_id, summarized)
 
     async def summarize_now(
         self,
@@ -766,41 +651,47 @@ class MemoryService:
         template_name: str | None = None,
         ai_options: AIRequestOptions | None = None,
     ) -> int:
-        async with session_scope(self.session_factory) as session:
-            if scope.is_global:
-                if template_name is not None:
-                    raise ValueError("template summaries require a concrete scope")
-                count, needs_compact = await self._summarize_pending_scopes_in_session(session)
-            else:
-                pending = await MessageRepository(session).pending_for_summary(scope)
-                if not pending:
-                    return 0
-                scope_settings = await ScopeSettingsRepository(session).effective(
-                    scope, self._default_scope_settings()
+        if scope.is_global and template_name is not None:
+            raise ValueError("template summaries require a concrete scope")
+        if scope.is_global:
+            async with session_scope(self.session_factory) as session:
+                scopes = await MessageRepository(session).pending_scopes()
+        else:
+            scopes = [scope]
+        count = 0
+        dirty_scopes: set[Scope] = set()
+        for pending_scope in scopes:
+            while True:
+                summary_outcome = await self._process_summary_batch(
+                    pending_scope, template_name=template_name, ai_options=ai_options
                 )
-                needs_compact = await self._summarize_pending_in_session(
-                    session,
-                    scope,
-                    pending,
-                    scope_settings,
-                    template_name=template_name,
-                    ai_options=ai_options,
-                )
-                count = len(pending)
-        if needs_compact:
-            await self.compact_memory()
+                if summary_outcome.claimed_messages == 0:
+                    break
+                count += summary_outcome.completed_messages
+                if summary_outcome.needs_compact:
+                    dirty_scopes.add(pending_scope)
+                if summary_outcome.completed_messages == 0:
+                    break
+        if dirty_scopes:
+            await self.compact_memory(dirty_scopes=dirty_scopes)
         return count
 
     async def summarize_idle(self, *, now: datetime | None = None) -> int:
-        cutoff = (now or utc_now()) - timedelta(
-            seconds=int(self.runtime_setting("summary_idle_seconds"))
-        )
+        claim_now = now or utc_now()
+        cutoff = claim_now - timedelta(seconds=int(self.runtime_setting("summary_idle_seconds")))
         async with session_scope(self.session_factory) as session:
-            count, needs_compact = await self._summarize_pending_scopes_in_session(
-                session, idle_before=cutoff
+            scopes = await MessageRepository(session).pending_scopes(idle_before=cutoff)
+        count = 0
+        dirty_scopes: set[Scope] = set()
+        for scope in scopes:
+            summary_outcome = await self._process_summary_batch(
+                scope, now=claim_now, created_before=cutoff
             )
-        if needs_compact:
-            await self.compact_memory()
+            count += summary_outcome.completed_messages
+            if summary_outcome.needs_compact:
+                dirty_scopes.add(scope)
+        if dirty_scopes:
+            await self.compact_memory(dirty_scopes=dirty_scopes)
         return count
 
     async def remember(
@@ -814,18 +705,63 @@ class MemoryService:
         source: str | None = None,
     ) -> int:
         metadata = note_metadata(tags=tags, priority=priority, source=source)
+        clean_content = content.strip()
         async with session_scope(self.session_factory) as session:
-            item = await self._add_knowledge_in_session(
-                session,
+            scope_settings = await ScopeSettingsRepository(session).effective(
+                scope, self._default_scope_settings()
+            )
+        selection = self._select_provider(scope_settings)
+        embedding_generation = await self._generate_embeddings(
+            selection,
+            [clean_content],
+            operation="embed_knowledge",
+            metadata={"scope": scope.key, "target_type": "knowledge_item", "kind": "manual_note"},
+        )
+        if embedding_generation.error is not None:
+            async with session_scope(self.session_factory) as session:
+                await self._add_embedding_usage_in_session(
+                    session,
+                    selection=selection,
+                    generation=embedding_generation,
+                    texts_count=1,
+                    operation="embed_knowledge",
+                    metadata={
+                        "scope": scope.key,
+                        "target_type": "knowledge_item",
+                        "kind": "manual_note",
+                    },
+                )
+            raise embedding_generation.error
+        async with session_scope(self.session_factory) as session:
+            item = await KnowledgeRepository(session).add(
                 scope=scope,
                 kind="manual_note",
-                content=content.strip(),
+                content=clean_content,
                 source_message_ids=[] if source_message_id is None else [source_message_id],
                 metadata_json=metadata,
-                daily_kind="manual",
+            )
+            await self._add_embedding_usage_in_session(
+                session,
+                selection=selection,
+                generation=embedding_generation,
+                texts_count=1,
+                operation="embed_knowledge",
+                metadata={
+                    "scope": scope.key,
+                    "target_type": "knowledge_item",
+                    "kind": "manual_note",
+                },
+            )
+            await EmbeddingRepository(session).add(
+                target_type="knowledge_item",
+                target_id=item.id,
+                scope=scope,
+                provider=selection.embedding_provider.name,
+                model=selection.embedding_model,
+                vector=embedding_generation.vectors[0],
             )
             item_id = item.id
-        await self.compact_memory()
+        await self.compact_memory(dirty_scopes={scope})
         return item_id
 
     async def list_notes(
@@ -856,6 +792,39 @@ class MemoryService:
             metadata_updates["source"] = source
         async with session_scope(self.session_factory) as session:
             repo = KnowledgeRepository(session)
+            item = await repo.get(item_id)
+            if item is not None and (
+                item.kind != "manual_note"
+                or not scope.contains(Scope(item.chat_id, item.message_thread_id))
+            ):
+                item = None
+            if item is None:
+                raise ValueError(f"manual note #{item_id} was not found in scope {scope.key}")
+            item_scope = Scope(item.chat_id, item.message_thread_id)
+            updated_content = content.strip() if content is not None else item.content
+            scope_settings = await ScopeSettingsRepository(session).effective(
+                item_scope, self._default_scope_settings()
+            )
+        selection = self._select_provider(scope_settings)
+        embedding_generation = await self._generate_embeddings(
+            selection,
+            [updated_content],
+            operation="embed_knowledge",
+            metadata={"scope": item_scope.key, "target_type": "knowledge_item"},
+        )
+        if embedding_generation.error is not None:
+            async with session_scope(self.session_factory) as session:
+                await self._add_embedding_usage_in_session(
+                    session,
+                    selection=selection,
+                    generation=embedding_generation,
+                    texts_count=1,
+                    operation="embed_knowledge",
+                    metadata={"scope": item_scope.key, "target_type": "knowledge_item"},
+                )
+            raise embedding_generation.error
+        async with session_scope(self.session_factory) as session:
+            repo = KnowledgeRepository(session)
             item = await repo.update_manual_note(
                 item_id,
                 scope=scope,
@@ -867,29 +836,21 @@ class MemoryService:
             await EmbeddingRepository(session).delete_targets(
                 target_type="knowledge_item", target_ids=[item.id]
             )
-            scope_settings = await ScopeSettingsRepository(session).effective(
-                Scope(item.chat_id, item.message_thread_id), self._default_scope_settings()
+            await self._add_embedding_usage_in_session(
+                session,
+                selection=selection,
+                generation=embedding_generation,
+                texts_count=1,
+                operation="embed_knowledge",
+                metadata={"scope": item_scope.key, "target_type": "knowledge_item"},
             )
-            selection = self._select_provider(scope_settings)
-            vector = (
-                await self._embed_texts_in_session(
-                    session,
-                    selection=selection,
-                    texts=[item.content],
-                    operation="embed_knowledge",
-                    metadata={
-                        "scope": Scope(item.chat_id, item.message_thread_id).key,
-                        "target_type": "knowledge_item",
-                    },
-                )
-            )[0]
             await EmbeddingRepository(session).add(
                 target_type="knowledge_item",
                 target_id=item.id,
-                scope=Scope(item.chat_id, item.message_thread_id),
+                scope=item_scope,
                 provider=selection.embedding_provider.name,
                 model=selection.embedding_model,
-                vector=vector,
+                vector=embedding_generation.vectors[0],
             )
             await EventRepository(session).add(
                 event_type="manual_note_updated",
@@ -897,12 +858,22 @@ class MemoryService:
                 payload={"knowledge_item_id": item.id, "metadata": item.metadata_json or {}},
             )
             preview = memory_note_preview(item)
-        await self.compact_memory()
+        await self.compact_memory(dirty_scopes={item_scope})
         return preview
 
     async def delete_note(self, scope: Scope, item_id: int) -> None:
         async with session_scope(self.session_factory) as session:
-            deleted = await KnowledgeRepository(session).delete_manual_note(item_id, scope=scope)
+            repository = KnowledgeRepository(session)
+            item = await repository.get(item_id)
+            if item is not None and (
+                item.kind != "manual_note"
+                or not scope.contains(Scope(item.chat_id, item.message_thread_id))
+            ):
+                item = None
+            if item is None:
+                raise ValueError(f"manual note #{item_id} was not found in scope {scope.key}")
+            item_scope = Scope(item.chat_id, item.message_thread_id)
+            deleted = await repository.delete_manual_note(item_id, scope=item_scope)
             if not deleted:
                 raise ValueError(f"manual note #{item_id} was not found in scope {scope.key}")
             await EmbeddingRepository(session).delete_targets(
@@ -910,10 +881,10 @@ class MemoryService:
             )
             await EventRepository(session).add(
                 event_type="manual_note_deleted",
-                scope=scope,
+                scope=item_scope,
                 payload={"knowledge_item_id": item_id},
             )
-        await self.compact_memory()
+        await self.compact_memory(dirty_scopes={item_scope})
 
     async def ask(
         self,
@@ -943,54 +914,45 @@ class MemoryService:
             system_template = await self._answer_system_prompt_in_session(
                 session, scope_settings, ai_options
             )
-            messages = [
-                ChatMessage(
-                    role="system",
-                    content=(
-                        f"{system_template.prompt}\n"
-                        f"Prompt version: {system_template.version}.\n"
-                        f"Reasoning level setting: {reasoning_level}."
-                    ),
+        messages = [
+            ChatMessage(
+                role="system",
+                content=(
+                    f"{system_template.prompt}\n"
+                    f"Prompt version: {system_template.version}.\n"
+                    f"Reasoning level setting: {reasoning_level}."
                 ),
-                ChatMessage(
-                    role="user", content=f"Question: {question}\n\nScoped memory:\n{context}"
+            ),
+            ChatMessage(role="user", content=f"Question: {question}\n\nScoped memory:\n{context}"),
+        ]
+        execution = await self._execute_chat_provider(
+            selection,
+            messages,
+            operation="ask",
+            metadata={
+                **prompt_metadata(
+                    template_name=system_template.name,
+                    template_version=system_template.version,
+                    reasoning_level=reasoning_level,
+                    provider_profile=selection.profile.name,
                 ),
-            ]
-            started = time.perf_counter()
-            error: str | None = None
-            try:
-                result = await selection.chat_provider.generate(
-                    messages, temperature=0.1, max_tokens=700
-                )
-                content = result.content
-            except Exception as exc:
-                error = str(exc)
-                content = fallback_answer(results)
-                result = None
-            await EventRepository(session).add_ai_usage(
-                provider=selection.chat_provider.name,
-                model=selection.chat_model,
-                operation="ask",
-                prompt_tokens=result.prompt_tokens if result else None,
-                completion_tokens=result.completion_tokens if result else None,
-                latency_ms=int((time.perf_counter() - started) * 1000),
-                error=error,
-                metadata_json={
-                    **prompt_metadata(
-                        template_name=system_template.name,
-                        template_version=system_template.version,
-                        reasoning_level=reasoning_level,
-                        provider_profile=selection.profile.name,
-                    ),
-                    "chat_model": selection.chat_model,
-                    "embedding_model": selection.embedding_model,
-                    "scope": scope.key,
-                    "retrieval_results": len(results),
-                    "best_score": best_score,
-                    "memory_profile": profile_name,
-                },
-            )
-            return append_answer_sources(content, results)
+                "chat_model": selection.chat_model,
+                "embedding_model": selection.embedding_model,
+                "scope": scope.key,
+                "retrieval_results": len(results),
+                "best_score": best_score,
+                "memory_profile": profile_name,
+            },
+            temperature=0.1,
+            max_tokens=700,
+            reasoning_effort=reasoning_level,
+        )
+        content = (
+            execution.result.content if execution.result is not None else fallback_answer(results)
+        )
+        async with session_scope(self.session_factory) as session:
+            await self._add_provider_usage_in_session(session, execution.telemetry)
+        return append_answer_sources(content, results)
 
     async def search(
         self,
@@ -1006,215 +968,164 @@ class MemoryService:
                 scope, self._default_scope_settings()
             )
             selection = self._select_provider(scope_settings, ai_options)
-            query_vector = (
-                await self._embed_texts_in_session(
+            scopes = await self._retrieval_scopes_in_session(session, scope, profile_name)
+        embedding_generation = await self._generate_embeddings(
+            selection,
+            [query],
+            operation="embed_query",
+            metadata={"scope": scope.key, "memory_profile": profile_name},
+        )
+        if embedding_generation.error is not None:
+            async with session_scope(self.session_factory) as session:
+                await self._add_embedding_usage_in_session(
                     session,
                     selection=selection,
-                    texts=[query],
+                    generation=embedding_generation,
+                    texts_count=1,
                     operation="embed_query",
                     metadata={"scope": scope.key, "memory_profile": profile_name},
                 )
-            )[0]
+            raise embedding_generation.error
+        query_vector = embedding_generation.vectors[0]
+        async with session_scope(self.session_factory) as session:
+            await self._add_embedding_usage_in_session(
+                session,
+                selection=selection,
+                generation=embedding_generation,
+                texts_count=1,
+                operation="embed_query",
+                metadata={"scope": scope.key, "memory_profile": profile_name},
+            )
             retriever = Retriever(
                 embedding_repo=EmbeddingRepository(session),
                 knowledge_repo=KnowledgeRepository(session),
                 message_repo=MessageRepository(session),
             )
-            scopes = await self._retrieval_scopes_in_session(session, scope, profile_name)
             results: list[SearchResult] = []
             for source_scope in scopes:
-                results.extend(await retriever.search(query_vector, source_scope, top_k))
+                results.extend(
+                    await retriever.search(
+                        query_vector,
+                        source_scope,
+                        top_k,
+                        candidate_limit=int(self.runtime_setting("retrieval_candidate_limit")),
+                    )
+                )
             results.sort(key=search_result_rank)
             return results[:top_k]
 
-    async def compact_memory(self) -> Path:
+    async def compact_memory(
+        self, dirty_scopes: set[Scope] | None = None, *, force: bool = False
+    ) -> Path:
+        await self.rebuild_daily_projection()
+        async with session_scope(self.session_factory) as session:
+            current_scopes = {
+                row.scope for row in await KnowledgeRepository(session).scope_counts()
+            }
+            valid_snapshots = await CanonicalScopeSnapshotRepository(session).list()
+        if force or dirty_scopes is None:
+            target_scopes = set(current_scopes)
+        else:
+            target_scopes = (set(dirty_scopes) & current_scopes) | (
+                current_scopes - set(valid_snapshots)
+            )
+        refreshes: dict[Scope, CanonicalScopeRefresh] = {}
+        for scope in sorted(target_scopes, key=lambda value: value.key):
+            refreshes[scope] = await self._refresh_canonical_scope(scope, force=force)
+        for _ in range(3):
+            async with session_scope(self.session_factory) as session:
+                latest_scopes = {
+                    row.scope for row in await KnowledgeRepository(session).scope_counts()
+                }
+                latest_snapshots = await CanonicalScopeSnapshotRepository(session).list()
+            missing_scopes = latest_scopes - set(latest_snapshots) - set(refreshes)
+            if not missing_scopes:
+                break
+            for scope in sorted(missing_scopes, key=lambda value: value.key):
+                refreshes[scope] = await self._refresh_canonical_scope(scope, force=False)
         async with session_scope(self.session_factory) as session:
             knowledge_repo = KnowledgeRepository(session)
+            snapshot_repo = CanonicalScopeSnapshotRepository(session)
             metadata_repo = ScopeMetadataRepository(session)
             message_repo = MessageRepository(session)
-            event_repo = EventRepository(session)
-            items = await knowledge_repo.list_scope()
-            metadata_by_scope = await metadata_repo.list_all()
-            grouped_items: dict[Scope, list[KnowledgeItem]] = defaultdict(list)
-            for item in items:
-                grouped_items[Scope(item.chat_id, item.message_thread_id)].append(item)
+            current_scopes = {row.scope for row in await knowledge_repo.scope_counts()}
+            await snapshot_repo.delete_missing({scope.key for scope in current_scopes})
+            snapshots = await snapshot_repo.list()
             entries_by_scope: dict[Scope, list[CanonicalMemoryEntry]] = {}
+            metadata_by_scope = await metadata_repo.list_all()
             sources_by_scope = {}
-            for scope, scope_items in grouped_items.items():
+            for scope in sorted(current_scopes, key=lambda value: value.key):
+                refresh = refreshes.get(scope)
+                snapshot = snapshots.get(scope)
+                if refresh is not None and not refresh.snapshot_persisted:
+                    entries = list(refresh.entries)
+                elif snapshot is not None:
+                    entries = list(snapshot.entries)
+                else:
+                    entries = fallback_entries(await knowledge_repo.list_exact_scope(scope))
+                entries_by_scope[scope] = entries
                 metadata = await metadata_repo.get_effective(scope)
                 if metadata is not None:
                     metadata_by_scope[scope.key] = metadata
                 source_ids = sorted(
-                    {source for item in scope_items for source in item.source_message_ids}
+                    {source for entry in entries for source in entry.source_message_ids}
                 )
                 sources_by_scope[scope.key] = await message_repo.source_references(
                     scope, source_ids, metadata
                 )
-                (
-                    entries,
-                    result,
-                    error,
-                    latency_ms,
-                    selection,
-                    reasoning_level,
-                ) = await self._canonical_entries_for_scope(session, scope, scope_items)
-                entries_by_scope[scope] = entries
-                await event_repo.add_ai_usage(
-                    provider=selection.chat_provider.name,
-                    model=selection.chat_model,
-                    operation="canonical_compact",
-                    prompt_tokens=result.prompt_tokens if result else None,
-                    completion_tokens=result.completion_tokens if result else None,
-                    latency_ms=latency_ms,
-                    error=error,
-                    metadata_json={
-                        "prompt_version": PROMPT_VERSION,
-                        "provider_profile": selection.profile.name,
-                        "chat_model": selection.chat_model,
-                        "embedding_model": selection.embedding_model,
-                        "reasoning_level": reasoning_level,
-                        "scope": scope.key,
-                    },
-                )
-            path = self.markdown.write_canonical(
-                entries_by_scope, metadata_by_scope, sources_by_scope
+        path = self.markdown.write_canonical(entries_by_scope, metadata_by_scope, sources_by_scope)
+        async with session_scope(self.session_factory) as session:
+            await EventRepository(session).add(
+                event_type="compact_memory",
+                payload={
+                    "path": str(path),
+                    "dirty_scopes": (
+                        None
+                        if dirty_scopes is None
+                        else sorted(scope.key for scope in dirty_scopes)
+                    ),
+                    "force": force,
+                    "provider_calls": sum(refresh.provider_calls for refresh in refreshes.values()),
+                    "recomputed_scopes": sorted(
+                        scope.key
+                        for scope, refresh in refreshes.items()
+                        if refresh.snapshot_persisted
+                    ),
+                },
             )
-            await event_repo.add(event_type="compact_memory", payload={"path": str(path)})
-            return path
+        return path
+
+    async def rebuild_daily_projection(self) -> list[Path]:
+        async with session_scope(self.session_factory) as session:
+            items = await KnowledgeRepository(session).list_scope()
+        try:
+            return self.markdown.rebuild_daily(items)
+        except Exception as exc:
+            async with session_scope(self.session_factory) as session:
+                await EventRepository(session).add(
+                    event_type="markdown_projection_failed",
+                    payload={"error_type": type(exc).__name__},
+                )
+            raise
 
     async def export_memory(
         self, scope: Scope | None = None, fmt: MemoryExportFormat = "md"
     ) -> str:
-        if fmt not in {"md", "jsonl"}:
-            raise ValueError("format must be md or jsonl")
-        async with session_scope(self.session_factory) as session:
-            items = await KnowledgeRepository(session).list_scope(scope)
-            metadata_repo = ScopeMetadataRepository(session)
-            message_repo = MessageRepository(session)
-            if fmt == "jsonl":
-                lines = []
-                for item in items:
-                    item_scope = Scope(item.chat_id, item.message_thread_id)
-                    metadata = await metadata_repo.get_effective(item_scope)
-                    references = await message_repo.source_references(
-                        item_scope, item.source_message_ids, metadata
-                    )
-                    lines.append(
-                        json.dumps(
-                            {
-                                "id": item.id,
-                                "scope": item_scope.key,
-                                "scope_label": scope_label(item_scope, metadata),
-                                "kind": item.kind,
-                                "content": item.content,
-                                "source_message_ids": item.source_message_ids,
-                                "metadata": item.metadata_json or {},
-                                "source_references": [
-                                    {"message_id": ref.message_id, "url": ref.url}
-                                    for ref in references.values()
-                                ],
-                                "created_at": item.created_at.isoformat(),
-                            },
-                            ensure_ascii=False,
-                        )
-                    )
-                return "\n".join(lines) + ("\n" if lines else "")
-            if scope is None:
-                return self.markdown.read_main()
-            metadata = await metadata_repo.get_effective(scope)
-            references = await message_repo.source_references(
-                scope, [source for item in items for source in item.source_message_ids], metadata
-            )
-            lines = [f"# Memory export for {scope_label(scope, metadata)}", ""]
-            for item in items:
-                sources = format_sources(item.source_message_ids, references)
-                extra = format_item_metadata(item.metadata_json or {})
-                detail = f"{item.kind}, source: {sources}{extra}"
-                lines.append(f"- ({detail}) {item.content.strip()}")
-            return "\n".join(lines).rstrip() + "\n"
+        return await self._transfer.export_memory(scope=scope, fmt=fmt)
+
+    async def export_memory_chunks(
+        self, scope: Scope | None = None, fmt: MemoryExportFormat = "md"
+    ) -> AsyncIterator[MemoryExportChunk]:
+        async for chunk in self._transfer.export_memory_chunks(scope=scope, fmt=fmt):
+            yield chunk
 
     async def import_jsonl(self, path: Path, scope: Scope) -> int:
-        rows = load_jsonl_import(path)
-        count = 0
-        async with session_scope(self.session_factory) as session:
-            for row in rows:
-                await self._add_knowledge_in_session(
-                    session,
-                    scope=scope,
-                    kind=row.kind,
-                    content=row.content,
-                    source_message_ids=row.source_message_ids,
-                    daily_kind="import",
-                )
-                count += 1
-        await self.compact_memory()
-        return count
+        return await self._transfer.import_jsonl(path, scope)
 
     async def import_telegram_desktop_json(
         self, path: Path, scope: Scope
     ) -> TelegramDesktopImportResult:
-        if scope.chat_id is None:
-            raise ValueError("Telegram Desktop imports require a concrete chat or topic scope")
-        rows = load_telegram_desktop_export(path)
-        imported = 0
-        skipped = 0
-        async with session_scope(self.session_factory) as session:
-            message_repo = MessageRepository(session)
-            scope_settings = await ScopeSettingsRepository(session).effective(
-                scope, self._default_scope_settings()
-            )
-            selection = self._select_provider(scope_settings)
-            for row in rows:
-                if not row.text.strip():
-                    skipped += 1
-                    continue
-                message, created = await message_repo.add(
-                    telegram_message_id=row.telegram_message_id,
-                    scope=scope,
-                    user_id=row.user_id,
-                    username=row.username,
-                    text=row.text,
-                    normalized_text=normalize_text(row.text),
-                    learned=True,
-                    skip_reason=None,
-                    reply_to_message_id=row.reply_to_message_id,
-                    created_at=row.created_at,
-                    chat_title=row.chat_title,
-                    chat_username=None,
-                    topic_title=None,
-                    message_permalink=None,
-                )
-                if not created:
-                    skipped += 1
-                    continue
-                vector = (
-                    await self._embed_texts_in_session(
-                        session,
-                        selection=selection,
-                        texts=[message.normalized_text],
-                        operation="embed_message",
-                        metadata={
-                            "scope": scope.key,
-                            "target_type": "message",
-                            "import": "telegram_json",
-                        },
-                    )
-                )[0]
-                await EmbeddingRepository(session).add(
-                    target_type="message",
-                    target_id=message.id,
-                    scope=scope,
-                    provider=selection.embedding_provider.name,
-                    model=selection.embedding_model,
-                    vector=vector,
-                )
-                imported += 1
-            await EventRepository(session).add(
-                event_type="telegram_json_import",
-                scope=scope,
-                payload={"imported": imported, "skipped": skipped, "path": str(path)},
-            )
-        return TelegramDesktopImportResult(imported=imported, skipped=skipped)
+        return await self._transfer.import_telegram_desktop_json(path, scope)
 
     async def browse_items(
         self, scope: Scope | None = None, *, kind: str | None = None, limit: int = 20
@@ -1249,7 +1160,7 @@ class MemoryService:
                     "kind": preview.kind,
                 },
             )
-        await self.compact_memory()
+        await self.compact_memory(dirty_scopes={item_scope})
         return preview
 
     async def refresh_memory_item(
@@ -1258,7 +1169,6 @@ class MemoryService:
         clean_mode = mode.strip().lower()
         if clean_mode not in {"embed", "summarize", "both"}:
             raise ValueError("mode must be embed, summarize or both")
-        summarized = False
         async with session_scope(self.session_factory) as session:
             repo = KnowledgeRepository(session)
             item = await repo.get(item_id)
@@ -1270,6 +1180,13 @@ class MemoryService:
             scope_settings = await ScopeSettingsRepository(session).effective(
                 item_scope, self._default_scope_settings()
             )
+            item_kind = item.kind
+            refreshed_content = item.content
+            summary_source_ids: tuple[int, ...] = ()
+            summary_texts: tuple[str, ...] = ()
+            template_name = str((item.metadata_json or {}).get("template") or "general")
+            template_instruction = ""
+            template_version = SUMMARY_BASE_PROMPT.version
             if clean_mode in {"summarize", "both"}:
                 source_ids = list(item.source_message_ids)
                 if not source_ids:
@@ -1277,78 +1194,105 @@ class MemoryService:
                 messages = await MessageRepository(session).by_telegram_ids(item_scope, source_ids)
                 if not messages:
                     raise ValueError("memory item source messages were not found")
-                (
-                    content,
-                    result,
-                    error,
-                    latency_ms,
-                    selection,
-                    reasoning_level,
-                    template_version,
-                ) = await self._summarize_messages_in_session(
+                template_instruction = await self._summary_template_prompt_in_session(
+                    session, template_name
+                )
+                summary_source_ids = tuple(message.telegram_message_id for message in messages)
+                summary_texts = tuple(message.normalized_text for message in messages)
+        generation: SummaryGenerationResult | None = None
+        if clean_mode in {"summarize", "both"}:
+            generation = await self._generate_summary(
+                scope=item_scope,
+                source_telegram_ids=summary_source_ids,
+                normalized_texts=summary_texts,
+                scope_settings=scope_settings,
+                template_name=template_name,
+                template_instruction=template_instruction,
+                template_version=template_version,
+                context_line=f"Refresh memory item #{item_id} from its source messages.",
+                operation="memory_item_refresh_summary",
+                usage_metadata={"knowledge_item_id": item_id},
+            )
+            if generation.content is None:
+                async with session_scope(self.session_factory) as session:
+                    await self._add_refresh_summary_usage_in_session(
+                        session, item_scope, item_id, generation
+                    )
+                raise RuntimeError(f"summary generation failed: {generation.error_type}")
+            refreshed_content = generation.content
+        embedding_selection = self._select_provider(scope_settings)
+        embedding_generation = await self._generate_embeddings(
+            embedding_selection,
+            [refreshed_content],
+            operation="embed_knowledge",
+            metadata={
+                "scope": item_scope.key,
+                "target_type": "knowledge_item",
+                "kind": item_kind,
+                "refresh": clean_mode,
+            },
+        )
+        if embedding_generation.error is not None:
+            async with session_scope(self.session_factory) as session:
+                if generation is not None:
+                    await self._add_refresh_summary_usage_in_session(
+                        session, item_scope, item_id, generation
+                    )
+                await self._add_embedding_usage_in_session(
                     session,
-                    item_scope,
-                    messages,
-                    scope_settings,
-                    template_name=str((item.metadata_json or {}).get("template") or "general"),
-                    context_line=f"Refresh memory item #{item.id} from its source messages.",
+                    selection=embedding_selection,
+                    generation=embedding_generation,
+                    texts_count=1,
+                    operation="embed_knowledge",
+                    metadata={
+                        "scope": item_scope.key,
+                        "target_type": "knowledge_item",
+                        "kind": item_kind,
+                        "refresh": clean_mode,
+                    },
+                )
+            raise embedding_generation.error
+        async with session_scope(self.session_factory) as session:
+            repo = KnowledgeRepository(session)
+            item = await repo.get(item_id)
+            if item is None or not scope.contains(Scope(item.chat_id, item.message_thread_id)):
+                raise ValueError(f"memory item #{item_id} was not found in scope {scope.key}")
+            if generation is not None:
+                await self._add_refresh_summary_usage_in_session(
+                    session, item_scope, item_id, generation
                 )
                 await repo.update_item(
-                    item.id,
+                    item_id,
                     scope=item_scope,
-                    content=content,
+                    content=refreshed_content,
                     metadata_updates={
                         "refreshed_at": utc_now().isoformat(),
                         "refresh_mode": clean_mode,
                     },
                 )
-                await EventRepository(session).add_ai_usage(
-                    provider=selection.chat_provider.name,
-                    model=selection.chat_model,
-                    operation="memory_item_refresh_summary",
-                    prompt_tokens=result.prompt_tokens if result else None,
-                    completion_tokens=result.completion_tokens if result else None,
-                    latency_ms=latency_ms,
-                    error=error,
-                    metadata_json={
-                        "scope": item_scope.key,
-                        "knowledge_item_id": item.id,
-                        "summary_template_version": template_version,
-                        "provider_profile": selection.profile.name,
-                        "chat_model": selection.chat_model,
-                        "embedding_model": selection.embedding_model,
-                        "reasoning_level": reasoning_level,
-                    },
-                )
-                refreshed = await repo.get(item.id)
-                if refreshed is not None:
-                    item = refreshed
-                summarized = True
             embeddings_deleted = await EmbeddingRepository(session).delete_targets(
-                target_type="knowledge_item", target_ids=[item.id]
+                target_type="knowledge_item", target_ids=[item_id]
             )
-            selection = self._select_provider(scope_settings)
-            vector = (
-                await self._embed_texts_in_session(
-                    session,
-                    selection=selection,
-                    texts=[item.content],
-                    operation="embed_knowledge",
-                    metadata={
-                        "scope": item_scope.key,
-                        "target_type": "knowledge_item",
-                        "kind": item.kind,
-                        "refresh": clean_mode,
-                    },
-                )
-            )[0]
+            await self._add_embedding_usage_in_session(
+                session,
+                selection=embedding_selection,
+                generation=embedding_generation,
+                texts_count=1,
+                operation="embed_knowledge",
+                metadata={
+                    "scope": item_scope.key,
+                    "target_type": "knowledge_item",
+                    "kind": item_kind,
+                    "refresh": clean_mode,
+                },
+            )
             await EmbeddingRepository(session).add(
                 target_type="knowledge_item",
-                target_id=item.id,
+                target_id=item_id,
                 scope=item_scope,
-                provider=selection.embedding_provider.name,
-                model=selection.embedding_model,
-                vector=vector,
+                provider=embedding_selection.embedding_provider.name,
+                model=embedding_selection.embedding_model,
+                vector=embedding_generation.vectors[0],
             )
             await EventRepository(session).add(
                 event_type="memory_item_refreshed",
@@ -1361,15 +1305,27 @@ class MemoryService:
                 },
             )
             result = MemoryItemRefreshResult(
-                id=item.id,
+                id=item_id,
                 scope=item_scope,
-                kind=item.kind,
+                kind=item_kind,
                 mode=clean_mode,
-                summarized=summarized,
+                summarized=generation is not None,
                 embeddings_refreshed=1,
             )
-        await self.compact_memory()
+        await self.compact_memory(dirty_scopes={item_scope})
         return result
+
+    async def _add_refresh_summary_usage_in_session(
+        self, session: AsyncSession, scope: Scope, item_id: int, generation: SummaryGenerationResult
+    ) -> None:
+        metadata = dict(generation.telemetry.metadata)
+        if (
+            generation.telemetry.operation != "memory_item_refresh_summary"
+            or metadata.get("scope") != scope.key
+            or metadata.get("knowledge_item_id") != item_id
+        ):
+            raise RuntimeError("refresh summary telemetry does not match its persistence boundary")
+        await self._add_provider_usage_in_session(session, generation.telemetry)
 
     async def stats(self) -> dict[str, int]:
         async with session_scope(self.session_factory) as session:
@@ -1389,6 +1345,7 @@ class MemoryService:
     async def prune_retention(self, scope: Scope, *, now: datetime | None = None) -> dict[str, int]:
         current = now or utc_now()
         needs_compact = False
+        dirty_scopes: set[Scope] = set()
         async with session_scope(self.session_factory) as session:
             scope_settings = await ScopeSettingsRepository(session).effective(
                 scope, self._default_scope_settings()
@@ -1404,6 +1361,10 @@ class MemoryService:
             if scope_settings.knowledge_retention_days is not None:
                 knowledge_cutoff = current - timedelta(days=scope_settings.knowledge_retention_days)
                 knowledge_ids = await knowledge_repo.ids_older_than(scope, knowledge_cutoff)
+                dirty_scopes = {
+                    Scope(item.chat_id, item.message_thread_id)
+                    for item in (await knowledge_repo.get_many(knowledge_ids)).values()
+                }
             message_embeddings = await embedding_repo.delete_targets(
                 target_type="message", target_ids=raw_ids
             )
@@ -1422,7 +1383,7 @@ class MemoryService:
                 event_type="retention_prune", scope=scope, payload=result
             )
         if needs_compact:
-            await self.compact_memory()
+            await self.compact_memory(dirty_scopes=dirty_scopes)
         return result
 
     async def set_memory_profile(
@@ -1462,7 +1423,6 @@ class MemoryService:
         destination: Scope,
         profile_name: str,
         can_query: bool,
-        can_learn: bool = False,
         updated_by: int | None = None,
     ) -> MemoryProfileView:
         async with session_scope(self.session_factory) as session:
@@ -1475,14 +1435,13 @@ class MemoryService:
                     destination=destination,
                     source=source,
                     can_query=can_query,
-                    can_learn=can_learn,
                     updated_by=updated_by,
                 )
             await EventRepository(session).add(
                 event_type="memory_profile_permission",
                 scope=destination,
                 user_id=updated_by,
-                payload={"profile": profile.name, "can_query": can_query, "can_learn": can_learn},
+                payload={"profile": profile.name, "can_query": can_query},
             )
             return profile
 
@@ -1547,6 +1506,7 @@ class MemoryService:
     ) -> RangeSummaryResult:
         if scope.chat_id is None:
             raise ValueError("range summaries require a concrete scope")
+        request = ai_options or AIRequestOptions()
         async with session_scope(self.session_factory) as session:
             message_repo = MessageRepository(session)
             start = await message_repo.get_by_telegram_id(scope, start_message_id)
@@ -1563,76 +1523,134 @@ class MemoryService:
             scope_settings = await ScopeSettingsRepository(session).effective(
                 scope, self._default_scope_settings()
             )
-            (
-                content,
-                result,
-                error,
-                latency_ms,
-                selection,
-                reasoning_level,
-                template_version,
-            ) = await self._summarize_messages_in_session(
-                session,
-                scope,
-                pending,
-                scope_settings,
-                template_name=template_name,
-                context_line=(
-                    f"Range: Telegram messages {start_message_id}..{end_message_id}, "
-                    f"dates {start.created_at.isoformat()}..{end.created_at.isoformat()}."
-                ),
-                ai_options=ai_options,
+            template_instruction = (
+                request.summary_template_override
+                or await self._summary_template_prompt_in_session(session, template_name)
             )
-            source_ids = [message.telegram_message_id for message in pending]
-            item = await self._add_knowledge_in_session(
+            template_version = (
+                PROMPT_VERSION if request.summary_template_override else SUMMARY_BASE_PROMPT.version
+            )
+            source_ids = tuple(message.telegram_message_id for message in pending)
+            message_ids = [message.id for message in pending]
+            normalized_texts = tuple(message.normalized_text for message in pending)
+            started_at = start.created_at
+            ended_at = end.created_at
+        generation = await self._generate_summary(
+            scope=scope,
+            source_telegram_ids=source_ids,
+            normalized_texts=normalized_texts,
+            scope_settings=scope_settings,
+            template_name=template_name,
+            template_instruction=template_instruction,
+            template_version=template_version,
+            context_line=(
+                f"Range: Telegram messages {start_message_id}..{end_message_id}, "
+                f"dates {started_at.isoformat()}..{ended_at.isoformat()}."
+            ),
+            operation="range_summary",
+            usage_metadata={"start_message_id": start_message_id, "end_message_id": end_message_id},
+            ai_options=ai_options,
+        )
+        if generation.content is None:
+            async with session_scope(self.session_factory) as session:
+                await self._add_range_summary_usage_in_session(
+                    session, scope, template_name, generation
+                )
+            raise RuntimeError(f"summary generation failed: {generation.error_type}")
+        embedding_selection = self._select_provider(scope_settings)
+        embedding_generation = await self._generate_embeddings(
+            embedding_selection,
+            [generation.content],
+            operation="embed_knowledge",
+            metadata={"scope": scope.key, "target_type": "knowledge_item", "kind": "range_summary"},
+        )
+        if embedding_generation.error is not None:
+            async with session_scope(self.session_factory) as session:
+                await self._add_range_summary_usage_in_session(
+                    session, scope, template_name, generation
+                )
+                await self._add_embedding_usage_in_session(
+                    session,
+                    selection=embedding_selection,
+                    generation=embedding_generation,
+                    texts_count=1,
+                    operation="embed_knowledge",
+                    metadata={
+                        "scope": scope.key,
+                        "target_type": "knowledge_item",
+                        "kind": "range_summary",
+                    },
+                )
+            raise embedding_generation.error
+        source_id_list = list(source_ids)
+        async with session_scope(self.session_factory) as session:
+            await self._add_range_summary_usage_in_session(
+                session, scope, template_name, generation
+            )
+            await self._add_embedding_usage_in_session(
                 session,
+                selection=embedding_selection,
+                generation=embedding_generation,
+                texts_count=1,
+                operation="embed_knowledge",
+                metadata={
+                    "scope": scope.key,
+                    "target_type": "knowledge_item",
+                    "kind": "range_summary",
+                },
+            )
+            item = await KnowledgeRepository(session).add(
                 scope=scope,
                 kind="range_summary",
-                content=content,
-                source_message_ids=source_ids,
+                content=generation.content,
+                source_message_ids=source_id_list,
                 metadata_json={
                     "template": template_name,
                     "start_message_id": start_message_id,
                     "end_message_id": end_message_id,
-                    "started_at": start.created_at.isoformat(),
-                    "ended_at": end.created_at.isoformat(),
-                },
-                daily_kind="range_summary",
-            )
-            await MessageRepository(session).mark_summarized([message.id for message in pending])
-            await EventRepository(session).add_ai_usage(
-                provider=selection.chat_provider.name,
-                model=selection.chat_model,
-                operation="range_summary",
-                prompt_tokens=result.prompt_tokens if result else None,
-                completion_tokens=result.completion_tokens if result else None,
-                latency_ms=latency_ms,
-                error=error,
-                metadata_json={
-                    "prompt_version": PROMPT_VERSION,
-                    "summary_template": template_name,
-                    "summary_template_version": template_version,
-                    "provider_profile": selection.profile.name,
-                    "chat_model": selection.chat_model,
-                    "embedding_model": selection.embedding_model,
-                    "reasoning_level": reasoning_level,
-                    "scope": scope.key,
+                    "started_at": started_at.isoformat(),
+                    "ended_at": ended_at.isoformat(),
                 },
             )
+            await EmbeddingRepository(session).add(
+                target_type="knowledge_item",
+                target_id=item.id,
+                scope=scope,
+                provider=embedding_selection.embedding_provider.name,
+                model=embedding_selection.embedding_model,
+                vector=embedding_generation.vectors[0],
+            )
+            await MessageRepository(session).mark_summarized(message_ids)
             await EventRepository(session).add(
                 event_type="range_summary",
                 scope=scope,
                 payload={
                     "knowledge_item_id": item.id,
                     "template": template_name,
-                    "source_message_ids": source_ids,
+                    "source_message_ids": source_id_list,
                 },
             )
             summary = RangeSummaryResult(
-                item.id, source_ids, start.created_at, end.created_at, template_name
+                item.id, source_id_list, started_at, ended_at, template_name
             )
-        await self.compact_memory()
+        await self.compact_memory(dirty_scopes={scope})
         return summary
+
+    async def _add_range_summary_usage_in_session(
+        self,
+        session: AsyncSession,
+        scope: Scope,
+        template_name: str,
+        generation: SummaryGenerationResult,
+    ) -> None:
+        metadata = dict(generation.telemetry.metadata)
+        if (
+            generation.telemetry.operation != "range_summary"
+            or metadata.get("scope") != scope.key
+            or metadata.get("summary_template") != template_name
+        ):
+            raise RuntimeError("range summary telemetry does not match its persistence boundary")
+        await self._add_provider_usage_in_session(session, generation.telemetry)
 
     async def pending_reviews(self, scope: Scope | None = None) -> list[MemoryReviewPreview]:
         async with session_scope(self.session_factory) as session:
@@ -1648,6 +1666,13 @@ class MemoryService:
                 for item in items
             ]
 
+    async def pending_review_scope(self, review_id: int) -> Scope:
+        async with session_scope(self.session_factory) as session:
+            review = await MemoryReviewRepository(session).get_pending(review_id)
+            if review is None:
+                raise ValueError(f"pending review #{review_id} was not found")
+            return Scope(review.chat_id, review.message_thread_id)
+
     async def approve_review(self, review_id: int, *, reviewed_by: int | None = None) -> int:
         async with session_scope(self.session_factory) as session:
             repo = MemoryReviewRepository(session)
@@ -1655,13 +1680,60 @@ class MemoryService:
             if review is None:
                 raise ValueError(f"pending review #{review_id} was not found")
             scope = Scope(review.chat_id, review.message_thread_id)
-            item = await self._add_knowledge_in_session(
+            scope_settings = await ScopeSettingsRepository(session).effective(
+                scope, self._default_scope_settings()
+            )
+            review_kind = review.kind
+            review_content = review.content
+            source_message_ids = list(review.source_message_ids)
+        selection = self._select_provider(scope_settings)
+        embedding_generation = await self._generate_embeddings(
+            selection,
+            [review_content],
+            operation="embed_knowledge",
+            metadata={"scope": scope.key, "target_type": "knowledge_item", "kind": review_kind},
+        )
+        if embedding_generation.error is not None:
+            async with session_scope(self.session_factory) as session:
+                await self._add_embedding_usage_in_session(
+                    session,
+                    selection=selection,
+                    generation=embedding_generation,
+                    texts_count=1,
+                    operation="embed_knowledge",
+                    metadata={
+                        "scope": scope.key,
+                        "target_type": "knowledge_item",
+                        "kind": review_kind,
+                    },
+                )
+            raise embedding_generation.error
+        async with session_scope(self.session_factory) as session:
+            repo = MemoryReviewRepository(session)
+            review = await repo.get_pending(review_id)
+            if review is None:
+                raise ValueError(f"pending review #{review_id} was not found")
+            await self._add_embedding_usage_in_session(
                 session,
+                selection=selection,
+                generation=embedding_generation,
+                texts_count=1,
+                operation="embed_knowledge",
+                metadata={"scope": scope.key, "target_type": "knowledge_item", "kind": review_kind},
+            )
+            item = await KnowledgeRepository(session).add(
                 scope=scope,
-                kind=review.kind,
-                content=review.content,
-                source_message_ids=list(review.source_message_ids),
-                daily_kind="approved_review",
+                kind=review_kind,
+                content=review_content,
+                source_message_ids=source_message_ids,
+            )
+            await EmbeddingRepository(session).add(
+                target_type="knowledge_item",
+                target_id=item.id,
+                scope=scope,
+                provider=selection.embedding_provider.name,
+                model=selection.embedding_model,
+                vector=embedding_generation.vectors[0],
             )
             await repo.set_status(review, status="approved", reviewed_by=reviewed_by)
             await EventRepository(session).add(
@@ -1671,7 +1743,7 @@ class MemoryService:
                 payload={"review_id": review_id, "knowledge_item_id": item.id},
             )
             item_id = item.id
-        await self.compact_memory()
+        await self.compact_memory(dirty_scopes={scope})
         return item_id
 
     async def reject_review(self, review_id: int, *, reviewed_by: int | None = None) -> None:
@@ -1688,6 +1760,7 @@ class MemoryService:
                 user_id=reviewed_by,
                 payload={"review_id": review_id},
             )
+        await self.rebuild_daily_projection()
 
     def forget_token_hash(self, scope: Scope, user_id: int, token: str) -> str:
         payload = f"{scope.key}:{user_id}:{token}".encode()
@@ -1724,6 +1797,11 @@ class MemoryService:
                 )
                 return (False, message)
             await challenge_repo.consume(challenge.id)
+            dirty_scopes = {
+                row.scope
+                for row in await KnowledgeRepository(session).scope_counts()
+                if scope.contains(row.scope)
+            }
             messages = await MessageRepository(session).delete_scope(scope)
             items = await KnowledgeRepository(session).delete_scope(scope)
             embeddings = await EmbeddingRepository(session).delete_scope(scope)
@@ -1733,120 +1811,266 @@ class MemoryService:
                 user_id=user_id,
                 payload={"messages": messages, "knowledge_items": items, "embeddings": embeddings},
             )
-        await self.compact_memory()
+        await self.compact_memory(dirty_scopes=dirty_scopes)
         detail = f"{messages} messages, {items} knowledge items, {embeddings} embeddings."
         return (True, f"Forgot scope {scope.key}: {detail}")
 
-    async def _summarize_pending_scopes_in_session(
-        self, session: AsyncSession, *, idle_before: datetime | None = None
-    ) -> tuple[int, bool]:
-        message_repo = MessageRepository(session)
-        settings_repo = ScopeSettingsRepository(session)
-        count = 0
-        needs_compact = False
-        for scope in await message_repo.pending_scopes(idle_before=idle_before):
-            pending = await message_repo.pending_for_summary(scope)
-            if not pending:
-                continue
-            scope_settings = await settings_repo.effective(scope, self._default_scope_settings())
-            created_knowledge = await self._summarize_pending_in_session(
-                session, scope, pending, scope_settings
-            )
-            needs_compact = needs_compact or created_knowledge
-            count += len(pending)
-        return count, needs_compact
-
-    async def _summarize_pending_in_session(
+    async def _claim_summary_batch(
         self,
-        session: AsyncSession,
         scope: Scope,
-        pending,
-        scope_settings: EffectiveScopeSettings,
         *,
         template_name: str | None = None,
         ai_options: AIRequestOptions | None = None,
-    ) -> bool:
-        (
-            content,
-            result,
-            error,
-            latency_ms,
-            selection,
-            reasoning_level,
-            template_version,
-        ) = await self._summarize_messages_in_session(
-            session,
+        now: datetime | None = None,
+        created_before: datetime | None = None,
+    ) -> SummaryClaim | None:
+        claim_now = now or utc_now()
+        stale_before = claim_now - timedelta(seconds=SUMMARY_CLAIM_TIMEOUT_SECONDS)
+        clean_template_name = template_name or "general"
+        request = ai_options or AIRequestOptions()
+        token = token_urlsafe(24)
+        async with session_scope(self.session_factory) as session:
+            scope_settings = await ScopeSettingsRepository(session).effective(
+                scope, self._default_scope_settings()
+            )
+            template_instruction = (
+                request.summary_template_override
+                or await self._summary_template_prompt_in_session(session, clean_template_name)
+            )
+            template_version = (
+                PROMPT_VERSION if request.summary_template_override else SUMMARY_BASE_PROMPT.version
+            )
+            message_repo = MessageRepository(session)
+            stale_ids = await message_repo.stale_summary_claim_ids(
+                scope, stale_before=stale_before, created_before=created_before
+            )
+            pending = await message_repo.claim_for_summary(
+                scope,
+                limit=scope_settings.summary_batch_size,
+                token=token,
+                now=claim_now,
+                stale_before=stale_before,
+                created_before=created_before,
+            )
+            if not pending:
+                return None
+            recovered_stale_claims = sum(message.id in stale_ids for message in pending)
+            if recovered_stale_claims:
+                await EventRepository(session).add(
+                    event_type="summary_stale_claims_recovered",
+                    scope=scope,
+                    payload={
+                        "recovered_claims": recovered_stale_claims,
+                        "claim_timeout_seconds": SUMMARY_CLAIM_TIMEOUT_SECONDS,
+                    },
+                )
+            return SummaryClaim(
+                token=token,
+                scope=scope,
+                message_ids=tuple(message.id for message in pending),
+                source_telegram_ids=tuple(message.telegram_message_id for message in pending),
+                normalized_texts=tuple(message.normalized_text for message in pending),
+                scope_settings=scope_settings,
+                template_name=clean_template_name,
+                template_instruction=template_instruction,
+                template_version=template_version,
+                recovered_stale_claims=recovered_stale_claims,
+            )
+
+    async def _process_summary_batch(
+        self,
+        scope: Scope,
+        *,
+        template_name: str | None = None,
+        ai_options: AIRequestOptions | None = None,
+        now: datetime | None = None,
+        created_before: datetime | None = None,
+    ) -> SummaryBatchOutcome:
+        claim = await self._claim_summary_batch(
             scope,
-            pending,
-            scope_settings,
-            template_name=template_name or "general",
+            template_name=template_name,
+            ai_options=ai_options,
+            now=now,
+            created_before=created_before,
+        )
+        if claim is None:
+            return SummaryBatchOutcome(0, 0, False)
+        generation = await self._summarize_claim(claim, ai_options=ai_options)
+        embedding_generation: EmbeddingGenerationResult | None = None
+        if generation.content is not None and not claim.scope_settings.review_before_compact:
+            embedding_generation = await self._generate_embeddings(
+                generation.selection,
+                [generation.content],
+                operation="embed_knowledge",
+                metadata={
+                    "scope": claim.scope.key,
+                    "target_type": "knowledge_item",
+                    "kind": "daily_summary",
+                },
+            )
+        outcome = await self._finalize_summary_claim(
+            claim, generation, embedding_generation=embedding_generation
+        )
+        return SummaryBatchOutcome(
+            claimed_messages=len(claim.message_ids),
+            completed_messages=outcome.completed_messages,
+            needs_compact=outcome.needs_compact,
+        )
+
+    async def _finalize_summary_claim(
+        self,
+        claim: SummaryClaim,
+        generation: SummaryGenerationResult,
+        *,
+        embedding_generation: EmbeddingGenerationResult | None,
+    ) -> PendingSummaryOutcome:
+        embedding_failure = (
+            embedding_generation.failure if embedding_generation is not None else None
+        )
+        if generation.content is None or embedding_failure is not None:
+            if generation.content is None:
+                error_type = generation.error_type
+            else:
+                assert embedding_failure is not None
+                error_type = embedding_failure.error_type
+            async with session_scope(self.session_factory) as session:
+                await MessageRepository(session).release_summary_claim(claim.token)
+                await EventRepository(session).add(
+                    event_type="summary_failed",
+                    scope=claim.scope,
+                    payload={
+                        "source_message_ids": list(claim.source_telegram_ids),
+                        "provider": generation.selection.chat_provider.name,
+                        "model": generation.selection.chat_model,
+                        "operation": "summarize",
+                        "exception_type": error_type,
+                    },
+                )
+            async with session_scope(self.session_factory) as session:
+                await self._add_summary_usage_in_session(session, claim, generation)
+                if embedding_generation is not None:
+                    await self._add_embedding_usage_in_session(
+                        session,
+                        selection=generation.selection,
+                        generation=embedding_generation,
+                        texts_count=1,
+                        operation="embed_knowledge",
+                        metadata={
+                            "scope": claim.scope.key,
+                            "target_type": "knowledge_item",
+                            "kind": "daily_summary",
+                        },
+                    )
+            return PendingSummaryOutcome(0, False)
+        async with session_scope(self.session_factory) as session:
+            message_repo = MessageRepository(session)
+            await self._add_summary_usage_in_session(session, claim, generation)
+            if embedding_generation is not None:
+                await self._add_embedding_usage_in_session(
+                    session,
+                    selection=generation.selection,
+                    generation=embedding_generation,
+                    texts_count=1,
+                    operation="embed_knowledge",
+                    metadata={
+                        "scope": claim.scope.key,
+                        "target_type": "knowledge_item",
+                        "kind": "daily_summary",
+                    },
+                )
+            owned = await message_repo.claimed_by_token(claim.token)
+            if tuple(message.id for message in owned) != claim.message_ids:
+                await message_repo.release_summary_claim(claim.token)
+                await EventRepository(session).add(
+                    event_type="summary_stale_result",
+                    scope=claim.scope,
+                    payload={
+                        "expected_messages": len(claim.message_ids),
+                        "owned_messages": len(owned),
+                    },
+                )
+                return PendingSummaryOutcome(0, False)
+            finalized = await message_repo.finalize_summary_claim(
+                claim.token, list(claim.message_ids), summarized_at=utc_now()
+            )
+            if finalized != len(claim.message_ids):
+                raise RuntimeError("summary claim ownership changed during finalization")
+            source_ids = list(claim.source_telegram_ids)
+            if claim.scope_settings.review_before_compact:
+                review = await MemoryReviewRepository(session).add(
+                    scope=claim.scope,
+                    kind="daily_summary",
+                    content=generation.content,
+                    source_message_ids=source_ids,
+                )
+                await EventRepository(session).add(
+                    event_type="memory_review_created",
+                    scope=claim.scope,
+                    payload={"review_id": review.id, "source_message_ids": source_ids},
+                )
+                return PendingSummaryOutcome(finalized, False)
+            item = await KnowledgeRepository(session).add(
+                scope=claim.scope,
+                kind="daily_summary",
+                content=generation.content,
+                source_message_ids=source_ids,
+                metadata_json={"template": claim.template_name},
+            )
+            assert embedding_generation is not None
+            await EmbeddingRepository(session).add(
+                target_type="knowledge_item",
+                target_id=item.id,
+                scope=claim.scope,
+                provider=generation.selection.embedding_provider.name,
+                model=generation.selection.embedding_model,
+                vector=embedding_generation.vectors[0],
+            )
+            return PendingSummaryOutcome(finalized, True)
+
+    async def _add_summary_usage_in_session(
+        self, session: AsyncSession, claim: SummaryClaim, generation: SummaryGenerationResult
+    ) -> None:
+        metadata = dict(generation.telemetry.metadata)
+        if (
+            generation.telemetry.operation != "summarize"
+            or metadata.get("scope") != claim.scope.key
+            or metadata.get("summary_template") != claim.template_name
+        ):
+            raise RuntimeError("summary telemetry does not match its persistence boundary")
+        await self._add_provider_usage_in_session(session, generation.telemetry)
+
+    async def _summarize_claim(
+        self, claim: SummaryClaim, *, ai_options: AIRequestOptions | None = None
+    ) -> SummaryGenerationResult:
+        return await self._generate_summary(
+            scope=claim.scope,
+            source_telegram_ids=claim.source_telegram_ids,
+            normalized_texts=claim.normalized_texts,
+            scope_settings=claim.scope_settings,
+            template_name=claim.template_name,
+            template_instruction=claim.template_instruction,
+            template_version=claim.template_version,
             context_line="Scope summary from pending learned messages.",
+            operation="summarize",
+            usage_metadata={},
             ai_options=ai_options,
         )
-        source_ids = [message.telegram_message_id for message in pending]
-        await MessageRepository(session).mark_summarized([message.id for message in pending])
-        await EventRepository(session).add_ai_usage(
-            provider=selection.chat_provider.name,
-            model=selection.chat_model,
-            operation="summarize",
-            prompt_tokens=result.prompt_tokens if result else None,
-            completion_tokens=result.completion_tokens if result else None,
-            latency_ms=latency_ms,
-            error=error,
-            metadata_json={
-                "prompt_version": PROMPT_VERSION,
-                "summary_template": template_name or "general",
-                "summary_template_version": template_version,
-                "provider_profile": selection.profile.name,
-                "chat_model": selection.chat_model,
-                "embedding_model": selection.embedding_model,
-                "reasoning_level": reasoning_level,
-                "scope": scope.key,
-            },
-        )
-        if scope_settings.review_before_compact:
-            review = await MemoryReviewRepository(session).add(
-                scope=scope, kind="daily_summary", content=content, source_message_ids=source_ids
-            )
-            self.markdown.append_daily(
-                scope=scope, content=content, source_message_ids=source_ids, kind="review_proposal"
-            )
-            await EventRepository(session).add(
-                event_type="memory_review_created",
-                scope=scope,
-                payload={"review_id": review.id, "source_message_ids": source_ids},
-            )
-            return False
-        await self._add_knowledge_in_session(
-            session,
-            scope=scope,
-            kind="daily_summary",
-            content=content,
-            source_message_ids=source_ids,
-            metadata_json={"template": template_name or "general"},
-            daily_kind="daily_summary",
-        )
-        return True
 
-    async def _summarize_messages_in_session(
+    async def _generate_summary(
         self,
-        session: AsyncSession,
-        scope: Scope,
-        pending,
-        scope_settings: EffectiveScopeSettings,
         *,
+        scope: Scope,
+        source_telegram_ids: tuple[int, ...],
+        normalized_texts: tuple[str, ...],
+        scope_settings: EffectiveScopeSettings,
         template_name: str,
+        template_instruction: str,
+        template_version: str,
         context_line: str,
+        operation: str,
+        usage_metadata: dict[str, Any],
         ai_options: AIRequestOptions | None = None,
-    ) -> tuple[str, ChatResult | None, str | None, int, ProviderSelection, str, str]:
-        request = ai_options or AIRequestOptions()
-        template_instruction = (
-            request.summary_template_override
-            or await self._summary_template_prompt_in_session(session, template_name)
-        )
-        template_version = (
-            PROMPT_VERSION if request.summary_template_override else SUMMARY_BASE_PROMPT.version
-        )
+    ) -> SummaryGenerationResult:
         selection = self._select_provider(scope_settings, ai_options, summary=True)
         reasoning_level = self._reasoning_level(scope_settings, ai_options)
         prompt_lines = [
@@ -1862,82 +2086,59 @@ class MemoryService:
             context_line,
             "",
         ]
-        for message in pending:
-            prompt_lines.append(
-                f"- {message.normalized_text} [source:{message.telegram_message_id}]"
-            )
-        started = time.perf_counter()
-        error: str | None = None
-        try:
-            result = await selection.chat_provider.generate(
-                [ChatMessage(role="user", content="\n".join(prompt_lines))],
-                temperature=0.1,
-                max_tokens=900,
-            )
-            content = result.content.strip()
-        except Exception as exc:
-            error = str(exc)
-            content = "\n".join(
-                f"- {message.normalized_text} [source:{message.telegram_message_id}]"
-                for message in pending
-            )
-            result = None
-        return (
-            content,
-            result,
-            error,
-            int((time.perf_counter() - started) * 1000),
+        for normalized_text, telegram_message_id in zip(
+            normalized_texts, source_telegram_ids, strict=True
+        ):
+            prompt_lines.append(f"- {normalized_text} [source:{telegram_message_id}]")
+        execution = await self._execute_chat_provider(
             selection,
-            reasoning_level,
-            template_version,
+            [ChatMessage(role="user", content="\n".join(prompt_lines))],
+            operation=operation,
+            metadata={
+                "prompt_version": PROMPT_VERSION,
+                "summary_template": template_name,
+                "summary_template_version": template_version,
+                "provider_profile": selection.profile.name,
+                "chat_model": selection.chat_model,
+                "embedding_model": selection.embedding_model,
+                "reasoning_level": reasoning_level,
+                "scope": scope.key,
+                **usage_metadata,
+            },
+            temperature=0.1,
+            max_tokens=900,
+            reasoning_effort=reasoning_level,
         )
-
-    async def _add_knowledge_in_session(
-        self,
-        session: AsyncSession,
-        *,
-        scope: Scope,
-        kind: str,
-        content: str,
-        source_message_ids: list[int],
-        metadata_json: dict[str, Any] | None = None,
-        daily_kind: str,
-    ) -> KnowledgeItem:
-        item = await KnowledgeRepository(session).add(
-            scope=scope,
-            kind=kind,
+        failure = execution.failure
+        telemetry = execution.telemetry
+        if execution.result is None:
+            content = None
+        else:
+            content = execution.result.content.strip() or None
+            if content is None:
+                failure = ProviderOperationError(
+                    error_type="EmptySummaryResponse",
+                    safe_summary="EmptySummaryResponse: provider returned empty content",
+                )
+                telemetry = provider_call_telemetry(
+                    provider=telemetry.provider,
+                    model=telemetry.model,
+                    operation=telemetry.operation,
+                    latency_ms=telemetry.latency_ms,
+                    prompt_tokens=telemetry.prompt_tokens,
+                    completion_tokens=telemetry.completion_tokens,
+                    failure=failure,
+                    metadata=dict(telemetry.metadata),
+                )
+        return SummaryGenerationResult(
             content=content,
-            source_message_ids=source_message_ids,
-            metadata_json=metadata_json,
+            chat_result=execution.result,
+            failure=failure,
+            telemetry=telemetry,
+            selection=selection,
+            reasoning_level=reasoning_level,
+            template_version=template_version,
         )
-        scope_settings = await ScopeSettingsRepository(session).effective(
-            scope, self._default_scope_settings()
-        )
-        selection = self._select_provider(scope_settings)
-        vector = (
-            await self._embed_texts_in_session(
-                session,
-                selection=selection,
-                texts=[content],
-                operation="embed_knowledge",
-                metadata={"scope": scope.key, "target_type": "knowledge_item", "kind": kind},
-            )
-        )[0]
-        await EmbeddingRepository(session).add(
-            target_type="knowledge_item",
-            target_id=item.id,
-            scope=scope,
-            provider=selection.embedding_provider.name,
-            model=selection.embedding_model,
-            vector=vector,
-        )
-        self.markdown.append_daily(
-            scope=scope,
-            content=f"- {content}" if "\n" not in content else content,
-            source_message_ids=source_message_ids,
-            kind=daily_kind,
-        )
-        return item
 
     async def _summary_template_prompt_in_session(
         self, session: AsyncSession, template_name: str
@@ -1981,43 +2182,172 @@ class MemoryService:
             )
         return dedupe_scope_list(scopes)
 
-    async def _canonical_entries_for_scope(
-        self, session: AsyncSession, scope: Scope, items: list[KnowledgeItem]
-    ) -> tuple[
-        list[CanonicalMemoryEntry], ChatResult | None, str | None, int, ProviderSelection, str
-    ]:
+    async def _load_canonical_scope_input(
+        self, session: AsyncSession, scope: Scope
+    ) -> CanonicalScopeInput | None:
+        items = await KnowledgeRepository(session).list_exact_scope(scope)
+        if not items:
+            return None
         scope_settings = await ScopeSettingsRepository(session).effective(
             scope, self._default_scope_settings()
         )
         selection = self._select_provider(scope_settings, summary=True)
         reasoning_level = self._reasoning_level(scope_settings)
+        profile = selection.profile
+        item_fingerprint = canonical_scope_fingerprint(
+            scope.key,
+            items,
+            {
+                "prompt_version": CANONICAL_PROMPT_VERSION,
+                "provider": profile.provider,
+                "provider_profile": profile.name,
+                "chat_model": selection.chat_model,
+                "reasoning_level": reasoning_level,
+                "openai_base_url": profile.openai_base_url,
+                "redact_before_ai": profile.redact_before_ai,
+                "redaction_custom_patterns": list(profile.redaction_custom_patterns),
+                "temperature": 0.1,
+                "max_tokens": 1200,
+            },
+        )
+        return CanonicalScopeInput(
+            scope=scope,
+            items=tuple(items),
+            scope_settings=scope_settings,
+            selection=selection,
+            reasoning_level=reasoning_level,
+            item_fingerprint=item_fingerprint,
+        )
+
+    async def _refresh_canonical_scope(self, scope: Scope, *, force: bool) -> CanonicalScopeRefresh:
+        provider_calls = 0
+        for _ in range(3):
+            async with session_scope(self.session_factory) as session:
+                snapshot_repo = CanonicalScopeSnapshotRepository(session)
+                canonical_input = await self._load_canonical_scope_input(session, scope)
+                existing = await snapshot_repo.get(scope)
+                if canonical_input is None:
+                    await snapshot_repo.delete_scope(scope)
+                    return CanonicalScopeRefresh((), provider_calls, True)
+                if (
+                    not force
+                    and existing is not None
+                    and existing.item_fingerprint == canonical_input.item_fingerprint
+                ):
+                    return CanonicalScopeRefresh(existing.entries, provider_calls, True)
+            entries, telemetry = await self._canonical_entries_for_scope(canonical_input)
+            provider_calls += 1
+            async with session_scope(self.session_factory) as session:
+                await self._add_provider_usage_in_session(session, telemetry)
+                if telemetry.error_type is not None:
+                    await EventRepository(session).add(
+                        event_type="canonical_snapshot_refresh_failed",
+                        scope=scope,
+                        payload={
+                            "error_type": telemetry.error_type,
+                            "item_fingerprint": canonical_input.item_fingerprint,
+                        },
+                    )
+                    retained = await CanonicalScopeSnapshotRepository(session).get(scope)
+                    if retained is not None:
+                        return CanonicalScopeRefresh(retained.entries, provider_calls, False)
+                    return CanonicalScopeRefresh(
+                        tuple(fallback_entries(list(canonical_input.items))), provider_calls, False
+                    )
+                current_input = await self._load_canonical_scope_input(session, scope)
+                snapshot_repo = CanonicalScopeSnapshotRepository(session)
+                if current_input is None:
+                    await snapshot_repo.delete_scope(scope)
+                    return CanonicalScopeRefresh((), provider_calls, True)
+                if current_input.item_fingerprint != canonical_input.item_fingerprint:
+                    await EventRepository(session).add(
+                        event_type="canonical_snapshot_stale_result",
+                        scope=scope,
+                        payload={
+                            "discarded_fingerprint": canonical_input.item_fingerprint,
+                            "current_fingerprint": current_input.item_fingerprint,
+                        },
+                    )
+                    continue
+                await snapshot_repo.upsert(
+                    scope=scope,
+                    item_fingerprint=canonical_input.item_fingerprint,
+                    entries=entries,
+                    provider=telemetry.provider,
+                    provider_profile=canonical_input.selection.profile.name,
+                    model=canonical_input.selection.chat_model,
+                    reasoning_level=canonical_input.reasoning_level,
+                    prompt_version=CANONICAL_PROMPT_VERSION,
+                )
+                return CanonicalScopeRefresh(tuple(entries), provider_calls, True)
+        async with session_scope(self.session_factory) as session:
+            current_input = await self._load_canonical_scope_input(session, scope)
+            existing = await CanonicalScopeSnapshotRepository(session).get(scope)
+            await EventRepository(session).add(
+                event_type="canonical_snapshot_retry_exhausted",
+                scope=scope,
+                payload={"attempts": provider_calls},
+            )
+        if existing is not None:
+            return CanonicalScopeRefresh(existing.entries, provider_calls, False)
+        if current_input is None:
+            return CanonicalScopeRefresh((), provider_calls, False)
+        return CanonicalScopeRefresh(
+            tuple(fallback_entries(list(current_input.items))), provider_calls, False
+        )
+
+    async def _canonical_entries_for_scope(
+        self, canonical_input: CanonicalScopeInput
+    ) -> tuple[list[CanonicalMemoryEntry], ProviderCallTelemetry]:
+        scope = canonical_input.scope
+        items = list(canonical_input.items)
+        selection = canonical_input.selection
+        reasoning_level = canonical_input.reasoning_level
         prompt = canonical_prompt(scope.key, items)
         prompt = (
             f"Reasoning level setting: {reasoning_level}.\n"
             f"Selected chat model: {selection.chat_model}.\n{prompt}"
         )
-        started = time.perf_counter()
-        error: str | None = None
-        try:
-            result = await selection.chat_provider.generate(
-                [ChatMessage(role="user", content=prompt)], temperature=0.1, max_tokens=1200
-            )
-            parsed = parse_canonical_response(
-                result.content, {int(item.id): item for item in items}
-            )
-            entries = parsed or fallback_entries(items)
-        except Exception as exc:
-            error = str(exc)
-            result = None
-            entries = fallback_entries(items)
-        return (
-            entries,
-            result,
-            error,
-            int((time.perf_counter() - started) * 1000),
+        execution = await self._execute_chat_provider(
             selection,
-            reasoning_level,
+            [ChatMessage(role="user", content=prompt)],
+            operation="canonical_compact",
+            metadata={
+                "prompt_version": PROMPT_VERSION,
+                "provider_profile": selection.profile.name,
+                "chat_model": selection.chat_model,
+                "embedding_model": selection.embedding_model,
+                "reasoning_level": reasoning_level,
+                "scope": scope.key,
+            },
+            temperature=0.1,
+            max_tokens=1200,
+            reasoning_effort=reasoning_level,
         )
+        telemetry = execution.telemetry
+        if execution.result is None:
+            entries = fallback_entries(items)
+        else:
+            try:
+                parsed = parse_canonical_response(
+                    execution.result.content, {int(item.id): item for item in items}
+                )
+            except Exception as error:
+                failure = ProviderOperationError.from_exception(error)
+                telemetry = provider_call_telemetry(
+                    provider=telemetry.provider,
+                    model=telemetry.model,
+                    operation=telemetry.operation,
+                    latency_ms=telemetry.latency_ms,
+                    prompt_tokens=telemetry.prompt_tokens,
+                    completion_tokens=telemetry.completion_tokens,
+                    failure=failure,
+                    metadata=dict(telemetry.metadata),
+                )
+                entries = fallback_entries(items)
+            else:
+                entries = parsed or fallback_entries(items)
+        return entries, telemetry
 
     def _select_provider(
         self,
@@ -2055,47 +2385,62 @@ class MemoryService:
         requested = (options.reasoning_level if options else None) or scope_settings.reasoning_level
         return self.settings.validate_reasoning_level(requested)
 
-    async def _embed_texts_in_session(
+    async def _execute_chat_provider(
+        self,
+        selection: ProviderSelection,
+        messages: list[ChatMessage],
+        *,
+        operation: str,
+        metadata: dict[str, Any],
+        temperature: float,
+        max_tokens: int,
+        reasoning_effort: str | None,
+    ) -> ChatProviderExecution:
+        return await self._provider_operations.execute_chat(
+            selection,
+            messages,
+            operation=operation,
+            metadata=metadata,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            reasoning_effort=reasoning_effort,
+        )
+
+    async def _generate_embeddings(
+        self,
+        selection: ProviderSelection,
+        texts: list[str],
+        *,
+        operation: str,
+        metadata: dict[str, Any],
+    ) -> EmbeddingGenerationResult:
+        return await self._provider_operations.generate_embeddings(
+            selection, texts, operation=operation, metadata=metadata
+        )
+
+    async def _add_embedding_usage_in_session(
         self,
         session: AsyncSession,
         *,
         selection: ProviderSelection,
-        texts: list[str],
+        generation: EmbeddingGenerationResult,
+        texts_count: int,
         operation: str,
         metadata: dict[str, Any] | None = None,
-    ) -> list[list[float]]:
-        started = time.perf_counter()
-        error: str | None = None
-        vectors: list[list[float]] = []
-        try:
-            vectors = await selection.embedding_provider.embed(texts)
-            return vectors
-        except Exception as exc:
-            error = str(exc)
-            raise
-        finally:
-            dimensions = (
-                len(vectors[0])
-                if vectors
-                else getattr(selection.embedding_provider, "dimensions", None)
-            )
-            usage_metadata = {
-                "count": len(texts),
-                "dimensions": dimensions,
-                "provider_profile": selection.profile.name,
-                "embedding_model": selection.embedding_model,
-                "prompt_version": PROMPT_VERSION,
-            }
-            if metadata:
-                usage_metadata.update(metadata)
-            await EventRepository(session).add_ai_usage(
-                provider=selection.embedding_provider.name,
-                model=selection.embedding_model,
-                operation=operation,
-                latency_ms=int((time.perf_counter() - started) * 1000),
-                error=error,
-                metadata_json=usage_metadata,
-            )
+    ) -> None:
+        await self._provider_operations.add_embedding_usage(
+            session,
+            selection=selection,
+            generation=generation,
+            texts_count=texts_count,
+            operation=operation,
+            metadata=metadata,
+        )
+
+    async def _add_provider_usage_in_session(
+        self, session: AsyncSession, telemetry: ProviderCallTelemetry
+    ) -> None:
+        await self._provider_operations.add_usage(session, telemetry)
 
     async def _system_prompt_template_in_session(
         self, session: AsyncSession, name: str
@@ -2146,10 +2491,6 @@ class MemoryService:
         return getattr(self.embedding_provider, "embedding_model", self.embedding_provider.model)
 
 
-def normalize_text(text: str) -> str:
-    return " ".join(text.strip().split())
-
-
 def validate_scope_settings(
     updates: dict[str, int | str | bool | None], settings: Settings | None = None
 ) -> None:
@@ -2188,374 +2529,6 @@ def validate_scope_settings(
         updates["review_before_compact"], bool
     ):
         raise ValueError("review_before_compact must be true or false")
-
-
-def parse_memory_export_format(raw: str) -> MemoryExportFormat:
-    if raw == "md":
-        return "md"
-    if raw == "jsonl":
-        return "jsonl"
-    raise ValueError("format must be md or jsonl")
-
-
-def load_jsonl_import(path: Path) -> list[JsonlImportItem]:
-    rows: list[JsonlImportItem] = []
-    with path.open("r", encoding="utf-8") as handle:
-        for line_number, line in enumerate(handle, start=1):
-            if not line.strip():
-                continue
-            try:
-                payload = json.loads(line)
-            except json.JSONDecodeError as exc:
-                raise ValueError(f"malformed JSONL at line {line_number}: {exc.msg}") from exc
-            if not isinstance(payload, dict):
-                raise ValueError(f"malformed JSONL at line {line_number}: row must be an object")
-            content = str(payload.get("content") or payload.get("text") or "").strip()
-            if not content:
-                raise ValueError(f"malformed JSONL at line {line_number}: content is required")
-            raw_source_ids = payload.get("source_message_ids", [])
-            if not isinstance(raw_source_ids, list):
-                raise ValueError(
-                    f"malformed JSONL at line {line_number}: source_message_ids must be a list"
-                )
-            try:
-                source_ids = [int(value) for value in raw_source_ids]
-            except (TypeError, ValueError) as exc:
-                raise ValueError(
-                    f"malformed JSONL at line {line_number}: source_message_ids must be integers"
-                ) from exc
-            rows.append(
-                JsonlImportItem(
-                    kind=str(payload.get("kind") or "imported_note"),
-                    content=content,
-                    source_message_ids=source_ids,
-                )
-            )
-    if not rows:
-        raise ValueError("import file contains no memory items")
-    return rows
-
-
-def load_telegram_desktop_export(path: Path) -> list[TelegramDesktopMessage]:
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"malformed Telegram JSON import: {exc.msg}") from exc
-    rows = telegram_desktop_export_rows(payload)
-    if rows is not None:
-        return rows
-    rows = telegram_update_dump_rows(payload)
-    if rows is not None:
-        return rows
-    raise ValueError(
-        "Telegram JSON import must be a Telegram Desktop export or Bot API update dump"
-    )
-
-
-def telegram_desktop_export_rows(payload: Any) -> list[TelegramDesktopMessage] | None:
-    if not isinstance(payload, dict):
-        return None
-    messages = payload.get("messages")
-    if not isinstance(messages, list):
-        return None
-    chat_title = str(payload.get("name") or "").strip() or None
-    rows: list[TelegramDesktopMessage] = []
-    for raw in messages:
-        if not isinstance(raw, dict) or raw.get("type") != "message":
-            continue
-        try:
-            message_id = int(raw["id"])
-        except (KeyError, TypeError, ValueError) as exc:
-            raise ValueError("Telegram Desktop message is missing a numeric id") from exc
-        rows.append(
-            TelegramDesktopMessage(
-                telegram_message_id=message_id,
-                user_id=telegram_desktop_user_id(raw.get("from_id")),
-                username=telegram_desktop_username(raw.get("from")),
-                text=telegram_desktop_message_text(raw),
-                created_at=telegram_desktop_datetime(raw),
-                reply_to_message_id=telegram_desktop_optional_int(raw.get("reply_to_message_id")),
-                chat_title=chat_title,
-            )
-        )
-    if not rows:
-        raise ValueError("Telegram Desktop export contains no importable messages")
-    return rows
-
-
-def telegram_update_dump_rows(payload: Any) -> list[TelegramDesktopMessage] | None:
-    messages = telegram_update_message_payloads(payload)
-    if messages is None:
-        return None
-    rows: list[TelegramDesktopMessage] = []
-    for raw in messages:
-        try:
-            message_id = int(raw["message_id"])
-        except (KeyError, TypeError, ValueError) as exc:
-            raise ValueError("Telegram update message is missing a numeric message_id") from exc
-        rows.append(
-            TelegramDesktopMessage(
-                telegram_message_id=message_id,
-                user_id=telegram_update_user_id(raw),
-                username=telegram_update_username(raw),
-                text=telegram_update_message_text(raw),
-                created_at=telegram_update_datetime(raw),
-                reply_to_message_id=telegram_update_reply_to_message_id(raw),
-                chat_title=telegram_update_chat_title(raw),
-            )
-        )
-    if not rows:
-        raise ValueError("Telegram update dump contains no importable messages")
-    return rows
-
-
-def telegram_update_message_payloads(payload: Any) -> list[dict[str, Any]] | None:
-    if isinstance(payload, dict):
-        if isinstance(payload.get("result"), list):
-            candidates = payload["result"]
-        elif "message_id" in payload or any(key in payload for key in TELEGRAM_UPDATE_MESSAGE_KEYS):
-            candidates = [payload]
-        else:
-            return None
-    elif isinstance(payload, list):
-        candidates = payload
-    else:
-        return None
-    messages: list[dict[str, Any]] = []
-    for candidate in candidates:
-        if not isinstance(candidate, dict):
-            continue
-        if "message_id" in candidate:
-            messages.append(candidate)
-            continue
-        for key in TELEGRAM_UPDATE_MESSAGE_KEYS:
-            raw_message = candidate.get(key)
-            if isinstance(raw_message, dict):
-                messages.append(raw_message)
-                break
-    return messages
-
-
-TELEGRAM_UPDATE_MESSAGE_KEYS = ("message", "edited_message", "channel_post", "edited_channel_post")
-
-
-def telegram_desktop_message_text(row: dict[str, Any]) -> str:
-    parts: list[str] = []
-    content = telegram_desktop_text_value(row.get("text"))
-    if content:
-        parts.append(content)
-    links = telegram_desktop_links(row)
-    if links:
-        parts.append("Links: " + ", ".join(links[:5]))
-    attachment = telegram_desktop_attachment_label(row)
-    if attachment:
-        parts.append(attachment)
-    return normalize_text("\n".join(parts))
-
-
-def telegram_desktop_text_value(value: Any) -> str:
-    if isinstance(value, str):
-        return value.strip()
-    if isinstance(value, list):
-        chunks: list[str] = []
-        for item in value:
-            if isinstance(item, str):
-                chunks.append(item)
-            elif isinstance(item, dict):
-                chunks.append(str(item.get("text") or ""))
-        return "".join(chunks).strip()
-    return ""
-
-
-def telegram_desktop_links(row: dict[str, Any]) -> list[str]:
-    out: list[str] = []
-    seen: set[str] = set()
-    entities = row.get("text_entities")
-    if not isinstance(entities, list):
-        return out
-    for entity in entities:
-        if not isinstance(entity, dict):
-            continue
-        candidate = ""
-        if entity.get("type") in {"link", "url"}:
-            candidate = str(entity.get("text") or "")
-        elif entity.get("type") == "text_link":
-            candidate = str(entity.get("href") or entity.get("url") or "")
-        candidate = candidate.strip()
-        if candidate and candidate not in seen:
-            seen.add(candidate)
-            out.append(candidate)
-    return out
-
-
-def telegram_desktop_attachment_label(row: dict[str, Any]) -> str | None:
-    file_name = telegram_desktop_filename(row.get("file") or row.get("photo"))
-    media_type = str(row.get("media_type") or "").strip().lower()
-    if file_name:
-        label = "Photo" if media_type == "photo" or row.get("photo") else "Attachment"
-        return f"{label}: {file_name}"
-    if media_type == "photo" or row.get("photo"):
-        return "Photo attachment"
-    return None
-
-
-def telegram_desktop_filename(value: Any) -> str | None:
-    if not isinstance(value, str) or not value.strip():
-        return None
-    clean = value.replace("\\", "/").rsplit("/", 1)[-1].strip()
-    if not clean or clean.startswith("("):
-        return None
-    return clean[:160]
-
-
-def telegram_desktop_datetime(row: dict[str, Any]) -> datetime:
-    raw_unix = row.get("date_unixtime")
-    if raw_unix is not None:
-        try:
-            return datetime.fromtimestamp(int(raw_unix), tz=UTC)
-        except (TypeError, ValueError):
-            pass
-    raw_date = str(row.get("date") or "").strip()
-    if raw_date:
-        try:
-            parsed = datetime.fromisoformat(raw_date.replace("Z", "+00:00"))
-            return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
-        except ValueError:
-            pass
-    return utc_now()
-
-
-def telegram_desktop_user_id(value: Any) -> int | None:
-    if isinstance(value, int):
-        return value
-    if isinstance(value, str):
-        digits = "".join(char for char in value if char.isdigit())
-        return int(digits) if digits else None
-    return None
-
-
-def telegram_desktop_optional_int(value: Any) -> int | None:
-    if value is None:
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def telegram_desktop_username(value: Any) -> str | None:
-    if not isinstance(value, str):
-        return None
-    clean = value.strip()
-    return clean[:255] if clean else None
-
-
-def telegram_update_message_text(row: dict[str, Any]) -> str:
-    parts: list[str] = []
-    content = str(row.get("text") or row.get("caption") or "").strip()
-    if content:
-        parts.append(content)
-    links = telegram_update_links(row, content)
-    if links:
-        parts.append("Links: " + ", ".join(links[:5]))
-    attachment = telegram_update_attachment_label(row)
-    if attachment:
-        parts.append(attachment)
-    return normalize_text("\n".join(parts))
-
-
-def telegram_update_links(row: dict[str, Any], content: str) -> list[str]:
-    out: list[str] = []
-    seen: set[str] = set()
-    entities = row.get("entities") if row.get("text") is not None else row.get("caption_entities")
-    if not isinstance(entities, list):
-        return out
-    for entity in entities:
-        if not isinstance(entity, dict):
-            continue
-        candidate = ""
-        entity_type = entity.get("type")
-        if entity_type in {"url", "email"}:
-            candidate = telegram_update_entity_slice(content, entity)
-        elif entity_type == "text_link":
-            candidate = str(entity.get("url") or "")
-        candidate = candidate.strip()
-        if candidate and candidate not in seen:
-            seen.add(candidate)
-            out.append(candidate)
-    return out
-
-
-def telegram_update_entity_slice(content: str, entity: dict[str, Any]) -> str:
-    try:
-        offset = int(entity.get("offset", 0))
-        length = int(entity.get("length", 0))
-    except (TypeError, ValueError):
-        return ""
-    if offset < 0 or length <= 0:
-        return ""
-    return content[offset : offset + length]
-
-
-def telegram_update_attachment_label(row: dict[str, Any]) -> str | None:
-    document = row.get("document")
-    if isinstance(document, dict):
-        file_name = telegram_desktop_filename(document.get("file_name"))
-        if file_name:
-            return f"Attachment: {file_name}"
-    if isinstance(row.get("photo"), list) and row["photo"]:
-        return "Photo attachment"
-    return None
-
-
-def telegram_update_datetime(row: dict[str, Any]) -> datetime:
-    raw_date = row.get("date")
-    if raw_date is None:
-        return utc_now()
-    try:
-        return datetime.fromtimestamp(int(raw_date), tz=UTC)
-    except (TypeError, ValueError):
-        return utc_now()
-
-
-def telegram_update_user_id(row: dict[str, Any]) -> int | None:
-    user = row.get("from")
-    if not isinstance(user, dict):
-        return None
-    return telegram_desktop_optional_int(user.get("id"))
-
-
-def telegram_update_username(row: dict[str, Any]) -> str | None:
-    user = row.get("from")
-    if not isinstance(user, dict):
-        return None
-    username = str(user.get("username") or "").strip()
-    if username:
-        return username[:255]
-    name = " ".join(
-        part
-        for part in [
-            str(user.get("first_name") or "").strip(),
-            str(user.get("last_name") or "").strip(),
-        ]
-        if part
-    )
-    return name[:255] if name else None
-
-
-def telegram_update_reply_to_message_id(row: dict[str, Any]) -> int | None:
-    reply = row.get("reply_to_message")
-    if not isinstance(reply, dict):
-        return None
-    return telegram_desktop_optional_int(reply.get("message_id"))
-
-
-def telegram_update_chat_title(row: dict[str, Any]) -> str | None:
-    chat = row.get("chat")
-    if not isinstance(chat, dict):
-        return None
-    title = str(chat.get("title") or chat.get("username") or "").strip()
-    return title[:255] if title else None
 
 
 def note_metadata(
@@ -2740,25 +2713,6 @@ def dedupe_scope_list(scopes: list[Scope]) -> list[Scope]:
         seen.add(scope.key)
         out.append(scope)
     return out
-
-
-def format_item_metadata(metadata: dict[str, Any]) -> str:
-    parts: list[str] = []
-    tags = metadata.get("tags")
-    if isinstance(tags, list) and tags:
-        parts.append("tags:" + ",".join(str(tag) for tag in tags))
-    priority = metadata.get("priority")
-    if priority is not None:
-        parts.append(f"priority:{priority}")
-    source = metadata.get("source")
-    if source:
-        parts.append(f"note-source:{source}")
-    template = metadata.get("template")
-    if template:
-        parts.append(f"template:{template}")
-    if not parts:
-        return ""
-    return ", " + ", ".join(parts)
 
 
 def search_result_rank(result: SearchResult) -> tuple[int, float]:
@@ -3030,6 +2984,7 @@ def format_review_previews(reviews: list[MemoryReviewPreview]) -> str:
 
 def parse_runtime_settings_args(raw: dict[str, str]) -> dict[str, Any]:
     aliases = {
+        "candidate_limit": "retrieval_candidate_limit",
         "top_k": "retrieval_top_k",
         "provider": "provider_profile",
         "system_prompt": "system_prompt_template",

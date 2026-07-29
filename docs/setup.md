@@ -21,6 +21,19 @@ uv run pytest
 
 The default `AI_PROVIDER=fake` is deterministic and does not call external AI services. Use it for local development, CI and documentation examples.
 
+For an OpenAI-backed run, keep the key out of committed files and select the model plus reasoning effort explicitly:
+
+```dotenv
+AI_PROVIDER=openai_compatible
+OPENAI_API_KEY=
+OPENAI_BASE_URL=https://api.openai.com/v1
+CHAT_MODEL=gpt-5.6-terra
+REASONING_LEVEL=medium
+EMBEDDING_MODEL=text-embedding-3-small
+```
+
+`CHAT_MODEL` and `REASONING_LEVEL` provide environment defaults. Bot admins can replace them through the safe database-backed `chat_model` and `reasoning_level` runtime settings, per-scope `/settings`, or the documented one-shot `/ask` and `/summarize_now` options. For recognized OpenAI reasoning-model IDs, the OpenAI-compatible provider forwards the selected level as the Chat Completions `reasoning_effort` parameter; the prompt and usage metadata retain the same effective value.
+
 ## Telegram Preparation
 
 1. Create a bot with BotFather and set `TELEGRAM_BOT_TOKEN` in `.env`.

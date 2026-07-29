@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shlex
+from collections.abc import AsyncIterator
 
 from aiogram import F, Router
 from aiogram.filters import Command, CommandObject
@@ -11,6 +12,7 @@ from pzp_ai_bot.memory.scope import Scope, parse_scope
 from pzp_ai_bot.memory.service import (
     AIRequestOptions,
     IncomingMessage,
+    MemoryExportChunk,
     format_audit_events,
     format_memory_item_refresh,
     format_memory_items,
@@ -169,15 +171,17 @@ def build_router(context: AppContext) -> Router:
             return
         if not await require_scope_admin(message, scope):
             return
-        payload = await context.memory.export_memory(
+        suffix = "jsonl" if fmt == "jsonl" else "md"
+        filename = f"memory_{scope.filename_stem}.{suffix}"
+        chunks = context.memory.export_memory_chunks(
             scope if not scope.is_global else None, fmt=fmt
         )
-        suffix = "jsonl" if fmt == "jsonl" else "md"
-        documents = export_documents(payload, filename=f"memory_{scope.filename_stem}.{suffix}")
-        for index, document in enumerate(documents, start=1):
+        index = 0
+        async for document in export_document_stream(chunks, filename=filename):
+            index += 1
             caption = f"Memory export for {scope.key}"
-            if len(documents) > 1:
-                caption = f"{caption} ({index}/{len(documents)})"
+            if document.filename != filename:
+                caption = f"{caption} (part {index})"
             if not await safe_answer_document(message, document=document, caption=caption):
                 await safe_answer(
                     message,
@@ -294,7 +298,7 @@ def build_router(context: AppContext) -> Router:
             unknown = sorted(
                 set(args)
                 - set(updates)
-                - {"top_k", "provider", "system_prompt", "raw_retention_days"}
+                - {"candidate_limit", "top_k", "provider", "system_prompt", "raw_retention_days"}
             )
             if unknown:
                 raise ValueError(f"unknown runtime setting: {unknown[0]}")
@@ -406,8 +410,11 @@ def build_router(context: AppContext) -> Router:
     async def allow_admins(message: Message, command: CommandObject) -> None:
         if not await require_admin(message):
             return
-        arg = (command.args or "").strip().lower()
-        enabled = arg in {"on", "true", "1", "yes"}
+        try:
+            enabled = _parse_on_off(command.args or "")
+        except ValueError:
+            await safe_answer(message, "Usage: /allow_admins on|off")
+            return
         await context.memory.set_allow_admins(
             scope_from_message(message), enabled, message_user_id(message)
         )
@@ -604,6 +611,9 @@ def build_router(context: AppContext) -> Router:
             return
         try:
             review_id = int((command.args or "").strip().split()[0])
+            review_scope = await context.memory.pending_review_scope(review_id)
+            if not await require_scope_admin(message, review_scope):
+                return
             item_id = await context.memory.approve_review(
                 review_id, reviewed_by=message_user_id(message)
             )
@@ -620,6 +630,9 @@ def build_router(context: AppContext) -> Router:
             return
         try:
             review_id = int((command.args or "").strip().split()[0])
+            review_scope = await context.memory.pending_review_scope(review_id)
+            if not await require_scope_admin(message, review_scope):
+                return
             await context.memory.reject_review(review_id, reviewed_by=message_user_id(message))
         except (IndexError, ValueError) as exc:
             await safe_answer(
@@ -674,23 +687,23 @@ def build_router(context: AppContext) -> Router:
         parts = (command.args or "").strip().split(None, 1)
         if not parts or not parts[0]:
             await safe_answer(
-                message,
-                "Usage: /memory_profile_allow <name> [scope=...] [enabled=on|off] [learn=on|off]",
+                message, "Usage: /memory_profile_allow <name> [scope=...] [enabled=on|off]"
             )
             return
         name = parts[0]
         args = parse_key_values(parts[1] if len(parts) > 1 else None)
         try:
+            unsupported = sorted(set(args) - {"scope", "enabled"})
+            if unsupported:
+                raise ValueError(f"unsupported argument(s): {', '.join(unsupported)}")
             destination = parse_scope(
                 args.get("scope", "this_topic"), current=scope_from_message(message)
             )
             enabled = _parse_on_off(args.get("enabled", "on"))
-            can_learn = _parse_on_off(args.get("learn", "off"))
             profile = await context.memory.allow_memory_profile(
                 destination=destination,
                 profile_name=name,
                 can_query=enabled,
-                can_learn=can_learn,
                 updated_by=message_user_id(message),
             )
         except ValueError as exc:
@@ -995,18 +1008,80 @@ def _parse_on_off(raw: str) -> bool:
 def export_documents(
     payload: str, *, filename: str, max_bytes: int = EXPORT_DOCUMENT_CHUNK_BYTES
 ) -> list[BufferedInputFile]:
-    if max_bytes <= 0 or max_bytes > TELEGRAM_DOCUMENT_MAX_BYTES:
-        raise ValueError("max_bytes must be between 1 and the Telegram document upload limit")
+    _validate_export_max_bytes(max_bytes)
     data = payload.encode("utf-8")
     if len(data) <= max_bytes:
         return [BufferedInputFile(data, filename=filename)]
+    chunks = _utf8_chunks(data, max_bytes)
+    return [
+        BufferedInputFile(
+            chunk, filename=_export_part_filename(filename, index=index, total=len(chunks))
+        )
+        for index, chunk in enumerate(chunks, start=1)
+    ]
+
+
+async def export_document_stream(
+    chunks: AsyncIterator[MemoryExportChunk],
+    *,
+    filename: str,
+    max_bytes: int = EXPORT_DOCUMENT_CHUNK_BYTES,
+) -> AsyncIterator[BufferedInputFile]:
+    _validate_export_max_bytes(max_bytes)
+    buffer = bytearray()
+    part_index = 0
+    async for chunk in chunks:
+        buffer.extend(chunk.text.encode("utf-8"))
+        while len(buffer) > max_bytes:
+            end = _utf8_prefix_end(buffer, max_bytes)
+            part_index += 1
+            yield BufferedInputFile(
+                bytes(buffer[:end]), filename=_export_part_filename(filename, index=part_index)
+            )
+            del buffer[:end]
+    if part_index == 0:
+        yield BufferedInputFile(bytes(buffer), filename=filename)
+        return
+    if buffer:
+        part_index += 1
+        yield BufferedInputFile(
+            bytes(buffer), filename=_export_part_filename(filename, index=part_index)
+        )
+
+
+def _validate_export_max_bytes(max_bytes: int) -> None:
+    if max_bytes <= 0 or max_bytes > TELEGRAM_DOCUMENT_MAX_BYTES:
+        raise ValueError("max_bytes must be between 1 and the Telegram document upload limit")
+
+
+def _utf8_chunks(data: bytes, max_bytes: int) -> list[bytes]:
+    buffer = bytearray(data)
+    chunks: list[bytes] = []
+    while len(buffer) > max_bytes:
+        end = _utf8_prefix_end(buffer, max_bytes)
+        chunks.append(bytes(buffer[:end]))
+        del buffer[:end]
+    if buffer or not chunks:
+        chunks.append(bytes(buffer))
+    return chunks
+
+
+def _utf8_prefix_end(data: bytearray, max_bytes: int) -> int:
+    end = min(len(data), max_bytes)
+    if end == len(data):
+        return end
+    while end > 0 and data[end] & 0b1100_0000 == 0b1000_0000:
+        end -= 1
+    if end == 0:
+        raise ValueError("max_bytes is too small to preserve UTF-8 character boundaries")
+    return end
+
+
+def _export_part_filename(filename: str, *, index: int, total: int | None = None) -> str:
     stem, dot, suffix = filename.rpartition(".")
     if not dot:
         stem = filename
         suffix = "txt"
-    total = (len(data) + max_bytes - 1) // max_bytes
-    documents: list[BufferedInputFile] = []
-    for index, start in enumerate(range(0, len(data), max_bytes), start=1):
-        chunk_name = f"{stem}.part{index:03d}of{total:03d}.{suffix}"
-        documents.append(BufferedInputFile(data[start : start + max_bytes], filename=chunk_name))
-    return documents
+    if total is None:
+        return f"{stem}.part{index:03d}.{suffix}"
+    return f"{stem}.part{index:03d}of{total:03d}.{suffix}"

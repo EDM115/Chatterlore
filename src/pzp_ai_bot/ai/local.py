@@ -22,7 +22,12 @@ class LocalSentenceTransformerEmbeddingProvider:
         self.dimensions = 384
 
     async def generate(
-        self, messages: Sequence[ChatMessage], *, temperature: float = 0.2, max_tokens: int = 700
+        self,
+        messages: Sequence[ChatMessage],
+        *,
+        temperature: float = 0.2,
+        max_tokens: int = 700,
+        reasoning_effort: str | None = None,
     ) -> ChatResult:
         content = (
             "Local chat generation is not configured in v1. Use an OpenAI-compatible chat provider."

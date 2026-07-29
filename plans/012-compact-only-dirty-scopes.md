@@ -2,6 +2,7 @@
 > **Executor instructions**: Execute only after the privacy projection and transaction-boundary plans. Follow every gate and update plans/README.md when complete unless a reviewer owns it.
 > **Drift check (run first)**: <code>git diff --stat beda837..HEAD -- src/pzp_ai_bot/db/models.py src/pzp_ai_bot/db/repositories.py src/pzp_ai_bot/memory/service.py src/pzp_ai_bot/memory/canonical.py src/pzp_ai_bot/memory/markdown.py alembic/versions tests/test_memory_quality.py tests/test_product_controls.py docs/architecture.md docs/operations.md PLAN.md</code>.
 ## Status
+- **Status**: DONE
 - **Audit finding**: 10
 - **Priority**: P2
 - **Effort**: L
@@ -82,12 +83,12 @@ Run migrations, targeted tests, format, lint, ty, and full tests.
 - Deletion removes snapshots and MEMORY.md content.
 - Force rebuild recomputes all non-empty scopes.
 ## Done criteria
-- [ ] Routine mutations canonicalize only affected scopes.
-- [ ] Unchanged provider output is reused from validated derived snapshots.
-- [ ] Snapshot fingerprints cover every output-affecting input.
-- [ ] Concurrent drift and failed providers cannot publish stale/empty canonical memory.
-- [ ] SQLite remains authoritative and full repair is possible.
-- [ ] Migration/docs/PLAN and all gates pass.
+- [x] Routine mutations canonicalize only affected scopes.
+- [x] Unchanged provider output is reused from validated derived snapshots.
+- [x] Snapshot fingerprints cover every output-affecting input.
+- [x] Concurrent drift and failed providers cannot publish stale/empty canonical memory.
+- [x] SQLite remains authoritative and full repair is possible.
+- [x] Migration/docs/PLAN and all gates pass.
 ## STOP conditions
 - Plan 002 or 008 is incomplete, leaving filesystem writes or provider calls inside business transactions.
 - Canonical output depends on an input not represented in the fingerprint.

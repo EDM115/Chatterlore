@@ -2,6 +2,7 @@
 > **Executor instructions**: Execute after durable failure telemetry is in place. Follow migrations and tests exactly, then update plans/README.md unless a reviewer owns it.
 > **Drift check (run first)**: <code>git diff --stat beda837..HEAD -- src/pzp_ai_bot/db/models.py src/pzp_ai_bot/db/repositories.py src/pzp_ai_bot/memory/service.py alembic/versions tests/test_product_controls.py tests/test_operations.py tests/test_cli.py docs/architecture.md docs/operations.md PLAN.md</code>.
 ## Status
+- **Status**: DONE
 - **Audit finding**: lower-priority telemetry aggregation/index opportunity
 - **Priority**: P3
 - **Effort**: M
@@ -79,11 +80,11 @@ Run migration, targeted, format, lint, ty, and full tests.
 - EXPLAIN uses intended indexes.
 - User-facing status format remains stable.
 ## Done criteria
-- [ ] No ai_usage_stats path loads all usage rows.
-- [ ] Scope hierarchy is correct.
-- [ ] New and legacy telemetry is queryable through normalized columns.
-- [ ] BotEvent and AIUsage access paths are indexed.
-- [ ] Migration/docs/PLAN and all gates pass.
+- [x] No ai_usage_stats path loads all usage rows.
+- [x] Scope hierarchy is correct.
+- [x] New and legacy telemetry is queryable through normalized columns.
+- [x] BotEvent and AIUsage access paths are indexed.
+- [x] Migration/docs/PLAN and all gates pass.
 ## STOP conditions
 - Existing metadata contains an undocumented scope format that cannot be mapped safely.
 - Index additions materially degrade the primary write workload in a measured test.

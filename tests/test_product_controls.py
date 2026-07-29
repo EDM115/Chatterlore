@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
+import pzp_ai_bot.memory.transfer as transfer_module
 from pzp_ai_bot.app_context import AppContext
 from pzp_ai_bot.memory.scope import Scope
 from pzp_ai_bot.memory.service import IncomingMessage
@@ -55,7 +58,7 @@ async def test_memory_status_known_scopes_and_skip_debug(context: AppContext) ->
 
 @pytest.mark.asyncio
 async def test_telegram_desktop_json_import_learns_text_links_and_attachments(
-    context: AppContext, tmp_path
+    context: AppContext, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     scope = Scope(-602, None)
     export_path = tmp_path / "result.json"
@@ -82,6 +85,13 @@ async def test_telegram_desktop_json_import_learns_text_links_and_attachments(
             }
         ),
         encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        Path,
+        "read_text",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("Telegram import must not use Path.read_text")
+        ),
     )
 
     result = await context.memory.import_telegram_desktop_json(export_path, scope)
@@ -152,7 +162,7 @@ async def test_ask_keeps_compact_source_references(context: AppContext) -> None:
 
 @pytest.mark.asyncio
 async def test_telegram_update_dump_import_learns_links_and_document_metadata(
-    context: AppContext, tmp_path
+    context: AppContext, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     scope = Scope(-606, None)
     export_path = tmp_path / "updates.json"
@@ -194,6 +204,13 @@ async def test_telegram_update_dump_import_learns_links_and_document_metadata(
         ),
         encoding="utf-8",
     )
+    monkeypatch.setattr(
+        Path,
+        "read_text",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("Telegram import must not use Path.read_text")
+        ),
+    )
 
     result = await context.memory.import_telegram_desktop_json(export_path, scope)
     found = await context.memory.search(scope, "runbook pdf")
@@ -202,6 +219,83 @@ async def test_telegram_update_dump_import_learns_links_and_document_metadata(
     assert found
     assert "https://example.test/runbook" in found[0].content
     assert "runbook.pdf" in found[0].content
+
+
+@pytest.mark.asyncio
+async def test_telegram_import_checkpoints_middle_batch_failure_and_retries_idempotently(
+    context: AppContext, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(transfer_module, "IMPORT_BATCH_SIZE", 2)
+    scope = Scope(-608, None)
+    export_path = tmp_path / "partial-updates.json"
+    export_path.write_text(
+        json.dumps(
+            [
+                {
+                    "message": {
+                        "message_id": index,
+                        "date": 1_782_201_600 + index,
+                        "chat": {"id": -608, "type": "supergroup"},
+                        "text": f"Imported message {index}.",
+                    }
+                }
+                for index in range(1, 6)
+            ]
+        ),
+        encoding="utf-8",
+    )
+    original_embed = context.memory.embedding_provider.embed
+    calls = 0
+
+    async def fail_second_batch(texts: Sequence[str]) -> list[list[float]]:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise RuntimeError("sensitive provider failure")
+        return await original_embed(texts)
+
+    monkeypatch.setattr(context.memory.embedding_provider, "embed", fail_second_batch)
+
+    with pytest.raises(RuntimeError, match="sensitive provider failure"):
+        await context.memory.import_telegram_desktop_json(export_path, scope)
+
+    status = await context.memory.memory_status(scope)
+    failures = await context.memory.audit_events(
+        event_type="telegram_json_import_failed", scope=scope
+    )
+    assert status.messages == 2
+    assert failures[0].payload["imported"] == 2
+    assert failures[0].payload["completed_batches"] == 1
+    assert "sensitive" not in json.dumps(failures[0].payload)
+
+    monkeypatch.setattr(context.memory.embedding_provider, "embed", original_embed)
+    retry = await context.memory.import_telegram_desktop_json(export_path, scope)
+
+    assert retry.imported == 3
+    assert retry.skipped == 2
+    assert (await context.memory.memory_status(scope)).messages == 5
+
+
+@pytest.mark.asyncio
+async def test_telegram_import_rejects_unsupported_shape_before_business_writes(
+    context: AppContext, tmp_path: Path
+) -> None:
+    scope = Scope(-609, None)
+    export_path = tmp_path / "unsupported.json"
+    export_path.write_text(
+        json.dumps(
+            {
+                "name": "Not an export",
+                "messages": {"id": 1, "type": "message", "text": "Must not be imported."},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Telegram Desktop export or Bot API update dump"):
+        await context.memory.import_telegram_desktop_json(export_path, scope)
+
+    assert (await context.memory.memory_status(scope)).messages == 0
 
 
 @pytest.mark.asyncio
@@ -216,7 +310,7 @@ async def test_representative_import_export_forget_memory_workflow(
         "Open question: Who owns provider cost review?",
         "Preference: Keep summaries concise for mobile readers.",
         "Fact: SQLite remains the beta storage backend.",
-        "Decision: Cross-chat learning stays disabled unless explicitly permissioned.",
+        "Decision: Cross-chat retrieval stays disabled unless explicitly permissioned.",
         "Todo: Review export contents before sharing them.",
         "Fact: Local fake provider is used for offline verification.",
         "Todo: Rotate Telegram tokens before private beta.",

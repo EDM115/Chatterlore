@@ -2,6 +2,7 @@
 > **Executor instructions**: Follow this plan step by step, run every verification command, and stop on any STOP condition. When complete, update this plan's row in plans/README.md unless a reviewer owns the index.
 > **Drift check (run first)**: <code>git diff --stat beda837..HEAD -- src/pzp_ai_bot/telegram/router.py src/pzp_ai_bot/memory/service.py tests/test_telegram_integration.py tests/test_memory_quality.py docs/commands.md docs/privacy.md PLAN.md</code>. If live code no longer matches the excerpts below, stop and reconcile the plan before editing.
 ## Status
+- **Implementation status**: DONE (2026-07-29)
 - **Audit finding**: 1
 - **Priority**: P1
 - **Effort**: S
@@ -81,14 +82,16 @@ Run formatting check, lint, ty, and the full offline test suite from the command
 - Assert the mutation double was not called when authorization fails.
 - Preserve configured-bot-admin, current-chat-admin, unknown-ID, and malformed-ID behavior.
 ## Done criteria
-- [ ] A review's owning Scope is resolved before either mutation.
-- [ ] require_scope_admin evaluates that Scope for both approve and reject.
-- [ ] Foreign-chat administrators cannot mutate another chat's review even with a valid ID.
-- [ ] Configured bot admins and same-chat administrators retain intended access.
-- [ ] Audit events still record the actual review scope and reviewer ID.
-- [ ] Command/privacy docs and PLAN.md match the new behavior.
-- [ ] Targeted and full quality gates pass.
-- [ ] No out-of-scope files or additive git operations were used.
+- [x] A review's owning Scope is resolved before either mutation.
+- [x] require_scope_admin evaluates that Scope for both approve and reject.
+- [x] Foreign-chat administrators cannot mutate another chat's review even with a valid ID.
+- [x] Configured bot admins and same-chat administrators retain intended access.
+- [x] Audit events still record the actual review scope and reviewer ID.
+- [x] Command/privacy docs and PLAN.md match the new behavior.
+- [x] Targeted and full quality gates pass.
+- [x] No out-of-scope files or additive git operations were used.
+
+Verification on 2026-07-29 used `uv run`: the complete `tests/test_telegram_integration.py` and `tests/test_memory_quality.py` target passed, Ruff format and lint passed, `ty check` passed, and the full offline pytest suite passed.
 ## STOP conditions
 - The pending review can no longer be resolved without mutating it.
 - require_scope_admin semantics differ from the current configured-bot-admin/current-chat-admin boundary.

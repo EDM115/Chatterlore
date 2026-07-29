@@ -2,6 +2,8 @@
 > **Executor instructions**: Execute after transaction boundaries and frozen dependency consumption are established. Follow every gate, use only offline fixtures, and update plans/README.md unless a reviewer owns it.
 > **Drift check (run first)**: <code>git diff --stat beda837..HEAD -- pyproject.toml uv.lock src/pzp_ai_bot/memory/service.py src/pzp_ai_bot/db/repositories.py src/pzp_ai_bot/telegram/router.py src/pzp_ai_bot/main.py tests/test_memory_service.py tests/test_product_controls.py tests/test_cli.py tests/test_telegram_integration.py docs/commands.md docs/privacy.md docs/operations.md PLAN.md</code>.
 ## Status
+- **Status**: DONE
+- **Verified**: 2026-07-29 with frozen `ijson==3.5.1`, 125 focused transfer tests, repository-wide Ruff/ty gates and 218 passed, 1 skipped at 81.38% branch coverage
 - **Audit finding**: lower-priority bulk transfer opportunity
 - **Priority**: P3
 - **Effort**: L
@@ -17,7 +19,7 @@ JSONL and Telegram imports materialize complete files, embed rows serially, and 
 - service.py:1136-1217 imports complete row lists and embeds Telegram messages one at a time.
 - service.py:1091-1121 loads all export items and does metadata/source lookups inside the item loop.
 - router.py:995-1012 encodes and chunks only after the full export string exists.
-- The official PyPI project describes ijson as a stable iterative JSON parser with Python 3.12 support; pin ijson==3.5.0 and record <https://pypi.org/project/ijson/> as the dependency source.
+- The official PyPI project describes ijson as a stable iterative JSON parser with Python 3.12 support; the owner-selected reviewed pin is ijson==3.5.1 and <https://pypi.org/project/ijson/> is the dependency source.
 ## Commands you will need
 | Purpose | Command | Expected on success |
 |---|---|---|
@@ -50,7 +52,7 @@ JSONL and Telegram imports materialize complete files, embed rows serially, and 
 - Read-only git inspection only; no stage, commit, push, branch, reset, or worktree.
 ## Steps
 ### Step 1: Add the reviewed streaming parser dependency
-Add exactly ijson==3.5.0 to project dependencies and regenerate uv.lock with the authorized uv executable. Review the lock diff for only the expected package/backend dependencies. Run frozen sync afterward. If this exact version is unavailable for Python 3.12 on supported platforms, stop and report rather than substituting an unreviewed parser.
+Add exactly ijson==3.5.1 to project dependencies and regenerate uv.lock with the authorized uv executable. Review the lock diff for only the expected package/backend dependencies. Run frozen sync afterward. If this exact version is unavailable for Python 3.12 on supported platforms, stop and report rather than substituting an unreviewed parser.
 **Verify**: <code>uv lock --check</code> and frozen sync pass; pyproject uses an exact pin.
 ### Step 2: Stream JSONL validation
 Replace load_jsonl_import list construction with an iterator yielding JsonlImportItem plus line number. Preserve current precise validation messages and reject an entirely empty file. Consume the iterator in bounded batches, never retaining prior batches.
@@ -85,15 +87,15 @@ Run lock validation, targeted tests, format, lint, ty, and full tests.
 - JSONL field schema/order and Markdown meaning remain compatible.
 - Telegram chunks respect byte limit and Unicode boundaries.
 ## Done criteria
-- [ ] Supported imports no longer materialize complete row lists/files.
-- [ ] Embeddings are batched outside write transactions.
-- [ ] Exports use keyset iteration and batched hydration.
-- [ ] CLI and Telegram consume bounded chunks incrementally.
-- [ ] Dependency is exactly pinned and lock remains frozen afterward.
-- [ ] Privacy/operations/commands docs and PLAN are current.
-- [ ] All gates pass.
+- [x] Supported imports no longer materialize complete row lists/files.
+- [x] Embeddings are batched outside write transactions.
+- [x] Exports use keyset iteration and batched hydration.
+- [x] CLI and Telegram consume bounded chunks incrementally.
+- [x] Dependency is exactly pinned and lock remains frozen afterward.
+- [x] Privacy/operations/commands docs and PLAN are current.
+- [x] All gates pass.
 ## STOP conditions
-- ijson==3.5.0 is unavailable or incompatible on a supported platform.
+- ijson==3.5.1 is unavailable or incompatible on a supported platform.
 - Supported Telegram input shapes cannot be detected before writes without buffering the full file.
 - Partial-import semantics cannot be made auditable and retry-safe.
 - Streaming would change the public JSONL schema or Scope/source mapping.

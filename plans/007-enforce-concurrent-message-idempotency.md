@@ -2,6 +2,7 @@
 > **Executor instructions**: Follow every step and gate, then update plans/README.md unless a reviewer owns it.
 > **Drift check (run first)**: <code>git diff --stat beda837..HEAD -- src/pzp_ai_bot/db/models.py src/pzp_ai_bot/db/repositories.py alembic/versions tests/test_memory_correctness.py tests/test_cli.py docs/architecture.md PLAN.md</code>.
 ## Status
+- **Status**: DONE
 - **Audit finding**: 6
 - **Priority**: P1
 - **Effort**: M
@@ -25,12 +26,14 @@ Current shape:
 ## Commands you will need
 | Purpose | Command | Expected on success |
 |---|---|---|
-| Correctness/migration tests | <code>.\.venv\Scripts\python.exe -m pytest -q tests/test_memory_correctness.py tests/test_cli.py</code> | all pass |
-| Migrate disposable DB | <code>.\.venv\Scripts\alembic.exe upgrade head</code> | exit 0 |
-| Drift check | <code>.\.venv\Scripts\alembic.exe check</code> | no new operations |
-| Format/lint/type | <code>.\.venv\Scripts\ruff.exe format --check .; .\.venv\Scripts\ruff.exe check .; .\.venv\Scripts\ty.exe check</code> | each exits 0 |
-| Full tests | <code>.\.venv\Scripts\python.exe -m pytest -q</code> | all offline tests pass |
+| Correctness/migration tests | <code>uv run pytest -q tests/test_memory_correctness.py tests/test_cli.py</code> | all pass |
+| Migrate disposable DB | <code>uv run alembic upgrade head</code> | exit 0 |
+| Drift check | <code>uv run alembic check</code> | no new operations |
+| Format/lint/type | <code>uv run ruff format --check .; uv run ruff check .; uv run ty check</code> | each exits 0 |
+| Full tests | <code>uv run pytest -q --cov=pzp_ai_bot --cov-branch --cov-report=term-missing</code> | all offline tests pass and coverage stays above the floor |
 Use only a disposable DB_URL for migration verification.
+## Implementation result
+Live head 0007 required the new revision number 0008. Revision `0008_message_logical_uniqueness` keeps the lowest duplicate message ID, retains one embedding per provider/model, repoints survivors, deletes duplicate messages and creates the authoritative unique expression index over `chat_id`, `COALESCE(message_thread_id, -1)` and `telegram_message_id`; the older nullable constraint remains to avoid a needless table rebuild. Repository insertion now uses SQLite `ON CONFLICT DO NOTHING ... RETURNING` and fetches only on conflict. Five repeated two-session main-chat races each produced one created row and one shared ID, while different chats/topics remain distinct. Twenty focused tests, fresh upgrade, clean Alembic check, Ruff format/lint, `ty` and the complete coverage suite passed on 2026-07-29 with 187 passed, 1 skipped and 81.08% coverage. SQLite's expression-index reflection warning is covered by a direct `sqlite_master` assertion.
 ## Scope
 **In scope**:
 - src/pzp_ai_bot/db/models.py
@@ -75,13 +78,13 @@ Run targeted tests, migration gates, format, lint, ty, and full tests.
 - Pre-upgrade duplicates and embeddings are reconciled deterministically.
 - Fresh schema and upgrade-from-previous-head both pass.
 ## Done criteria
-- [ ] Database uniqueness treats NULL main thread as one logical value.
-- [ ] Repository insertion is atomic and returns the existing row on conflict.
-- [ ] Existing duplicate data is reconciled without orphan embeddings.
-- [ ] Concurrent and migration regressions pass.
-- [ ] Alembic check is clean.
-- [ ] Architecture docs and PLAN match the invariant.
-- [ ] Full gates pass.
+- [x] Database uniqueness treats NULL main thread as one logical value.
+- [x] Repository insertion is atomic and returns the existing row on conflict.
+- [x] Existing duplicate data is reconciled without orphan embeddings.
+- [x] Concurrent and migration regressions pass.
+- [x] Alembic check is clean.
+- [x] Architecture docs and PLAN match the invariant.
+- [x] Full gates pass.
 ## STOP conditions
 - Telegram can legitimately use the chosen sentinel as a topic ID.
 - The live Alembic head is no longer the revision assumed here; renumber after reconciliation rather than creating a branch.

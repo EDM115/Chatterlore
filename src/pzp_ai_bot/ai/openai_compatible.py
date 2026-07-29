@@ -41,7 +41,12 @@ class OpenAICompatibleProvider:
         self.retry_backoff_seconds = retry_backoff_seconds
 
     async def generate(
-        self, messages: Sequence[ChatMessage], *, temperature: float = 0.2, max_tokens: int = 700
+        self,
+        messages: Sequence[ChatMessage],
+        *,
+        temperature: float = 0.2,
+        max_tokens: int = 700,
+        reasoning_effort: str | None = None,
     ) -> ChatResult:
         payload = [
             cast(
@@ -50,10 +55,16 @@ class OpenAICompatibleProvider:
             )
             for message in messages
         ]
+        request: dict[str, Any] = {
+            "model": self.model,
+            "messages": payload,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        if reasoning_effort is not None and supports_reasoning_effort(self.model):
+            request["reasoning_effort"] = reasoning_effort
         response = await retry_provider_call(
-            lambda: self.client.chat.completions.create(
-                model=self.model, messages=payload, temperature=temperature, max_tokens=max_tokens
-            ),
+            lambda: self.client.chat.completions.create(**request),
             attempts=self.retry_attempts,
             delay=self.retry_backoff_seconds,
         )
@@ -82,6 +93,11 @@ class OpenAICompatibleProvider:
         if not self.redact:
             return text
         return redact_text(text, self.redaction_custom_patterns)
+
+
+def supports_reasoning_effort(model: str) -> bool:
+    normalized = model.strip().lower()
+    return normalized.startswith(("gpt-5", "o1", "o3", "o4"))
 
 
 async def retry_provider_call[T](

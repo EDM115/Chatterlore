@@ -35,6 +35,7 @@ async def build_context(settings: Settings, *, ensure_schema: bool = True) -> Ap
         provider_registry=provider_registry,
     )
     memory.markdown.ensure()
+    await memory.rebuild_daily_projection()
     await memory.refresh_runtime_settings()
     admins = AdminService(settings.bot_admin_ids, ttl_seconds=settings.admin_cache_ttl_seconds)
     return AppContext(

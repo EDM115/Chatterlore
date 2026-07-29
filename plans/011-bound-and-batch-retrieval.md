@@ -2,6 +2,7 @@
 > **Executor instructions**: Follow every step and gate. This plan deliberately preserves the SQLite brute-force backend while bounding its worst case. Update plans/README.md when complete unless a reviewer owns it.
 > **Drift check (run first)**: <code>git diff --stat beda837..HEAD -- src/pzp_ai_bot/memory/retrieval.py src/pzp_ai_bot/memory/vector.py src/pzp_ai_bot/memory/service.py src/pzp_ai_bot/db/repositories.py src/pzp_ai_bot/config.py tests/test_memory_correctness.py tests/test_memory_tools.py tests/test_operations.py docs/architecture.md docs/operations.md PLAN.md</code>.
 ## Status
+- **Status**: DONE
 - **Audit finding**: 9
 - **Priority**: P2
 - **Effort**: L
@@ -25,9 +26,11 @@ Current loop:
 ## Commands you will need
 | Purpose | Command | Expected on success |
 |---|---|---|
-| Retrieval/settings tests | <code>.\.venv\Scripts\python.exe -m pytest -q tests/test_memory_correctness.py tests/test_memory_tools.py tests/test_operations.py</code> | all pass |
-| Format/lint/type | <code>.\.venv\Scripts\ruff.exe format --check .; .\.venv\Scripts\ruff.exe check .; .\.venv\Scripts\ty.exe check</code> | each exits 0 |
-| Full tests | <code>.\.venv\Scripts\python.exe -m pytest -q</code> | all offline tests pass |
+| Retrieval/settings tests | <code>uv run pytest -q tests/test_memory_correctness.py tests/test_memory_tools.py tests/test_operations.py</code> | all pass |
+| Format/lint/type | <code>uv run ruff format --check .; uv run ruff check .; uv run ty check</code> | each exits 0 |
+| Full tests | <code>uv run pytest -q</code> | all offline tests pass |
+## Implementation result
+The deterministic baseline measured 1,001 SQL statements for 1,000 candidates and 10,001 statements for 10,000 candidates. Retrieval now performs four statements at both corpus sizes, normalizes the query once, batch-hydrates knowledge and message targets, and applies a configurable positive `retrieval_candidate_limit` whose default 5,000 slots admit all valid durable knowledge before recent learned messages. The representative older durable fact remains eligible after 10,000 recent messages, and the focused 24-test target plus the complete 177-passed/1-skipped offline suite passed on 2026-07-29.
 ## Scope
 **In scope**:
 - src/pzp_ai_bot/memory/retrieval.py
@@ -79,13 +82,13 @@ Run targeted tests, format, lint, ty, and full tests.
 - Older durable facts remain eligible under the default policy.
 - Runtime setting validates positive integers and appears in status.
 ## Done criteria
-- [ ] Retrieval has no per-candidate database awaits.
-- [ ] Query vector normalization occurs once per search.
-- [ ] Candidate work is bounded and deterministic.
-- [ ] Durable knowledge cannot be crowded out by raw messages.
-- [ ] Representative recall and ranking regressions pass.
-- [ ] Settings/docs/PLAN are synchronized.
-- [ ] Full gates pass.
+- [x] Retrieval has no per-candidate database awaits.
+- [x] Query vector normalization occurs once per search.
+- [x] Candidate work is bounded and deterministic.
+- [x] Durable knowledge cannot be crowded out by raw messages.
+- [x] Representative recall and ranking regressions pass.
+- [x] Settings/docs/PLAN are synchronized.
+- [x] Full gates pass.
 ## STOP conditions
 - The measured representative corpus already exceeds the cap and required durable recall cannot be preserved deterministically.
 - A proposed bound changes Scope containment or permission behavior.

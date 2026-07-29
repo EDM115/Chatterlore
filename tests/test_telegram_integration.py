@@ -22,6 +22,7 @@ from pzp_ai_bot.db.session import session_scope
 from pzp_ai_bot.memory.scope import Scope
 from pzp_ai_bot.memory.service import (
     AuditEventPreview,
+    MemoryExportChunk,
     MemoryItemPreview,
     MemoryItemRefreshResult,
     MemoryNotePreview,
@@ -38,7 +39,7 @@ from pzp_ai_bot.telegram import safe_api as safe_api_module
 from pzp_ai_bot.telegram.commands import COMMAND_DESCRIPTIONS
 from pzp_ai_bot.telegram.dispatcher import build_dispatcher
 from pzp_ai_bot.telegram.polling import run_polling
-from pzp_ai_bot.telegram.router import export_documents
+from pzp_ai_bot.telegram.router import export_document_stream, export_documents
 from pzp_ai_bot.telegram.safe_api import safe_answer, safe_answer_document
 from pzp_ai_bot.telegram.webhook import create_webhook_app
 
@@ -119,8 +120,10 @@ class AllowingAdmins:
 
 
 class RouterMemoryDouble:
-    def __init__(self) -> None:
+    def __init__(self, review_scopes: dict[int, Scope] | None = None) -> None:
         self.calls: list[tuple[str, Scope | None]] = []
+        self.allow_admin_values: list[bool] = []
+        self.review_scopes = {1: Scope(-10012345, None)} if review_scopes is None else review_scopes
 
     def _record(self, name: str, scope: Scope | None = None) -> None:
         self.calls.append((name, scope))
@@ -151,6 +154,12 @@ class RouterMemoryDouble:
     async def export_memory(self, scope: Scope | None = None, fmt: str = "md") -> str:
         self._record("export_memory", scope)
         return "# export\n"
+
+    async def export_memory_chunks(
+        self, scope: Scope | None = None, fmt: str = "md"
+    ) -> AsyncGenerator[MemoryExportChunk, None]:
+        self._record("export_memory_chunks", scope)
+        yield MemoryExportChunk("# export\n")
 
     async def stats(self) -> dict[str, int]:
         self._record("stats")
@@ -229,6 +238,7 @@ class RouterMemoryDouble:
         self._record("set_user_policy", scope)
 
     async def set_allow_admins(self, scope: Scope, enabled: bool, updated_by: int | None) -> None:
+        self.allow_admin_values.append(enabled)
         self._record("set_allow_admins", scope)
 
     async def remember(self, scope: Scope, text: str, message_id: int, **kwargs: Any) -> int:
@@ -276,6 +286,13 @@ class RouterMemoryDouble:
     async def pending_reviews(self, scope: Scope | None = None) -> list[Any]:
         self._record("pending_reviews", scope)
         return []
+
+    async def pending_review_scope(self, review_id: int) -> Scope:
+        scope = self.review_scopes.get(review_id)
+        self._record("pending_review_scope", scope)
+        if scope is None:
+            raise ValueError(f"pending review #{review_id} was not found")
+        return scope
 
     async def approve_review(self, review_id: int, *, reviewed_by: int | None = None) -> int:
         self._record("approve_review")
@@ -642,6 +659,70 @@ async def test_invalid_command_arguments_return_usage_or_error(
     assert any(expected_fragment in text for text in session.sent_texts())
 
 
+@pytest.mark.parametrize("command", ["/allow_admins", "/allow_admins onn", "/allow_admins maybe"])
+@pytest.mark.asyncio
+async def test_allow_admins_invalid_input_does_not_mutate(
+    context: AppContext, command: str
+) -> None:
+    memory = RouterMemoryDouble()
+    test_context = cast(Any, context)
+    test_context.memory = memory
+    test_context.admins = AllowingAdmins(allow=True)
+    session = RecordingTelegramSession(chat_admin_ids={111})
+    bot = Bot(context.settings.telegram_bot_token, session=session)
+    dispatcher = build_dispatcher(context)
+
+    await feed(dispatcher, bot, message_update(command, update_id=201, message_id=201, user_id=111))
+
+    assert not any(name == "set_allow_admins" for name, _scope in memory.calls)
+    assert memory.allow_admin_values == []
+    assert any("Usage: /allow_admins on|off" in text for text in session.sent_texts())
+
+
+@pytest.mark.parametrize(("value", "expected"), [("on", True), ("off", False)])
+@pytest.mark.asyncio
+async def test_allow_admins_explicit_values_mutate_once(
+    context: AppContext, value: str, expected: bool
+) -> None:
+    memory = RouterMemoryDouble()
+    test_context = cast(Any, context)
+    test_context.memory = memory
+    test_context.admins = AllowingAdmins(allow=True)
+    session = RecordingTelegramSession(chat_admin_ids={111})
+    bot = Bot(context.settings.telegram_bot_token, session=session)
+    dispatcher = build_dispatcher(context)
+
+    await feed(
+        dispatcher,
+        bot,
+        message_update(f"/allow_admins {value}", update_id=202, message_id=202, user_id=111),
+    )
+
+    assert memory.allow_admin_values == [expected]
+    assert [name for name, _scope in memory.calls].count("set_allow_admins") == 1
+
+
+@pytest.mark.asyncio
+async def test_allow_admins_rejects_unauthorized_user_before_parsing(context: AppContext) -> None:
+    memory = RouterMemoryDouble()
+    test_context = cast(Any, context)
+    test_context.memory = memory
+    test_context.admins = AllowingAdmins(allow=False, bot_admin_ids={111})
+    session = RecordingTelegramSession()
+    bot = Bot(context.settings.telegram_bot_token, session=session)
+    dispatcher = build_dispatcher(context)
+
+    await feed(
+        dispatcher,
+        bot,
+        message_update("/allow_admins onn", update_id=203, message_id=203, user_id=222),
+    )
+
+    assert not memory.calls
+    assert any("requires a bot admin" in text for text in session.sent_texts())
+    assert not any("Usage: /allow_admins" in text for text in session.sent_texts())
+
+
 @pytest.mark.asyncio
 async def test_unauthorized_admin_command_is_rejected(context: AppContext) -> None:
     memory = RouterMemoryDouble()
@@ -708,6 +789,99 @@ async def test_chat_admin_cannot_mutate_foreign_scope(context: AppContext, comma
 
 
 @pytest.mark.parametrize(
+    ("command", "mutation"),
+    [("/memory_approve 1", "approve_review"), ("/memory_reject 1", "reject_review")],
+)
+@pytest.mark.asyncio
+async def test_chat_admin_cannot_decide_foreign_review(
+    context: AppContext, command: str, mutation: str
+) -> None:
+    foreign_scope = Scope(-100999, None)
+    memory = RouterMemoryDouble(review_scopes={1: foreign_scope})
+    test_context = cast(Any, context)
+    test_context.memory = memory
+    test_context.admins = AllowingAdmins(allow=True, bot_admin_ids={111})
+    session = RecordingTelegramSession(chat_admin_ids={222})
+    bot = Bot(context.settings.telegram_bot_token, session=session)
+    dispatcher = build_dispatcher(context)
+
+    await feed(dispatcher, bot, message_update(command, update_id=321, message_id=321, user_id=222))
+
+    assert ("pending_review_scope", foreign_scope) in memory.calls
+    assert not any(name == mutation for name, _scope in memory.calls)
+    assert any("another chat scope" in text for text in session.sent_texts())
+
+
+@pytest.mark.parametrize(
+    ("command", "mutation"),
+    [("/memory_approve 1", "approve_review"), ("/memory_reject 1", "reject_review")],
+)
+@pytest.mark.asyncio
+async def test_chat_admin_can_decide_current_chat_review(
+    context: AppContext, command: str, mutation: str
+) -> None:
+    scope = Scope(-10012345, None)
+    memory = RouterMemoryDouble(review_scopes={1: scope})
+    test_context = cast(Any, context)
+    test_context.memory = memory
+    test_context.admins = AllowingAdmins(allow=True, bot_admin_ids={111})
+    session = RecordingTelegramSession(chat_admin_ids={222})
+    bot = Bot(context.settings.telegram_bot_token, session=session)
+    dispatcher = build_dispatcher(context)
+
+    await feed(dispatcher, bot, message_update(command, update_id=322, message_id=322, user_id=222))
+
+    assert ("pending_review_scope", scope) in memory.calls
+    assert any(name == mutation for name, _scope in memory.calls)
+
+
+@pytest.mark.parametrize(
+    ("command", "mutation"),
+    [("/memory_approve 1", "approve_review"), ("/memory_reject 1", "reject_review")],
+)
+@pytest.mark.asyncio
+async def test_bot_admin_can_decide_foreign_review(
+    context: AppContext, command: str, mutation: str
+) -> None:
+    foreign_scope = Scope(-100999, None)
+    memory = RouterMemoryDouble(review_scopes={1: foreign_scope})
+    test_context = cast(Any, context)
+    test_context.memory = memory
+    test_context.admins = AllowingAdmins(allow=False, bot_admin_ids={111})
+    session = RecordingTelegramSession()
+    bot = Bot(context.settings.telegram_bot_token, session=session)
+    dispatcher = build_dispatcher(context)
+
+    await feed(dispatcher, bot, message_update(command, update_id=323, message_id=323, user_id=111))
+
+    assert ("pending_review_scope", foreign_scope) in memory.calls
+    assert any(name == mutation for name, _scope in memory.calls)
+
+
+@pytest.mark.parametrize(
+    ("command", "mutation"),
+    [("/memory_approve 999", "approve_review"), ("/memory_reject 999", "reject_review")],
+)
+@pytest.mark.asyncio
+async def test_unknown_review_decision_returns_safe_error(
+    context: AppContext, command: str, mutation: str
+) -> None:
+    memory = RouterMemoryDouble()
+    test_context = cast(Any, context)
+    test_context.memory = memory
+    test_context.admins = AllowingAdmins(allow=True, bot_admin_ids={111})
+    session = RecordingTelegramSession(chat_admin_ids={222})
+    bot = Bot(context.settings.telegram_bot_token, session=session)
+    dispatcher = build_dispatcher(context)
+
+    await feed(dispatcher, bot, message_update(command, update_id=324, message_id=324, user_id=222))
+
+    assert ("pending_review_scope", None) in memory.calls
+    assert not any(name == mutation for name, _scope in memory.calls)
+    assert any("pending review #999 was not found" in text for text in session.sent_texts())
+
+
+@pytest.mark.parametrize(
     "command",
     [
         "/memory_profile_set steal sources=-100901",
@@ -733,6 +907,31 @@ async def test_chat_admin_cannot_change_global_profile_runtime_or_prompt_state(
 
     assert not memory.calls
     assert any("configured bot admin" in text for text in session.sent_texts())
+
+
+@pytest.mark.parametrize("argument", ["learn=on", "unexpected=on"])
+@pytest.mark.asyncio
+async def test_memory_profile_allow_rejects_unsupported_arguments_without_mutation(
+    context: AppContext, argument: str
+) -> None:
+    memory = RouterMemoryDouble()
+    test_context = cast(Any, context)
+    test_context.memory = memory
+    test_context.admins = AllowingAdmins(allow=False, bot_admin_ids={111})
+    session = RecordingTelegramSession()
+    bot = Bot(context.settings.telegram_bot_token, session=session)
+    dispatcher = build_dispatcher(context)
+
+    await feed(
+        dispatcher,
+        bot,
+        message_update(
+            f"/memory_profile_allow team {argument}", update_id=331, message_id=331, user_id=111
+        ),
+    )
+
+    assert not memory.calls
+    assert any("unsupported argument" in text for text in session.sent_texts())
 
 
 @pytest.mark.asyncio
@@ -892,6 +1091,32 @@ def test_export_documents_chunk_below_telegram_document_limit() -> None:
 
     with pytest.raises(ValueError, match="Telegram document upload limit"):
         export_documents("payload", filename="memory.md", max_bytes=60 * 1024 * 1024)
+
+
+@pytest.mark.asyncio
+async def test_export_document_stream_is_incremental_bounded_and_unicode_safe() -> None:
+    consumed: list[int] = []
+
+    async def chunks() -> AsyncGenerator[MemoryExportChunk, None]:
+        consumed.append(1)
+        yield MemoryExportChunk("ab😀")
+        consumed.append(2)
+        yield MemoryExportChunk("cdé")
+
+    documents = export_document_stream(chunks(), filename="memory.md", max_bytes=5)
+    first = await anext(documents)
+
+    assert consumed == [1]
+    remaining = [document async for document in documents]
+    all_documents = [first, *remaining]
+    assert [document.filename for document in all_documents] == [
+        "memory.part001.md",
+        "memory.part002.md",
+        "memory.part003.md",
+    ]
+    assert all(len(document.data) <= 5 for document in all_documents)
+    assert all(document.data.decode("utf-8") for document in all_documents)
+    assert b"".join(document.data for document in all_documents).decode("utf-8") == "ab😀cdé"
 
 
 @pytest.mark.asyncio
