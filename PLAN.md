@@ -1,8 +1,8 @@
 ---
 goal: Telegram Group Memory Assistant PoC v1
-version: 0.11
+version: 0.31
 date_created: 2026-06-16
-last_updated: 2026-06-24
+last_updated: 2026-07-29
 owner: PZP-AI
 status: In progress
 tags:
@@ -30,12 +30,12 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 - **REQ-005**: Allow configured bot admins to export, forget, or query all memory
 - **REQ-006**: Allow Telegram chat admins to administer their chat/topic scope
 - **REQ-007**: Support polling for local/dev use and webhook mode for deployment
-- **REQ-008**: Store raw messages in SQLite and summarized durable knowledge in Markdown
+- **REQ-008**: Store raw messages and durable knowledge authoritatively in SQLite, with deterministic rebuildable Markdown projections
 - **REQ-009**: Support provider-agnostic AI through explicit chat and embedding protocols
 - **REQ-010**: Provide deterministic offline behavior through a fake provider
 - **REQ-011**: Provide import/export workflows so development does not depend on Telegram historical backfill
 - **REQ-012**: Document setup, privacy constraints, commands, deployment and testing
-- **REQ-013**: Support controlled cross-chat learning between explicitly selected channels, groups and forum topics
+- **REQ-013**: Support controlled cross-chat retrieval across explicitly selected channels, groups and forum topics without copying content into the destination scope
 - **REQ-014**: Allow admins to summarize a bounded message range between two Telegram messages, with optional reusable summary templates
 - **REQ-015**: Allow admins to customize prompt templates, select configured AI providers, switch models and tune reasoning level without code changes
 - **REQ-016**: Support reloadless runtime configuration and Telegram-native settings management for admins
@@ -51,18 +51,23 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 - **SEC-003**: Redact secret-like values before sending prompts to external providers
 - **SEC-004**: Require two-step confirmation for destructive forget operations
 - **SEC-005**: Add retention, audit and privacy controls before real group rollout
+- **SEC-006**: Authorize review approval and rejection against each review's persisted owning scope before mutation
+- **SEC-007**: Keep pending review content out of Markdown and reconcile every generated memory file after deletion, retention or forget operations
+- **SEC-008**: Never promote raw chat to durable memory when summary generation fails; retain retryable source state and content-free diagnostics
 
 ## 2. Current Architecture
 
 ### Runtime And Packaging
 
 - **DONE**: `pyproject.toml` defines Python 3.12 package `pzp-ai`
-- **DONE**: `uv.lock` exists and dependencies are pinned
+- **DONE**: `uv.lock` exists and CI/Docker consume it immutably with uv 0.12.0 pinned in both build surfaces
 - **DONE**: Runtime dependencies include `aiogram`, `fastapi`, `uvicorn[standard]`, `sqlalchemy[asyncio]`, `aiosqlite`, `alembic`, `openai`, `numpy`, `typer`, `rich`, `structlog` and `orjson`
 - **DONE**: Dev dependencies include `pytest`, `pytest-asyncio`, `pytest-cov`, `respx`, `freezegun`, `httpx2`, `ruff` and `ty`
 - **DONE**: Optional local embedding extra includes `sentence-transformers`
 - **DONE**: `pzp-bot` console script points to `pzp_ai_bot.main:app`
 - **DONE**: `.env.example`, `.gitignore`, `.dockerignore`, multi-stage non-root `Dockerfile`, `docker-compose.yml` and `.github/workflows/ci.yml` exist
+- **DONE**: CI checks lock consistency, performs a frozen development sync, upgrades one isolated runner-temp database and runs `alembic check` against the same schema so dependency or model/history drift fails before later gates
+- **DONE**: CI measures statement and branch coverage, prints missing lines and fails below the conservative 78% floor; the 2026-07-29 starting baseline is 81%
 
 ### Source Layout
 
@@ -70,10 +75,10 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 - **DONE**: `src/pzp_ai_bot/config.py` loads environment settings
 - **DONE**: `src/pzp_ai_bot/app_context.py` composes settings, DB sessions, providers, memory service and admin service
 - **DONE**: `src/pzp_ai_bot/ai/` defines provider protocols and fake/OpenAI/local provider implementations
-- **DONE**: `src/pzp_ai_bot/db/` defines async SQLAlchemy models, session helpers and repositories
-- **DONE**: `src/pzp_ai_bot/memory/` defines scopes, policy evaluation, vectors, Markdown persistence, retrieval and memory orchestration
+- **DONE**: `src/pzp_ai_bot/db/` defines async SQLAlchemy models and session helpers; cohesive implementations live in `db/repos/`, and `db/repositories.py` remains a stable compatibility re-export facade
+- **PARTIAL**: `src/pzp_ai_bot/memory/` defines scopes, policy evaluation, vectors, deterministic Markdown projections, retrieval and memory orchestration; `MemoryService` now delegates transfer and provider-operation/telemetry work and re-exports extracted contracts, while retrieval, mutation/review/retention, summary/compaction and settings/profile/template slices still need extraction
 - **DONE**: `src/pzp_ai_bot/telegram/` defines admin checks, utility parsing, command router, polling runtime and webhook runtime
-- **DONE**: `alembic/versions/0001_initial.py` creates the initial SQLite schema, `alembic/versions/0002_phase2_memory_quality.py` adds Phase 2 metadata/settings/review tables, `alembic/versions/0003_phase2_remaining_memory_tools.py` adds manual-note metadata, profiles, permissions and summary templates, `alembic/versions/0004_phase3_provider_ai_hardening.py` adds provider/prompt settings and AI usage metadata, `alembic/versions/0005_phase5_operations_settings.py` adds runtime settings and persisted forget challenges, and `alembic/versions/0006_phase6_product_completeness.py` adds persisted settings confirmations.
+- **DONE**: `alembic/versions/0001_initial.py` creates the initial SQLite schema, revisions 0002 through 0006 add the Phase 2-6 data surfaces, `0007_align_telegram_identifier_types.py` aligns persisted Telegram identifiers with the models' `BigInteger` declarations, `0008_message_logical_uniqueness.py` reconciles duplicate logical messages and enforces their SQLite expression index, `0009_summary_claims.py` adds persisted bounded summary-work claims, `0010_remove_cross_scope_can_learn.py` removes the unused cross-scope learning-permission column without changing query permissions, `0011_canonical_scope_snapshots.py` adds validated per-scope canonical derived-cache rows, and `0012_telemetry_scope_indexes.py` normalizes usage scope and indexes usage/event query paths.
 - **DONE**: `docs/` contains setup, architecture, command, privacy, deployment, operations, secrets, release and test documentation
 - **DONE**: `tests/` contains offline unit/integration coverage for core behavior
 
@@ -85,8 +90,9 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 - **DONE**: `pzp-bot polling` builds context, deletes Telegram webhook and starts polling
 - **DONE**: `pzp-bot webhook` builds context, sets Telegram webhook and starts FastAPI
 - **DONE**: `pzp-bot summarize-now --scope <scope>` summarizes pending messages and compacts `MEMORY.md`
-- **DONE**: `pzp-bot export-memory --format md|jsonl --scope <scope> [--out path]` exports memory and rejects unsupported formats or invalid scopes before opening the app context
-- **DONE**: `pzp-bot import-jsonl --file path --chat-id id [--thread-id id]` imports knowledge items into a scope and rejects empty or malformed JSONL with clear errors
+- **DONE**: `pzp-bot export-memory --format md|jsonl --scope <scope> [--out path]` keyset-pages knowledge and streams bounded chunks directly to a file or stdout; global Markdown streams the canonical file and unsupported formats or invalid scopes are rejected before opening the app context
+- **DONE**: `pzp-bot import-jsonl --file path --chat-id id [--thread-id id]` incrementally validates up to 512 MiB/100,000 rows, embeds outside transactions and commits retry-safe content/source tuples in independently audited 100-row checkpoints with precise line errors
+- **DONE**: `pzp-bot import-telegram-json --file path --chat-id id [--thread-id id]` uses pinned `ijson==3.5.1` iterators for supported Telegram Desktop and Bot API shapes, rejects unsupported shapes before business writes and imports retry-safe logical messages in independently audited 100-row checkpoints
 - **DONE**: `pzp-bot show-config` prints non-secret runtime settings, provider profiles, default system prompt, reasoning level and redacted credential-bearing database URLs
 - **DONE**: `pzp-bot doctor` checks configured provider profiles, missing OpenAI-compatible API keys, missing local optional dependencies, SQLite parent write access and memory directory write access
 - **DONE**: `pzp-bot audit-events --limit N [--event-type name] [--scope scope] [--format text|jsonl] [--out path]` reviews or exports recent `bot_events`
@@ -97,18 +103,18 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 
 - **DONE**: `/ask [profile=name] [provider=name] [system=name] [model=name] [reasoning=low|medium|high] [prompt="one-shot system prompt"] <question>` answers from current scope memory by default, can opt into explicitly permissioned cross-chat profiles, supports admin-only one-shot provider/model/reasoning/system-prompt overrides and includes compact source references when the provider output does not already cite them
 - **DONE**: `/memory_search [profile=name] [provider=name] [embedding_model=name] <query>` returns formatted retrieval results with the same optional memory-profile expansion and admin-only query embedding provider/model overrides
-- **DONE**: `/memory_export [md|jsonl] [scope=...]` sends a Markdown or JSONL export with scope/source metadata where available and rejects unknown tokens
+- **DONE**: `/memory_export [md|jsonl] [scope=...]` incrementally sends UTF-8-safe deterministic document parts below the 45 MiB safety margin with scope/source metadata where available and rejects unknown tokens
 - **DONE**: `/stats` returns global message, learned, skipped, knowledge, embedding, event and pending-review counts; `/stats scope=...` and `/memory_status` return richer per-scope message, memory and AI usage status
 - **DONE**: `/learn_on`, `/learn_off`, `/learn_status` control/report current scope and show effective memory settings
 - **DONE**: `/allow_chat`, `/deny_chat` enable/disable the chat-level scope
 - **DONE**: `/allow_topic`, `/deny_topic` enable/disable the current topic scope
 - **DONE**: `/allow_user <id|reply>` and `/deny_user <id|reply>` update author policy
-- **DONE**: `/allow_admins on|off` stores admin-author learning policy
+- **DONE**: `/allow_admins on|off` stores admin-author learning policy through the shared strict boolean parser; missing or invalid values return usage without changing consent
 - **DONE**: `/remember [tags=a,b] [priority=N] [source=url] <text>` creates a manual durable memory note with structured metadata
 - **DONE**: `/summarize_now [template=name] [provider=name] [model=name] [reasoning=low|medium|high] [prompt="one-shot instruction"]` summarizes pending messages for the current scope with built-in/custom summary templates plus admin-only provider/model/reasoning/one-shot prompt overrides
 - **DONE**: `/memory_settings` directly edits scoped top-k, summary batch size, summary/chat/embedding models, provider profile, reasoning level, system prompt template, retention and review-before-compact settings; `/settings` previews scoped changes and applies them only after confirmation
 - **DONE**: `/memory_prune` applies configured retention pruning for a scope
-- **DONE**: `/memory_reviews`, `/memory_approve` and `/memory_reject` support review-before-compact workflows
+- **DONE**: `/memory_reviews`, `/memory_approve` and `/memory_reject` support review-before-compact workflows; approval and rejection resolve and authorize the review's persisted owning scope before mutation
 - **DONE**: `/memory_notes`, `/memory_note_edit` and `/memory_note_delete` list, edit and delete manual notes
 - **DONE**: `/memory_profiles`, `/memory_profile_set` and `/memory_profile_allow` define named source-scope profiles and explicit destination permissions
 - **DONE**: `/memory_templates` and `/memory_template_set` list built-in templates and manage custom summary templates
@@ -122,25 +128,31 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 
 ### Persistence And Memory
 
-- **DONE**: SQLite tables exist for `messages`, `knowledge_items`, `embeddings`, `learning_policies`, `scope_metadata`, `scope_settings`, `memory_review_items`, `memory_profiles`, `memory_profile_scopes`, `memory_scope_permissions`, `summary_templates`, `system_prompt_templates`, `runtime_settings`, `forget_challenges`, `settings_challenges`, `bot_events` and `ai_usage`
+- **DONE**: SQLite tables exist for `messages`, `knowledge_items`, `embeddings`, `learning_policies`, `scope_metadata`, `scope_settings`, `memory_review_items`, `memory_profiles`, `memory_profile_scopes`, `memory_scope_permissions`, `summary_templates`, `system_prompt_templates`, `runtime_settings`, `forget_challenges`, `settings_challenges`, `canonical_scope_snapshots`, `bot_events` and `ai_usage`
 - **DONE**: Raw messages are stored with Telegram IDs, chat/thread/user IDs, optional chat/topic/source-link metadata, text, normalized text, learned flag, skip reason, reply ID and timestamps
 - **DONE**: Knowledge items store kind, content, scope, source message IDs, JSON metadata and timestamps
 - **DONE**: Embeddings store target type, target ID, scope, provider, model, dimensions, vector blob and timestamp
-- **DONE**: Learning policies store global/chat/topic/user/admin toggles
-- **DONE**: AI usage records ask, summarize, range-summary, canonical-compaction and embedding provider/model/tokens/latency/error plus JSON metadata for provider profile, selected models, prompt/template versions, reasoning level and embedding count/dimensions
+- **DONE**: Learning policies store global/chat/topic/user/admin toggles and are evaluated from one immutable transaction-local snapshot per decision or multi-scope report without cross-request caching
+- **DONE**: AI usage records ask, summarize, range-summary, canonical-compaction and embedding provider/model/tokens/latency/error plus JSON metadata for provider profile, selected models, prompt/template versions, reasoning level and embedding count/dimensions; every chat/embedding call produces the same immutable safe telemetry record, and failures persist a bounded summary plus exception type in a fresh transaction only after business rollback or claim release
+- **DONE**: New AI usage rows normalize chat/topic scope into dedicated columns, revision 0012 safely backfills recognized legacy metadata, and status performs two SQL aggregate queries with correct global/chat/topic hierarchy; composite usage scope/operation/error-time and event type/scope-time indexes are verified through SQLite query plans
 - **DONE**: `data/memory/MEMORY.md` is canonically compacted from knowledge items into scoped Facts, Decisions, Preferences, Open Questions and Todos sections with deduplicated sources
-- **DONE**: `data/memory/daily/YYYY-MM-DD/<chat_id>_<thread_id>.md` daily files are appended for manual, import and summary memory
+- **DONE**: Canonical entries are persisted as validated per-exact-scope derived snapshots whose fingerprints cover item identity/content/source/update state plus every output-affecting provider and prompt setting; routine mutations refresh only dirty scopes, no-op compaction reuses unchanged entries, concurrent drift discards stale results, failures retain the last valid snapshot for retry, corrupt rows recompute, deleted scopes are removed and `compact_memory(force=True)` provides a full repair path
+- **DONE**: `data/memory/daily/YYYY-MM-DD/<chat_id>_<thread_id>.md` files are deterministically rebuilt from committed knowledge items after durable mutations and on startup, with obsolete generated files removed through containment-checked paths
 - **DONE**: `FakeProvider` gives deterministic chat, canonical compaction and embedding behavior
-- **DONE**: `OpenAICompatibleProvider` supports configurable chat and embedding calls
+- **DONE**: `OpenAICompatibleProvider` supports configurable chat and embedding calls, including environment/runtime/scope/one-shot model selection and outbound `reasoning_effort` for recognized OpenAI reasoning-model IDs
 - **DONE**: `LocalSentenceTransformerEmbeddingProvider` supports optional local embeddings when the `local` extra is installed
-- **DONE**: Retrieval uses embedding cosine similarity over knowledge-item embeddings first and learned raw-message embeddings as the second tier
+- **DONE**: Retrieval normalizes each query once, batch-hydrates targets in four bounded SQL statements per source scope, admits durable knowledge before recent learned raw messages and defaults to a configurable 5,000-candidate cap
 - **DONE**: Cross-chat retrieval is disabled by default and only expands through named profiles whose source scopes have destination permission and enabled learning policy; profile source and permission management is restricted to configured bot admins
+- **DONE**: Cross-scope profile permissions expose only the implemented retrieval contract: destination `can_query` plus each source scope's own learning policy; obsolete `learn=` and all unknown `/memory_profile_allow` keys fail before mutation
 - **DONE**: `/ask` falls back to deterministic scoped results if chat generation fails
-- **DONE**: Duplicate Telegram message ingestion no-ops deterministically and does not duplicate message embeddings
+- **DONE**: Duplicate Telegram message ingestion is database-idempotent under concurrent main-chat redelivery through an atomic insert and unique logical-scope expression index; sequential duplicates still no-op and do not duplicate message embeddings
 - **DONE**: Global summarization groups pending messages by concrete chat/topic scope instead of creating mixed global knowledge items
+- **DONE**: Pending summaries are atomically claimed in oldest-first batches capped by the effective `summary_batch_size`, provider work runs without a live database session, compare-and-set finalization creates exactly one knowledge/review result per claim, provider failures release claims and abandoned claims become recoverable after 900 seconds without promoting raw chat
+- **DONE**: Manual summarization drains all eligible bounded batches, ingestion processes at most one batch per update and each idle tick processes at most one batch per eligible concrete scope
 - **DONE**: Per-scope memory settings override top-k, summary batch size, summary/chat/embedding models, provider profile, reasoning level, system prompt template, raw-message retention, knowledge retention and review-before-compact defaults
 - **DONE**: Retention pruning can remove old raw messages and message embeddings without deleting durable summaries
-- **DONE**: Optional review-before-compact mode writes proposed summaries and requires approval before durable knowledge insertion
+- **DONE**: Optional review-before-compact mode keeps proposed summaries in SQLite only and requires approval before durable knowledge insertion or Markdown projection
+- **DONE**: Summary provider exceptions and empty responses create no durable content, keep source messages pending, return zero completed messages and persist only scoped content-free failure diagnostics before a later retry
 - **DONE**: Manual notes can be tagged, prioritized, sourced, listed, edited, deleted and exported with metadata
 - **DONE**: Bounded range summaries use built-in, custom or one-shot templates and store boundary message IDs, source IDs, date intervals and AI settings metadata
 - **DONE**: OpenAI-compatible chat and embedding calls use bounded retry/backoff and configurable redaction for secret-like key/value pairs, quoted JSON secret fields, bearer/common token forms, emails, phone numbers and custom regex patterns
@@ -154,9 +166,10 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 - **DONE**: Webhook endpoint validates `X-Telegram-Bot-Api-Secret-Token` and webhook startup rejects blank or placeholder `WEBHOOK_SECRET` values such as `change-me`, `changeme`, `placeholder`, `default` and `secret`
 - **DONE**: Topic scope extraction uses `is_topic_message` and `message_thread_id`
 - **DONE**: Admin service caches `get_chat_administrators` results, honors configured `BOT_ADMINS`, supports configurable `ADMIN_CACHE_TTL_SECONDS` and exposes cache stats for diagnostics
-- **DONE**: Polling and webhook runtimes start a background idle summarizer using `SUMMARY_IDLE_SECONDS`
+- **DONE**: Polling and webhook runtimes supervise a background idle summarizer using `SUMMARY_IDLE_SECONDS`; ordinary iteration failures retry with bounded backoff while cancellation remains prompt
 - **DONE**: Polling and webhook startup register the current Telegram command list through `set_my_commands`
-- **DONE**: Polling and webhook runtimes start a background runtime-settings refresher using `RUNTIME_SETTINGS_REFRESH_SECONDS`
+- **DONE**: Polling and webhook runtimes supervise a background runtime-settings refresher using `RUNTIME_SETTINGS_REFRESH_SECONDS`, with typed process-local health state and content-free structured failure diagnostics
+- **DONE**: Webhook `GET /health` returns HTTP 200 only while both critical task handles are running and not done, and HTTP 503 with per-task booleans when either task is dead
 - **DONE**: Telegram update handling uses structured `structlog` logging with safe chat/thread/user/message metadata, duration and error fields
 - **DONE**: Telegram commands that accept `scope=` authorize the target scope, so chat admins can operate only on the current chat while configured bot admins can operate across chats and `scope=all`
 
@@ -165,10 +178,10 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 - **DONE**: `README.md` contains a quick-start runbook
 - **DONE**: `docs/setup.md` documents local setup and Telegram preparation
 - **DONE**: `docs/architecture.md` documents package boundaries and memory files
-- **DONE**: `docs/commands.md` documents command behavior
+- **DONE**: `docs/commands.md` documents every registered Telegram and Typer CLI command, including operational cautions and links to canonical setup, deployment, privacy and operations guidance
 - **DONE**: `docs/privacy.md` documents privacy mode, storage, retention, review workflow and provider notes
 - **DONE**: `docs/deployment.md` documents polling, webhook and Docker usage
-- **DONE**: `docs/operations.md` documents structured logs, audit review, runtime settings and DB maintenance
+- **DONE**: `docs/operations.md` documents structured logs, audit review, Markdown projection recovery, runtime settings and DB maintenance
 - **DONE**: `docs/secrets.md` documents `.env`, provider keys, Telegram token/webhook secret rotation and container secret guidance
 - **DONE**: `docs/release.md` documents versioning, release checks, migration state and manual Telegram smoke expectations
 - **DONE**: `docs/testing.md` documents offline verification commands
@@ -182,17 +195,31 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 - **DONE**: `uv run pytest` passed on 2026-06-24 with 118 passed, 1 skipped and 4 existing aiosqlite thread warnings after plan v0.11
 - **DONE**: Security hardening focused validation passed on 2026-06-24 with `uv run pytest tests/test_telegram_integration.py tests/test_webhook.py tests/test_ai_providers.py tests/test_cli.py -q` reporting 97 passed after independent verifier follow-up
 - **DONE**: Post-security-hardening verification passed on 2026-06-24 with `uv run ruff format --check .`, `uv run ruff check .`, `uv run ty check` and `uv run pytest -q` reporting 138 passed and 1 skipped after independent verifier follow-up
+- **DONE**: SQLite-authoritative Markdown lifecycle verification passed on 2026-07-29 with the focused privacy/operations suite, `uv run ruff format --check .`, `uv run ruff check .`, `uv run ty check` and the full offline pytest suite
+- **DONE**: Retryable summary-failure verification passed on 2026-07-29 with exception and empty-response coverage across review modes, the complete provider/memory-quality target, `uv run ruff format --check .`, `uv run ruff check .`, `uv run ty check` and the full offline pytest suite
+- **DONE**: Background-task supervision verification passed on 2026-07-29 with recovery/backoff/cancellation/shutdown coverage, webhook HTTP 200/503 health and polling lifecycle tests, plus `uv run ruff format --check .`, `uv run ruff check .`, `uv run ty check` and the full offline pytest suite
+- **DONE**: Strict `/allow_admins` consent validation passed on 2026-07-29 with missing/invalid non-mutation, explicit on/off and authorization-order coverage, the complete Telegram integration suite, `uv run ruff format --check .`, `uv run ruff check .`, `uv run ty check` and the full offline pytest suite
+- **DONE**: Alembic model/history drift gating passed on 2026-07-29 after revision `0007_align_telegram_identifier_types` corrected nine historical Telegram identifier type mismatches; focused artifact/migration tests, `uv run alembic upgrade head`, `uv run alembic check`, Ruff format/lint, `ty` and the full offline pytest suite all passed against disposable state
+- **DONE**: Bounded retrieval verification passed on 2026-07-29 with a deterministic 1,000/10,000-candidate benchmark reducing SQL statements from 1,001/10,001 to four at both sizes, representative durable-recall coverage, a 24-test focused target, Ruff format/lint, `ty` and the full offline pytest suite reporting 177 passed and 1 skipped
+- **DONE**: Immutable lock consumption verification passed on 2026-07-29 with uv 0.12.0, `uv lock --check`, `uv sync --frozen --extra dev`, identical pre/post `uv.lock` SHA-256, six focused artifact tests, Ruff format/lint, `ty` and the full offline pytest suite reporting 179 passed, 1 skipped and 2 existing aiosqlite thread-shutdown warnings
+- **DONE**: Complete CLI-reference verification passed on 2026-07-29 with a live Typer inventory regression, all six previously omitted commands documented, `uv run pzp-bot --help`, 14 focused CLI/artifact tests, Ruff format/lint, `ty` and the full offline pytest suite reporting 180 passed and 1 skipped
+- **DONE**: Coverage regression verification passed on 2026-07-29 with a measured 80.72%/reported 81% statement-and-branch baseline, the configured 78% floor, visible missing lines, seven focused artifact tests, Ruff format/lint and `ty`; the complete coverage suite reported 180 passed and 1 skipped, while a temporary 82% override correctly exited non-zero without repository changes
+- **DONE**: Policy-snapshot verification passed on 2026-07-29 with exact precedence/reason coverage and query-count regressions reducing one enabled decision from four policy SELECTs and six policy-only scopes from thirteen to one; 24 focused tests, Ruff format/lint and `ty` passed, and the complete branch-coverage suite reported 184 passed, 1 skipped and 81.09%
+- **DONE**: Concurrent message-idempotency verification passed on 2026-07-29 with five repeated two-session main-chat races, distinct chat/topic coverage, upgrade-time duplicate/embedding reconciliation, direct expression-index inspection, 20 focused tests, disposable upgrade through 0008, clean Alembic check, Ruff format/lint and `ty`; the complete coverage suite reported 187 passed, 1 skipped and 81.08%
+- **DONE**: Bounded summary-claim verification passed on 2026-07-29 with disjoint concurrent claims, idempotent release/finalize, stale recovery, retryable provider failures, direct/review results, blocked-provider write access, ingest/idle per-tick caps and full-backlog draining; fresh upgrade through 0009, downgrade/re-upgrade and clean Alembic checks passed, Ruff format/lint and `ty` passed, and the complete branch-coverage suite reported 196 passed, 1 skipped and 81.25%
+- **DONE**: Retrieval-only profile permission verification passed on 2026-07-29 with unsupported command-key non-mutation, preserved query/source-policy behavior and revision 0010 upgrade coverage proving seeded true/false `can_query` values survive removal of unused `can_learn`; 104 focused tests, fresh plus downgrade/re-upgrade Alembic checks, Ruff format/lint and `ty` passed, and the complete branch-coverage suite reported 199 passed, 1 skipped and 81.27%
 - **DONE**: `uv run alembic upgrade head` passed on 2026-06-24 through `0006_phase6_product_completeness` after plan v0.11
 - **DONE**: `uv run pzp-bot --help` displayed all CLI commands on 2026-06-24 after plan v0.11
 - **DONE**: `uv run pzp-bot doctor` passed on 2026-06-24 with the default fake provider after plan v0.11
-- **DONE**: Docker runtime verification passed on 2026-06-24 with `docker version`, `docker compose config`, `docker build --tag pzp-ai:phase-0.11 .`, container `pzp-bot doctor`, container `pzp-bot migrate` and `docker compose run --rm bot pzp-bot doctor`
-- **DONE**: CI workflow validation passed on 2026-06-24 through static artifact tests; `.github/workflows/ci.yml` runs format, lint, type check, tests, Alembic upgrade, CLI help, doctor and Docker smoke on GitHub Actions
+- **PARTIAL**: Docker runtime verification passed on 2026-06-24 for the v0.11 image, but must be rerun after the v0.20 frozen-lock Dockerfile change; static artifact coverage passes while the local Docker Desktop Linux daemon is unavailable
+- **DONE**: CI workflow validation passed locally through static artifact tests; `.github/workflows/ci.yml` runs format, lint, type check, tests, isolated-database Alembic upgrade and model/history drift detection, CLI help, doctor and Docker smoke on GitHub Actions
 - **DONE**: Full local and Docker verification baseline was re-run on 2026-06-24 after plan v0.11
 - **TODO**: Re-run the full verification baseline after every future code or dependency change and update this section with date and result
 
 ## 4. Known Partial Implementations
 
-No non-live partial implementations are currently tracked. Live Telegram beta checks remain in Gate C because they require real Telegram connectivity and disposable group administration.
+- **PARTIAL**: The v0.20 frozen-lock Dockerfile passes static artifact and lock-consumption checks, but the changed image has not been rebuilt or exercised because the local Docker Desktop Linux daemon is unavailable.
+- **PARTIAL**: Live Telegram beta checks remain in Gate C because they require real Telegram connectivity and disposable group administration.
 
 ## 5. Remaining Roadmap
 
@@ -227,8 +254,8 @@ Goal: make `MEMORY.md` a useful canonical memory file rather than only a dump of
 | TASK-016 | DONE   | Add retention controls for raw messages and generated knowledge                                                                      | Admins can configure retention; old raw messages can be pruned without deleting durable summaries                                                                                                              |
 | TASK-017 | DONE   | Add memory review workflow before compacting sensitive scopes                                                                        | Optional mode writes proposed summaries and requires admin approval before knowledge insertion                                                                                                                 |
 | TASK-018 | DONE   | Add richer manual note commands: tags, source, priority and edit/delete note                                                         | `/remember` notes can be listed, edited, deleted and exported with tags                                                                                                                                        |
-| TASK-019 | DONE   | Add explicit cross-chat learning scopes for selected source channels, groups and topics                                              | Admin can define a named learning profile such as one channel, two groups and three topics; ingestion keeps original source scope metadata; retrieval can opt into the profile without leaking unrelated chats |
-| TASK-020 | DONE   | Add source-scope permissions for cross-chat memory sharing                                                                           | A scope can only learn from or query another scope when both policy and admin permissions allow it; tests cover denied and allowed cross-scope access                                                          |
+| TASK-019 | DONE   | Add explicit cross-chat retrieval profiles for selected source channels, groups and topics                                            | Admin can define a named retrieval profile such as one channel, two groups and three topics; ingestion stays in each original source scope and retrieval can opt into the profile without leaking unrelated chats |
+| TASK-020 | DONE   | Add destination query permissions for cross-chat memory retrieval                                                                     | A destination can query another scope only when its admin-managed query permission and the source scope's own learning policy both allow it; tests cover denied and allowed cross-scope access                    |
 | TASK-021 | DONE   | Add message-range summarization between two Telegram messages                                                                        | Admin can reply/select/provide two message IDs; the bot checks both message dates and source scope, summarizes only the bounded range and records the date interval and source IDs                             |
 | TASK-022 | DONE   | Add reusable summary templates for range and scope summaries                                                                         | Admin can choose configured templates for decisions, todos, meeting notes, incident recap, or custom formats; fake provider tests snapshot the prompt inputs                                                   |
 
@@ -310,21 +337,24 @@ Goal: make the assistant useful to group admins and participants beyond the mini
 ### Tests Implemented
 
 - **DONE**: `tests/test_scope.py` verifies topic scope extraction and scope parsing
-- **DONE**: `tests/test_policy_and_ingestion.py` verifies learning-disabled skip, learning-enabled summarization and user deny behavior
+- **DONE**: `tests/test_policy_and_ingestion.py` verifies learning-disabled skip, learning-enabled summarization, exact global/chat/topic/user/admin precedence and reason strings, one policy SELECT per decision/status, one policy SELECT across multi-scope reporting and mutation visibility on the next operation
 - **DONE**: `tests/test_memory_service.py` verifies scoped remember/search/ask, forget confirmation and JSONL import/export
-- **DONE**: `tests/test_webhook.py` verifies bad webhook secret rejection and fail-closed rejection of blank/default/placeholder webhook secrets
+- **DONE**: `tests/test_webhook.py` verifies bad webhook secret rejection, fail-closed rejection of blank/default/placeholder webhook secrets, and critical-task health responses for HTTP 200 and 503
+- **DONE**: `tests/test_telegram_integration.py` verifies dispatcher command behavior including strict non-mutating `/allow_admins` validation, target-scope authorization and review-decision ownership
 - **DONE**: `tests/test_phase1.py` verifies concrete-scope global summarization, idle summarization, duplicate ingestion idempotency, nullable policy cleanup, message-embedding retrieval and JSONL validation
 - **DONE**: `tests/test_phase2.py` verifies canonical compaction grouping/dedup/source links, per-scope settings and review approval, and retention pruning without durable-summary deletion
 - **DONE**: `tests/test_phase2_remaining.py` verifies manual note metadata/edit/delete/export, cross-chat profile permission gating, range summaries with templates and fake-provider template prompt inputs
 - **DONE**: `tests/test_phase3.py` verifies OpenAI-compatible retry/redaction payloads, local optional-dependency failure messaging, provider-profile fail-closed behavior, CLI doctor diagnostics, embedding usage metadata, insufficient-context answers and prompt/model/reasoning usage metadata
+- **DONE**: `tests/test_ai_providers.py` verifies OpenAI-compatible request payloads, retries, redaction and actual model/reasoning-effort forwarding; `tests/test_memory_correctness.py` verifies bounded constant-query retrieval, durable-first recall and vector numeric compatibility at 1,000 and 10,000 candidates
 - **DONE**: `tests/test_phase4_telegram.py` verifies aiogram dispatcher-fed command and normal-message updates, mocked Bot API methods, valid webhook dispatch, polling startup sequencing, command matrix coverage, ingestion edge cases, Telegram API failure/rate-limit handling and export document chunking
 - **DONE**: `tests/test_telegram_live.py` provides optional skipped-by-default `telegram_live` smoke coverage for real Telegram credentials
 - **DONE**: `tests/test_phase5.py` verifies persisted forget confirmations across restarts, expired confirmation rejection, runtime settings refresh/audit events, audit scope filtering, SQLite stats and runtime-settings refresher scheduling
 - **DONE**: `tests/test_phase6.py` verifies scoped memory status and topic discovery, skipped-message diagnostics, Telegram Desktop JSON import, Bot API update dump import, representative import/export/forget memory quality, memory item browse/delete/refresh, `/settings` preview/confirmation and compact source references
-- **DONE**: `tests/test_cli.py` verifies Alembic-backed migration, CLI validation errors, successful `summarize-now`, `export-memory`, `import-jsonl`, `show-config`, credential-redacted DB URL diagnostics, Phase 5 runtime settings/audit export commands and DB maintenance commands
+- **DONE**: `tests/test_cli.py` verifies Alembic-backed migration through current head, persisted `BIGINT` Telegram identifier types, the authoritative message logical-scope index, upgrade-time duplicate/embedding reconciliation, query-permission preservation while removing unused `can_learn`, CLI validation errors, successful `summarize-now`, `export-memory`, `import-jsonl`, `show-config`, credential-redacted DB URL diagnostics, Phase 5 runtime settings/audit export commands and DB maintenance commands
+- **DONE**: Plan 019 transfer regressions across `tests/test_memory_service.py`, `tests/test_product_controls.py`, `tests/test_cli.py` and `tests/test_telegram_integration.py` verify a 1,000-row/10-provider-call batch ratio, original JSONL line errors, per-batch partial failure and idempotent retry, file/row limits, ijson parsing without `Path.read_text`, unsupported-shape preflight, primary-key export order, streamed canonical Markdown, incremental CLI output and bounded UTF-8-safe Telegram document names/content
 - **DONE**: `tests/test_telegram_commands.py` verifies command help text and mocked `set_my_commands` registration
 - **DONE**: `tests/test_admin_service.py` verifies configurable admin-cache TTL, cache reuse and cache stats
-- **DONE**: `tests/test_deployment_artifacts.py` verifies Dockerfile, `.dockerignore`, GitHub Actions quality gates and Alembic runtime root discovery
+- **DONE**: `tests/test_deployment_artifacts.py` verifies Dockerfile, `.dockerignore`, the shared pinned uv version, frozen lock consumption, GitHub Actions quality gates including isolated Alembic upgrade/drift commands, Alembic runtime root discovery and complete CLI-reference coverage from the live Typer command inventory
 - **DONE**: `tests/conftest.py` builds isolated SQLite and fake-provider context
 
 ### Tests Still Required
@@ -335,6 +365,7 @@ Goal: make the assistant useful to group admins and participants beyond the mini
 - **DONE**: TEST-013 Docker smoke test and documentation are implemented
 - **DONE**: TEST-019 `/settings` view, direct edit compatibility, preview, confirm, rejection and unauthorized coverage is implemented
 - **TODO**: Optional live Telegram smoke remains skipped by default and requires real credentials
+- **TODO**: The 78% global coverage floor is only a regression signal; current critical gaps still include live Telegram behavior, the refreshed Docker image smoke, optional local-provider success behavior and uncovered configuration/Telegram error branches
 
 ### Required Verification Commands
 
@@ -345,8 +376,9 @@ uv sync --extra dev --extra local
 uv run ruff format --check .
 uv run ruff check .
 uv run ty check
-uv run pytest
+uv run pytest -q --cov=pzp_ai_bot --cov-branch --cov-report=term-missing
 uv run alembic upgrade head
+uv run alembic check
 uv run pzp-bot --help
 uv run pzp-bot doctor
 ```
@@ -378,7 +410,7 @@ Required before serious local dogfooding:
 - **DONE**: `/stats scope=...` and `/memory_status` report useful per-scope and AI usage information
 - **DONE**: Admins can inspect and update safe memory-quality settings without editing files for local dogfooding
 - **DONE**: Duplicate update handling is tested
-- **DONE**: Provider failure behavior is tested
+- **DONE**: Provider failure behavior is tested, including message/query embedding rollback, retryable summary claims, one safe usage row per failed call, raw-sentinel exclusion and release-before-telemetry transaction ordering
 
 ### Gate C - Private Telegram Beta
 
@@ -391,18 +423,18 @@ Required before inviting a real private group:
 - **TODO**: Forget behavior and real-group retention behavior are manually tested in a disposable group
 - **DONE**: Export and forget workflows are tested offline with a representative imported-memory dataset
 - **DONE**: Admin policy behavior is tested with configured bot admins and mocked Telegram chat admins
-- **DONE**: Cross-chat learning is disabled by default and explicitly permissioned for every source and destination scope used in beta
+- **DONE**: Cross-chat retrieval is disabled by default, explicitly query-permissioned for every destination/source pair used in beta and still requires each source scope's own learning policy
 - **DONE**: Logs are structured and do not leak secrets
-- **DONE**: Docker deployment smoke verification passes locally without starting Telegram polling
+- **PARTIAL**: Docker deployment smoke passed for v0.11; the changed v0.20 frozen-lock image still needs a daemon-backed build plus `doctor` and migration smoke
 
 ### Gate D - v1 Release
 
 Required before calling this v1 complete:
 
 - **DONE**: All Phase 1, Phase 2, Phase 3, Phase 4, Phase 5 and Phase 6 tasks are complete
-- **DONE**: Docker runtime verification is complete locally
-- **DONE**: CI workflow runs formatting, linting, type checking, tests, migration checks, CLI checks and Docker smoke on GitHub Actions
-- **DONE**: Migration history is stable and tested from an empty database through `0006_phase6_product_completeness`
+- **PARTIAL**: Docker runtime verification is complete for v0.11, but must be refreshed for the changed v0.20 frozen-lock image
+- **DONE**: CI workflow pins uv 0.12.0, rejects lock drift, performs a frozen sync, then runs formatting, linting, type checking, the 78% branch-coverage gate, migration checks, CLI checks and Docker smoke on GitHub Actions
+- **DONE**: Migration history is stable, tested from an empty database through `0012_telemetry_scope_indexes`, and compared with live SQLAlchemy metadata in CI; the SQLite expression index is asserted directly because the dialect cannot reflect it for autogenerate comparison
 - **DONE**: Memory quality is covered by a representative imported dataset test using summarize, ask, export and forget
 - **DONE**: Privacy and operational documentation is complete
 - **DONE**: Manual runbook covers install, upgrade, backup, restore, token rotation, provider switching, prompt/template switching, reloadless settings, `/settings` and emergency forget
@@ -440,6 +472,7 @@ AI_PROVIDER=openai_compatible
 OPENAI_API_KEY=<provider-key>
 OPENAI_BASE_URL=https://api.openai.com/v1
 CHAT_MODEL=<configured-chat-model>
+REASONING_LEVEL=medium
 EMBEDDING_MODEL=text-embedding-3-small
 ```
 
@@ -492,28 +525,43 @@ uv run pzp-bot webhook
 - **PROJECT-001**: `pyproject.toml`, `uv.lock`, `.env.example`, `.gitignore`, `.dockerignore`, `README.md`, `Dockerfile`, `docker-compose.yml`, `.github/workflows/ci.yml`
 - **RUNTIME-001**: `src/pzp_ai_bot/main.py`, `src/pzp_ai_bot/app_context.py`, `src/pzp_ai_bot/config.py`, `src/pzp_ai_bot/logging.py`
 - **TELEGRAM-001**: `src/pzp_ai_bot/telegram/admin.py`, `src/pzp_ai_bot/telegram/commands.py`, `src/pzp_ai_bot/telegram/dispatcher.py`, `src/pzp_ai_bot/telegram/middleware.py`, `src/pzp_ai_bot/telegram/router.py`, `src/pzp_ai_bot/telegram/safe_api.py`, `src/pzp_ai_bot/telegram/scheduler.py`, `src/pzp_ai_bot/telegram/utils.py`, `src/pzp_ai_bot/telegram/polling.py`, `src/pzp_ai_bot/telegram/webhook.py`
-- **MEMORY-001**: `src/pzp_ai_bot/memory/service.py`, `src/pzp_ai_bot/memory/prompts.py`, `src/pzp_ai_bot/memory/canonical.py`, `src/pzp_ai_bot/memory/policy.py`, `src/pzp_ai_bot/memory/retrieval.py`, `src/pzp_ai_bot/memory/markdown.py`, `src/pzp_ai_bot/memory/scope.py`, `src/pzp_ai_bot/memory/vector.py`
+- **MEMORY-001**: `src/pzp_ai_bot/memory/service.py`, `src/pzp_ai_bot/memory/contracts.py`, `src/pzp_ai_bot/memory/transfer.py`, `src/pzp_ai_bot/memory/provider_operations.py`, `src/pzp_ai_bot/memory/prompts.py`, `src/pzp_ai_bot/memory/canonical.py`, `src/pzp_ai_bot/memory/policy.py`, `src/pzp_ai_bot/memory/retrieval.py`, `src/pzp_ai_bot/memory/markdown.py`, `src/pzp_ai_bot/memory/scope.py`, `src/pzp_ai_bot/memory/vector.py`
 - **AI-001**: `src/pzp_ai_bot/ai/protocols.py`, `src/pzp_ai_bot/ai/fake.py`, `src/pzp_ai_bot/ai/openai_compatible.py`, `src/pzp_ai_bot/ai/local.py`, `src/pzp_ai_bot/ai/factory.py`, `src/pzp_ai_bot/ai/redaction.py`
-- **DB-001**: `src/pzp_ai_bot/db/models.py`, `src/pzp_ai_bot/db/repositories.py`, `src/pzp_ai_bot/db/session.py`, `alembic/env.py`, `alembic/versions/0001_initial.py`, `alembic/versions/0002_phase2_memory_quality.py`, `alembic/versions/0003_phase2_remaining_memory_tools.py`, `alembic/versions/0004_phase3_provider_ai_hardening.py`, `alembic/versions/0005_phase5_operations_settings.py`, `alembic/versions/0006_phase6_product_completeness.py`
+- **DB-001**: `src/pzp_ai_bot/db/models.py`, `src/pzp_ai_bot/db/repositories.py`, `src/pzp_ai_bot/db/repos/__init__.py`, `src/pzp_ai_bot/db/repos/shared.py`, `src/pzp_ai_bot/db/repos/messages.py`, `src/pzp_ai_bot/db/repos/knowledge.py`, `src/pzp_ai_bot/db/repos/canonical.py`, `src/pzp_ai_bot/db/repos/embeddings.py`, `src/pzp_ai_bot/db/repos/policy.py`, `src/pzp_ai_bot/db/repos/settings.py`, `src/pzp_ai_bot/db/repos/profiles.py`, `src/pzp_ai_bot/db/repos/challenges.py`, `src/pzp_ai_bot/db/repos/events.py`, `src/pzp_ai_bot/db/session.py`, `alembic/env.py`, `alembic/versions/0001_initial.py`, `alembic/versions/0002_phase2_memory_quality.py`, `alembic/versions/0003_phase2_remaining_memory_tools.py`, `alembic/versions/0004_phase3_provider_ai_hardening.py`, `alembic/versions/0005_phase5_operations_settings.py`, `alembic/versions/0006_phase6_product_completeness.py`, `alembic/versions/0007_align_telegram_identifier_types.py`, `alembic/versions/0008_message_logical_uniqueness.py`, `alembic/versions/0009_summary_claims.py`, `alembic/versions/0010_remove_cross_scope_can_learn.py`, `alembic/versions/0011_canonical_scope_snapshots.py`, `alembic/versions/0012_telemetry_scope_indexes.py`
 - **DOCS-001**: `docs/setup.md`, `docs/architecture.md`, `docs/commands.md`, `docs/privacy.md`, `docs/deployment.md`, `docs/operations.md`, `docs/secrets.md`, `docs/release.md`, `docs/testing.md`
-- **TESTS-001**: `tests/conftest.py`, `tests/test_scope.py`, `tests/test_policy_and_ingestion.py`, `tests/test_memory_service.py`, `tests/test_phase1.py`, `tests/test_phase2.py`, `tests/test_phase2_remaining.py`, `tests/test_phase3.py`, `tests/test_phase4_telegram.py`, `tests/test_phase5.py`, `tests/test_phase6.py`, `tests/test_cli.py`, `tests/test_admin_service.py`, `tests/test_deployment_artifacts.py`, `tests/test_telegram_commands.py`, `tests/test_telegram_live.py`, `tests/test_webhook.py`
+- **TESTS-001**: `tests/conftest.py`, `tests/test_scope.py`, `tests/test_policy_and_ingestion.py`, `tests/test_memory_service.py`, `tests/test_memory_quality.py`, `tests/test_operations.py`, `tests/test_config.py`, `tests/test_phase1.py`, `tests/test_phase2.py`, `tests/test_phase2_remaining.py`, `tests/test_phase3.py`, `tests/test_phase4_telegram.py`, `tests/test_phase5.py`, `tests/test_phase6.py`, `tests/test_cli.py`, `tests/test_admin_service.py`, `tests/test_deployment_artifacts.py`, `tests/test_telegram_commands.py`, `tests/test_telegram_integration.py`, `tests/test_telegram_live.py`, `tests/test_ai_providers.py`, `tests/test_webhook.py`
 
 ## 10. Risks And Assumptions
 
 - **RISK-001**: Telegram privacy mode or missing admin permissions can make live testing look broken even when code works
-- **RISK-002**: SQLite nullable unique constraints may not enforce logical policy uniqueness as intended without explicit upsert keys
 - **RISK-003**: Provider costs and privacy risks can grow quickly if large raw chats are summarized by external models
 - **RISK-004**: Current fake provider is useful for deterministic tests but does not prove real answer quality
+- **RISK-005**: Bulk import atomicity is intentionally per 100-row checkpoint, so operators must inspect content-free checkpoint/failure events and retry the same input after a later parse, provider or write failure rather than assuming whole-file rollback
 - **RISK-005**: Current memory compaction performs deterministic heuristic deduplication but can still miss deeper semantic duplicates or keep low-value facts
 - **RISK-006**: Runtime scheduling has focused tests, but true long-running polling/webhook behavior can still differ under real Telegram load
 - **RISK-007**: Optional local embeddings can pull large model dependencies and need explicit deployment sizing
 - **RISK-008**: Live Telegram behavior may surface API or permission details not covered by offline tests
-- **RISK-009**: Cross-chat learning can leak context across communities if profile permissions are misconfigured or tested only on synthetic scopes
-- **RISK-010**: Runtime prompt/provider changes can make answers non-reproducible unless selected templates, models and reasoning levels are logged with AI usage
+- **RISK-009**: Cross-chat retrieval can leak context across communities if destination query permissions are misconfigured or tested only on synthetic scopes
+- **CLOSED-010**: Runtime prompt/provider changes remain attributable because selected templates, profiles, models and reasoning levels are logged through one safe provider-call telemetry record; failed calls commit only controlled metadata and bounded error summaries after the business rollback or claim release
 - **RISK-011**: `/settings` preview/confirmation reduces broad-change surprises, but concurrent admins can still preview overlapping scoped changes and apply the latest active token
 - **RISK-012**: GitHub Actions has been defined locally but the first hosted run still needs to pass after the branch is pushed
 - **RISK-013**: Telegram Desktop JSON exports and Bot API update dumps can contain historical group content that predates bot consent; operators must review export files and target scopes before import
 - **RISK-014**: Docker smoke proves local image startup, health checks and migrations, but production server sizing and secret injection still need deployment-specific validation
+- **CLOSED-001**: Global review IDs no longer let a Telegram admin act on another chat's review because approval and rejection authorize the persisted owning scope before mutation; same-chat and configured-bot-admin access remain covered by dispatcher tests
+- **CLOSED-002**: Daily Markdown no longer receives pre-commit appends or pending review proposals; it is rebuilt from committed knowledge after mutations and startup, so rejection, deletion, retention and forget operations remove projected content while audit metadata remains
+- **CLOSED-003**: Failed or empty summary generation no longer synthesizes durable raw-chat content or marks source messages summarized; messages remain retryable and diagnostics retain only safe provider/model/source-ID/exception-type metadata
+- **CLOSED-004**: Idle-summary and runtime-settings loops now survive ordinary iteration exceptions with bounded backoff, expose typed health, shut down safely in every task state and make webhook health return HTTP 503 if a critical task dies
+- **CLOSED-005**: Missing, mistyped or unrelated `/allow_admins` values no longer fall through to `false`; authorization runs first and the shared strict parser rejects malformed consent input before any mutation
+- **CLOSED-006**: CI now upgrades and checks the same isolated database against live SQLAlchemy metadata, and revision `0007_align_telegram_identifier_types` resolves the nine real `Integer`/`BigInteger` mismatches exposed when the gate first ran
+- **CLOSED-011**: Retrieval no longer performs per-candidate database awaits or unbounded hydration; each authorized source scope uses four SQL statements, a configurable 5,000-candidate default, deterministic durable-first admission and focused recall/query-count regression coverage
+- **CLOSED-013**: CI and Docker no longer resolve mutable dependency sets: both pin uv 0.12.0, CI checks and frozen-syncs `uv.lock`, and Docker uses two frozen production syncs around the source copy
+- **CLOSED-016**: CI no longer runs pytest without a regression signal; the full package is measured with branch coverage and visible missing lines against a conservative 78% floor below the measured 81% starting baseline
+- **CLOSED-017**: Learning decisions and multi-scope status no longer reload the full policy table for each rule or scope; one immutable transaction-local snapshot preserves precedence and reason semantics while avoiding stale cross-request caching
+- **CLOSED-007**: Main-chat `NULL` no longer bypasses message uniqueness: revision 0008 reconciles duplicate messages/embeddings, an expression index canonicalizes the logical thread key and atomic insert-or-fetch resolves concurrent redeliveries to one row
+- **CLOSED-008**: Summary work no longer sends an unbounded backlog through one provider request, processes the same sources concurrently or holds a SQLite session across provider latency; revision 0009 persists bounded claims with retryable failure, stale recovery and idempotent finalization
+- **CLOSED-009**: Cross-scope permissions no longer advertise a no-op learning control; revision 0010 discards never-consumed `can_learn` values while preserving `can_query`, and the command rejects obsolete or unknown keys before persistence
+- **CLOSED-012**: Canonical compaction cost now scales with concrete dirty scopes instead of all stored scopes; validated SQLite snapshots are derived from exhaustive output fingerprints, and drift, corruption, failure, last-item deletion and forced full repair are covered without making cached Markdown authoritative
+- **CLOSED-018**: AI usage status no longer materializes an unbounded table or treats chat scope as exact-only; normalized scope columns and SQL aggregates preserve global/chat/topic hierarchy, legacy invalid values remain safely unscoped, and query-plan regressions cover the new append-only audit indexes
 
 - **ASSUMPTION-001**: The project remains Python 3.12 and `uv` managed
 - **ASSUMPTION-002**: v1 remains RAG memory, not online fine-tuning
@@ -531,6 +579,7 @@ uv run pzp-bot webhook
 - `uv` documentation: https://docs.astral.sh/uv/
 - `ruff` documentation: https://docs.astral.sh/ruff/
 - `ty` documentation: https://docs.astral.sh/ty/
+- `ijson` package source: https://pypi.org/project/ijson/
 - Inspiration project: https://github.com/lyzcoote/go-shitfuckllm
 
 ## 12. Changelog
@@ -547,3 +596,22 @@ uv run pzp-bot webhook
 - **2026-06-23 / v0.10**: Implemented Phase 6 product completeness: scoped memory status and topic discovery, skipped-message diagnostics, Telegram Desktop JSON import, memory item browse/delete/refresh, supported non-text metadata ingestion, multilingual prompt guidance, compact answer source references and confirmed /settings changes; Docker and CI work remained deferred as previously recorded.
 - **2026-06-24 / v0.11**: Closed deferred Docker and CI work plus remaining offline gaps: package version `0.8.0`, multi-stage non-root Docker image, optional-env compose smoke, GitHub Actions gates, Alembic Docker root fix, broader CLI tests, `/settings` command tests, generic Telegram JSON update dump import, representative memory quality workflow and configurable/observable admin cache.
 - **2026-06-24 / v0.12**: Patched Codex Security scan findings: target-scope authorization for Telegram commands, bot-admin-only global profile/runtime/template mutations, fail-closed webhook default/placeholder secret rejection, quoted JSON secret redaction, DB URL credential masking in CLI diagnostics, independent subagent verification and focused/full validation gates.
+- **2026-07-29 / v0.13**: Closed cross-chat review-decision authorization: `/memory_approve` and `/memory_reject` now resolve each pending review's persisted owning scope before mutation, with service-level lookup coverage and dispatcher tests for foreign-chat denial, same-chat access, configured-bot-admin access and unknown review IDs.
+- **2026-07-29 / v0.14**: Made SQLite authoritative for durable memory and replaced append-only daily Markdown writes with deterministic post-commit and startup reconciliation; pending reviews remain SQLite-only, privacy lifecycle operations remove projected content, and content-free projection failures remain auditable.
+- **2026-07-29 / v0.15**: Made summary generation failures explicit and retryable: provider exceptions and empty responses now return zero completed messages, preserve pending sources, create no knowledge/review/Markdown content and record content-free failure telemetry; fail-once retry coverage includes review mode on and off.
+- **2026-07-29 / v0.16**: Added cancellation-safe supervision for idle-summary and runtime-settings loops with typed health state, bounded exponential backoff, content-free diagnostics, hardened shutdown and webhook HTTP 503 health when either critical task is dead.
+- **2026-07-29 / v0.17**: Made `/allow_admins` consent parsing fail closed by reusing the strict boolean parser; missing, mistyped and unrelated values now return usage without mutation, while explicit on/off and authorization behavior remain covered.
+- **2026-07-29 / v0.18**: Added an isolated-database `alembic check` CI gate, repaired the nine Telegram identifier type mismatches it exposed through revision `0007_align_telegram_identifier_types`, and added artifact plus runtime schema regression coverage.
+- **2026-07-29 / v0.19**: Bounded SQLite retrieval with deterministic durable-first candidate admission, one-time query normalization and batch hydration, reducing the measured 1,000/10,000-candidate query counts from 1,001/10,001 to four; OpenAI-compatible chat now also forwards the selected environment/runtime/scope/one-shot reasoning level as `reasoning_effort` for recognized reasoning-model IDs.
+- **2026-07-29 / v0.20**: Pinned uv 0.12.0 consistently in CI and Docker, made CI reject lock drift before a frozen development sync, and changed the Docker dependency layers to install the exact locked production environment through frozen syncs before and after source copy.
+- **2026-07-29 / v0.21**: Completed the canonical CLI reference for all registered Typer commands with operational cautions and canonical-document links, and added a live command-inventory regression so future undocumented commands fail artifact tests by name.
+- **2026-07-29 / v0.22**: Turned the existing pytest-cov configuration into a conservative CI regression gate with branch measurement, visible missing lines and a 78% floor below the measured 81% starting baseline; documented that critical-path behavior remains more important than percentage chasing.
+- **2026-07-29 / v0.23**: Replaced repeated learning-policy table scans with one immutable transaction-local snapshot per decision, standalone status or multi-scope report; query-count tests reduced an enabled decision from four policy SELECTs and six policy-only scopes from thirteen to one while preserving precedence and reason strings.
+- **2026-07-29 / v0.24**: Enforced concurrent Telegram-message idempotency with an authoritative SQLite expression index over the logical scope key, atomic insert-or-fetch repository behavior and revision 0008 reconciliation of pre-existing duplicate messages plus provider/model embeddings.
+- **2026-07-29 / v0.25**: Bounded summary provider requests with persisted atomic claims, stale recovery and compare-and-set finalization; moved AI provider work outside database sessions, made manual/ingest/idle backlog limits explicit and added revision 0009 plus concurrency, failure-atomicity and transaction-boundary regressions.
+- **2026-07-29 / v0.26**: Removed the advertised but unused cross-scope `can_learn` API and column through revision 0010, preserved destination query permissions and source learning-policy enforcement, rejected obsolete/unknown command keys before mutation and corrected active roadmap terminology to retrieval-only profiles.
+- **2026-07-29 / v0.27**: Unified every chat and embedding call behind an immutable safe telemetry record, persisted failed-call usage only after business rollback or summary-claim release in a separate short transaction, excluded raw provider exception text and added message/query/summary failure-atomicity regressions; full verification passed with 202 tests, 1 skipped and 81.38% branch coverage.
+- **2026-07-29 / v0.28**: Added revision 0011 and validated per-scope canonical snapshots with exhaustive item/provider/prompt fingerprints, dirty-scope mutation wiring, zero-call unchanged reuse, forced rebuilds, concurrent-drift retries, last-valid failure retention, corrupt-row recovery and deterministic stale-scope removal; migration drift, static checks and full verification passed with 207 tests, 1 skipped and 81.59% branch coverage.
+- **2026-07-29 / v0.29**: Added revision 0012 with normalized AI usage scope and composite usage/event indexes, safely backfilled supported legacy scope metadata, moved status counts/errors/latency/operation totals into SQL with correct chat-topic hierarchy and verified representative SQLite query plans; full verification passed with 211 tests, 1 skipped and 81.53% branch coverage.
+- **2026-07-29 / v0.30**: Streamed JSONL and supported Telegram JSON imports with pinned `ijson==3.5.1`, 512 MiB/100,000-row safeguards, retry-safe independently audited 100-row checkpoints and provider work outside write transactions; added primary-key export paging, batched scope/source hydration, incremental CLI writes and UTF-8-safe Telegram document streaming. Frozen lock, Ruff, ty and 125 focused transfer tests passed; full verification passed with 218 tests, 1 skipped and 81.38% branch coverage.
+- **2026-07-29 / v0.31**: Began the behavior-preserving Plan 020 hotspot split: repository implementations moved under cohesive `db.repos` modules behind the unchanged `db.repositories` facade; shared memory contracts, streaming transfer and provider-operation/telemetry logic moved behind `MemoryService` delegates; architecture and compatibility inventory tests now record the landed boundaries. Whole-project Ruff format/lint and `ty` passed, and the fresh offline checkpoint passed with 222 tests and 1 skipped; Telegram router families and the remaining MemoryService slices remain explicitly pending.

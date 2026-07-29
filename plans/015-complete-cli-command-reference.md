@@ -2,6 +2,7 @@
 > **Executor instructions**: Follow each step and gate, keep docs as canonical human-facing material, and update plans/README.md when complete unless a reviewer owns it.
 > **Drift check (run first)**: <code>git diff --stat beda837..HEAD -- src/pzp_ai_bot/main.py docs/commands.md tests/test_deployment_artifacts.py tests/test_cli.py PLAN.md</code>.
 ## Status
+- **Status**: DONE
 - **Audit finding**: 15
 - **Priority**: P3
 - **Effort**: S
@@ -19,10 +20,12 @@ README.md directs operators to docs/commands.md as the command reference, but it
 ## Commands you will need
 | Purpose | Command | Expected on success |
 |---|---|---|
-| CLI/artifact tests | <code>.\.venv\Scripts\python.exe -m pytest -q tests/test_cli.py tests/test_deployment_artifacts.py</code> | all pass |
-| CLI help | <code>.\.venv\Scripts\pzp-bot.exe --help</code> | exit 0 and lists registered commands |
-| Format/lint/type | <code>.\.venv\Scripts\ruff.exe format --check .; .\.venv\Scripts\ruff.exe check .; .\.venv\Scripts\ty.exe check</code> | each exits 0 |
-| Full tests | <code>.\.venv\Scripts\python.exe -m pytest -q</code> | all offline tests pass |
+| CLI/artifact tests | <code>uv run pytest -q tests/test_cli.py tests/test_deployment_artifacts.py</code> | all pass |
+| CLI help | <code>uv run pzp-bot --help</code> | exit 0 and lists registered commands |
+| Format/lint/type | <code>uv run ruff format --check .; uv run ruff check .; uv run ty check</code> | each exits 0 |
+| Full tests | <code>uv run pytest -q</code> | all offline tests pass |
+## Implementation result
+The live Typer inventory regression first reported exactly `export-memory`, `import-jsonl`, `migrate`, `polling`, `summarize-now` and `webhook` as missing. The CLI reference now documents all six with their principal options, mutating/long-running/provider/sensitive-data cautions and links to canonical guidance. `uv run pzp-bot --help`, the 14-test CLI/artifact target, Ruff format/lint, `ty` and the complete 180-passed/1-skipped offline suite passed on 2026-07-29.
 ## Scope
 **In scope**:
 - docs/commands.md
@@ -58,10 +61,10 @@ Run CLI help, targeted tests, format, lint, ty, and full tests.
 - No long-running or destructive command is executed.
 - Existing CLI behavior tests remain unchanged and pass.
 ## Done criteria
-- [ ] All registered commands appear in docs/commands.md.
-- [ ] Missing future commands fail a stable inventory test.
-- [ ] Operational cautions and canonical-doc links are present without duplication.
-- [ ] PLAN and all gates pass.
+- [x] All registered commands appear in docs/commands.md.
+- [x] Missing future commands fail a stable inventory test.
+- [x] Operational cautions and canonical-doc links are present without duplication.
+- [x] PLAN and all gates pass.
 ## STOP conditions
 - Typer's inspected command API is unstable in the pinned version and requires private internals likely to break; use a small explicit exported registry in main.py only with a separately reviewed source change.
 - A command's behavior cannot be documented from source/tests without executing a destructive path.

@@ -15,6 +15,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -23,13 +24,31 @@ class Base(DeclarativeBase):
     pass
 
 
+MESSAGE_MAIN_THREAD_SENTINEL = -1
+
+
 class Message(Base):
     __tablename__ = "messages"
     __table_args__ = (
         UniqueConstraint(
             "chat_id", "message_thread_id", "telegram_message_id", name="uq_msg_scope"
         ),
+        Index(
+            "uq_messages_logical_scope",
+            "chat_id",
+            text(f"COALESCE(message_thread_id, {MESSAGE_MAIN_THREAD_SENTINEL})"),
+            "telegram_message_id",
+            unique=True,
+        ),
         Index("ix_messages_scope_created", "chat_id", "message_thread_id", "created_at"),
+        Index(
+            "ix_messages_summary_claim",
+            "learned",
+            "summarized_at",
+            "chat_id",
+            "message_thread_id",
+            "summary_claimed_at",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -50,6 +69,10 @@ class Message(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ingested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     summarized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    summary_claim_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    summary_claimed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class KnowledgeItem(Base):
@@ -66,6 +89,24 @@ class KnowledgeItem(Base):
     source_message_ids: Mapped[list[int]] = mapped_column(JSON, nullable=False, default=list)
     metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class CanonicalScopeSnapshot(Base):
+    __tablename__ = "canonical_scope_snapshots"
+    __table_args__ = (UniqueConstraint("scope_key", name="uq_canonical_scope_snapshots_scope_key"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    scope_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    chat_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    message_thread_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    item_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    entries_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    provider_profile: Mapped[str] = mapped_column(String(64), nullable=False)
+    model: Mapped[str] = mapped_column(String(255), nullable=False)
+    reasoning_level: Mapped[str] = mapped_column(String(32), nullable=False)
+    prompt_version: Mapped[str] = mapped_column(String(64), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
@@ -226,7 +267,6 @@ class MemoryScopePermission(Base):
     source_chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     source_thread_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     can_query: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    can_learn: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     updated_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
@@ -316,6 +356,16 @@ class SettingsChallenge(Base):
 
 class BotEvent(Base):
     __tablename__ = "bot_events"
+    __table_args__ = (
+        Index(
+            "ix_bot_events_type_scope_created_at",
+            "event_type",
+            "chat_id",
+            "message_thread_id",
+            "created_at",
+        ),
+        Index("ix_bot_events_scope_created_at", "chat_id", "message_thread_id", "created_at"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     event_type: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -328,8 +378,15 @@ class BotEvent(Base):
 
 class AIUsage(Base):
     __tablename__ = "ai_usage"
+    __table_args__ = (
+        Index("ix_ai_usage_scope_created_at", "chat_id", "message_thread_id", "created_at"),
+        Index("ix_ai_usage_operation_created_at", "operation", "created_at"),
+        Index("ix_ai_usage_error_created_at", "error", "created_at"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    chat_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    message_thread_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     provider: Mapped[str] = mapped_column(String(64), nullable=False)
     model: Mapped[str] = mapped_column(String(255), nullable=False)
     operation: Mapped[str] = mapped_column(String(64), nullable=False)

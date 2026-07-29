@@ -16,8 +16,14 @@ def cosine_similarity(left: Sequence[float], right: Sequence[float]) -> float:
     if len(left) != len(right) or not left:
         return 0.0
     left_n = normalize(left)
+    return normalized_cosine_similarity(left_n, right)
+
+
+def normalized_cosine_similarity(normalized_left: Sequence[float], right: Sequence[float]) -> float:
+    if len(normalized_left) != len(right) or not normalized_left:
+        return 0.0
     right_n = normalize(right)
-    return sum(a * b for a, b in zip(left_n, right_n, strict=True))
+    return sum(a * b for a, b in zip(normalized_left, right_n, strict=True))
 
 
 def encode_vector(vector: Sequence[float]) -> bytes:

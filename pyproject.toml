@@ -1,6 +1,6 @@
 [project]
 name = "pzp-ai"
-version = "0.9.0"
+version = "0.10.0"
 description = "Telegram group AI memory assistant"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -10,6 +10,7 @@ dependencies = [
   "alembic==1.18.5",
   "fastapi==0.140.13",
   "httpx==0.28.1",
+  "ijson==3.5.1",
   "numpy==2.5.1",
   "openai==2.50.0",
   "orjson==3.11.9",
@@ -74,6 +75,10 @@ markers = [
 [tool.coverage.run]
 branch = true
 source = ["pzp_ai_bot"]
+
+[tool.coverage.report]
+fail_under = 78
+show_missing = true
 
 [tool.ty.environment]
 python-version = "3.12"

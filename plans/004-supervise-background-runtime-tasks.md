@@ -2,6 +2,7 @@
 > **Executor instructions**: Follow every step, run every gate, and update plans/README.md when done unless a reviewer owns it.
 > **Drift check (run first)**: <code>git diff --stat beda837..HEAD -- src/pzp_ai_bot/telegram/scheduler.py src/pzp_ai_bot/telegram/webhook.py src/pzp_ai_bot/telegram/polling.py src/pzp_ai_bot/telegram/safe_api.py tests/test_operations.py tests/test_webhook.py tests/test_telegram_integration.py docs/operations.md docs/deployment.md PLAN.md</code>.
 ## Status
+- **Implementation status**: DONE (2026-07-29)
 - **Audit finding**: 4
 - **Priority**: P1
 - **Effort**: M
@@ -79,13 +80,15 @@ Run all command-table checks.
 - Cover fail-once/recover, repeated failures/backoff cap, cancellation during sleep, cancellation during work, already-dead task shutdown, health 200, and health 503.
 - Assert logged/returned diagnostics contain task and exception type but not raw exception text or secrets.
 ## Done criteria
-- [ ] One ordinary Exception cannot permanently kill either loop.
-- [ ] CancelledError exits promptly.
-- [ ] Backoff is bounded and deterministic under tests.
-- [ ] Webhook health returns 503 when a critical task is dead.
-- [ ] Shutdown handles all task states and closes owned resources.
-- [ ] Operations/deployment docs and PLAN.md match behavior.
-- [ ] Targeted and full gates pass.
+- [x] One ordinary Exception cannot permanently kill either loop.
+- [x] CancelledError exits promptly.
+- [x] Backoff is bounded and deterministic under tests.
+- [x] Webhook health returns 503 when a critical task is dead.
+- [x] Shutdown handles all task states and closes owned resources.
+- [x] Operations/deployment docs and PLAN.md match behavior.
+- [x] Targeted and full gates pass.
+
+Verification on 2026-07-29 used `uv run`: fail-once recovery, repeated-failure backoff capping, cancellation during sleep and work, running/already-failed shutdown, webhook HTTP 200/503 health and polling lifecycle tests passed; the complete scheduler/webhook/Telegram integration target passed, Ruff format and lint passed, `ty check` passed, and the full offline pytest suite passed.
 ## STOP conditions
 - The host/runtime already provides a different supervisor that would result in nested restart loops.
 - Reliable health requires a new external dependency.

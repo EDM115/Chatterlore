@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -41,12 +42,19 @@ class RecordingProvider:
 
     def __init__(self) -> None:
         self.prompts: list[str] = []
+        self.reasoning_efforts: list[str | None] = []
 
     async def generate(
-        self, messages, *, temperature: float = 0.2, max_tokens: int = 700
+        self,
+        messages,
+        *,
+        temperature: float = 0.2,
+        max_tokens: int = 700,
+        reasoning_effort: str | None = None,
     ) -> ChatResult:
         joined = "\n".join(message.content for message in messages)
         self.prompts.append(joined)
+        self.reasoning_efforts.append(reasoning_effort)
         return ChatResult(
             content="recorded answer",
             model=self.model,
@@ -56,6 +64,15 @@ class RecordingProvider:
 
     async def embed(self, texts):
         return [[1.0, 0.0, 0.0] for _text in texts]
+
+
+class FailingEmbeddingProvider(RecordingProvider):
+    def __init__(self, sentinel: str) -> None:
+        super().__init__()
+        self.sentinel = sentinel
+
+    async def embed(self, texts):
+        raise RuntimeError(f"provider leaked {self.sentinel}")
 
 
 class StaticRegistry:
@@ -103,7 +120,7 @@ async def test_openai_compatible_retries_and_redacts_chat_and_embedding_payloads
     provider = OpenAICompatibleProvider(
         api_key="sk-test",
         base_url="https://example.test/v1",
-        chat_model="chat-a",
+        chat_model="gpt-5.6-terra",
         embedding_model="embed-a",
         retry_attempts=2,
         retry_backoff_seconds=0,
@@ -121,7 +138,8 @@ async def test_openai_compatible_retries_and_redacts_chat_and_embedding_payloads
                     'json={"password":"hunter2","api_key":"abcdefghi"}'
                 ),
             )
-        ]
+        ],
+        reasoning_effort="medium",
     )
     vectors = await provider.embed(
         ['token:secret2 user@example.com ACME-456 json={"secret":"embed-secret"}']
@@ -132,6 +150,8 @@ async def test_openai_compatible_retries_and_redacts_chat_and_embedding_payloads
     assert len(chat_create.calls) == 2
     assert len(embedding_create.calls) == 2
     chat_payload = chat_create.calls[1]["messages"][0]["content"]
+    assert chat_create.calls[1]["model"] == "gpt-5.6-terra"
+    assert chat_create.calls[1]["reasoning_effort"] == "medium"
     embedding_payload = embedding_create.calls[1]["input"][0]
     assert "me@example.com" not in chat_payload
     assert "+1 415 555 2671" not in chat_payload
@@ -170,6 +190,7 @@ def test_provider_profile_missing_openai_key_fails_closed() -> None:
 
 
 def test_doctor_reports_missing_openai_key(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("AI_PROVIDER", "openai_compatible")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setenv("DB_URL", f"sqlite+aiosqlite:///{tmp_path / 'doctor.db'}")
@@ -206,12 +227,84 @@ async def test_embedding_usage_and_insufficient_context_are_recorded(context) ->
     operations = [usage.operation for usage in usages]
     assert "embed_query" in operations
     assert "embed_message" in operations
+    assert operations.count("embed_query") == 2
+    assert operations.count("embed_message") == 1
     embed_message = next(usage for usage in usages if usage.operation == "embed_message")
     embed_metadata = embed_message.metadata_json
     assert embed_metadata is not None
     assert embed_metadata["count"] == 1
     assert embed_metadata["dimensions"] == context.settings.fake_embedding_dimensions
     assert embed_metadata["provider_profile"] == "default"
+
+
+@pytest.mark.asyncio
+async def test_failed_message_embedding_persists_one_safe_usage_without_partial_state(
+    context,
+) -> None:
+    scope = Scope(-100457, None)
+    sentinel = "PRIVATE-EMBED-MESSAGE-SENTINEL"
+    provider = FailingEmbeddingProvider(sentinel)
+    context.memory.chat_provider = provider
+    context.memory.embedding_provider = provider
+    context.memory.provider_registry = StaticRegistry(context.settings, provider)
+    await context.memory.set_learning(scope, True, updated_by=111)
+
+    with pytest.raises(RuntimeError, match=sentinel):
+        await context.memory.ingest(
+            IncomingMessage(
+                telegram_message_id=1,
+                scope=scope,
+                user_id=222,
+                username="failure",
+                text="Failed message embedding must not persist.",
+                created_at=datetime(2026, 7, 29, tzinfo=UTC),
+            )
+        )
+
+    async with session_scope(context.session_factory) as session:
+        usages = list(
+            (
+                await session.scalars(select(AIUsage).where(AIUsage.operation == "embed_message"))
+            ).all()
+        )
+    assert len(usages) == 1
+    usage = usages[0]
+    assert usage.error == "RuntimeError: provider operation failed"
+    assert usage.metadata_json is not None
+    assert usage.metadata_json["error_type"] == "RuntimeError"
+    assert usage.metadata_json["scope"] == scope.key
+    assert sentinel not in f"{usage.error} {usage.metadata_json}"
+    status = await context.memory.memory_status(scope)
+    assert status.messages == 0
+    assert status.embeddings == 0
+
+
+@pytest.mark.asyncio
+async def test_failed_query_embedding_persists_one_safe_usage_and_returns_no_results(
+    context,
+) -> None:
+    scope = Scope(-100458, None)
+    await context.memory.remember(scope, "Durable query target.")
+    sentinel = "PRIVATE-EMBED-QUERY-SENTINEL"
+    provider = FailingEmbeddingProvider(sentinel)
+    context.memory.chat_provider = provider
+    context.memory.embedding_provider = provider
+    context.memory.provider_registry = StaticRegistry(context.settings, provider)
+
+    with pytest.raises(RuntimeError, match=sentinel):
+        await context.memory.search(scope, "query text that must not enter telemetry")
+
+    async with session_scope(context.session_factory) as session:
+        usages = list(
+            (await session.scalars(select(AIUsage).where(AIUsage.operation == "embed_query"))).all()
+        )
+    assert len(usages) == 1
+    usage = usages[0]
+    assert usage.error == "RuntimeError: provider operation failed"
+    assert usage.metadata_json is not None
+    assert usage.metadata_json["error_type"] == "RuntimeError"
+    assert usage.metadata_json["scope"] == scope.key
+    assert sentinel not in f"{usage.error} {usage.metadata_json}"
 
 
 @pytest.mark.asyncio
@@ -251,6 +344,7 @@ async def test_system_prompt_model_reasoning_and_one_shot_metadata(context) -> N
     assert "Sources:" in answer
     assert "Use one-shot system behavior." in recorder.prompts[-1]
     assert "Reasoning level setting: low." in recorder.prompts[-1]
+    assert recorder.reasoning_efforts[-1] == "low"
     async with session_scope(context.session_factory) as session:
         usage = await session.scalar(
             select(AIUsage).where(AIUsage.operation == "ask").order_by(AIUsage.id.desc())

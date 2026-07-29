@@ -13,9 +13,10 @@ from typer.testing import CliRunner
 import pzp_ai_bot.main as main_module
 from pzp_ai_bot.app_context import build_context
 from pzp_ai_bot.config import get_settings
+from pzp_ai_bot.db.session import upgrade_schema
 from pzp_ai_bot.main import app
 from pzp_ai_bot.memory.scope import Scope
-from pzp_ai_bot.memory.service import IncomingMessage
+from pzp_ai_bot.memory.service import IncomingMessage, MemoryService
 
 runner = CliRunner()
 
@@ -62,7 +63,252 @@ def test_migrate_uses_alembic_revision(monkeypatch: pytest.MonkeyPatch, tmp_path
     assert result.exit_code == 0, result.output
     with sqlite3.connect(db_path) as connection:
         revision = connection.execute("select version_num from alembic_version").fetchone()
-    assert revision[0].startswith("0006_")
+        telegram_identifier_types = {
+            (table, column): next(
+                row[2]
+                for row in connection.execute(f"pragma table_info({table})")
+                if row[1] == column
+            )
+            for table, column in (
+                ("bot_events", "chat_id"),
+                ("bot_events", "user_id"),
+                ("embeddings", "chat_id"),
+                ("knowledge_items", "chat_id"),
+                ("learning_policies", "chat_id"),
+                ("learning_policies", "user_id"),
+                ("learning_policies", "updated_by"),
+                ("messages", "chat_id"),
+                ("messages", "user_id"),
+            )
+        }
+        logical_index_sql = connection.execute(
+            """
+            select sql from sqlite_master
+            where type = 'index' and name = 'uq_messages_logical_scope'
+            """
+        ).fetchone()
+        canonical_snapshot_columns = {
+            row[1] for row in connection.execute("pragma table_info(canonical_scope_snapshots)")
+        }
+    assert revision[0].startswith("0012_")
+    assert {
+        "scope_key",
+        "chat_id",
+        "message_thread_id",
+        "item_fingerprint",
+        "entries_json",
+        "provider",
+        "provider_profile",
+        "model",
+        "reasoning_level",
+        "prompt_version",
+        "updated_at",
+    } <= canonical_snapshot_columns
+    assert set(telegram_identifier_types.values()) == {"BIGINT"}
+    assert logical_index_sql is not None
+    assert "COALESCE(message_thread_id, -1)" in logical_index_sql[0]
+    with sqlite3.connect(db_path) as connection:
+        message_columns = {row[1] for row in connection.execute("pragma table_info(messages)")}
+        claim_index = connection.execute(
+            """
+            select name from sqlite_master
+            where type = 'index' and name = 'ix_messages_summary_claim'
+            """
+        ).fetchone()
+        permission_columns = {
+            row[1] for row in connection.execute("pragma table_info(memory_scope_permissions)")
+        }
+    assert {"summary_claim_token", "summary_claimed_at"}.issubset(message_columns)
+    assert claim_index == ("ix_messages_summary_claim",)
+    assert "can_query" in permission_columns
+    assert "can_learn" not in permission_columns
+
+
+def test_profile_permission_migration_preserves_query_values(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    db_path = configure_cli_env(monkeypatch, tmp_path)
+    settings = get_settings()
+    upgrade_schema(settings, "0009_summary_claims")
+    with sqlite3.connect(db_path) as connection:
+        connection.executemany(
+            """
+            insert into memory_scope_permissions (
+                destination_chat_id, destination_thread_id,
+                source_chat_id, source_thread_id,
+                can_query, can_learn, updated_at
+            ) values (?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (-100800, 1, -100801, 2, 1, 1, "2026-07-29 12:00:00"),
+                (-100800, 1, -100802, 3, 0, 1, "2026-07-29 12:00:00"),
+            ],
+        )
+        connection.commit()
+
+    upgrade_schema(settings)
+
+    with sqlite3.connect(db_path) as connection:
+        revision = connection.execute("select version_num from alembic_version").fetchone()
+        permission_columns = {
+            row[1] for row in connection.execute("pragma table_info(memory_scope_permissions)")
+        }
+        permissions = connection.execute(
+            """
+            select source_chat_id, can_query
+            from memory_scope_permissions
+            order by source_chat_id
+            """
+        ).fetchall()
+    assert revision[0].startswith("0012_")
+    assert "can_learn" not in permission_columns
+    assert permissions == [(-100802, 0), (-100801, 1)]
+
+
+def test_telemetry_scope_migration_backfills_supported_legacy_values(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    db_path = configure_cli_env(monkeypatch, tmp_path)
+    settings = get_settings()
+    upgrade_schema(settings, "0011_canonical_scope_snapshots")
+    metadata_values = [
+        {"scope": "-100910:main"},
+        {"scope": "-100910:7"},
+        {"scope": "all:main"},
+        {},
+        {"scope": "not-a-scope"},
+    ]
+    with sqlite3.connect(db_path) as connection:
+        for index, metadata in enumerate(metadata_values, start=1):
+            connection.execute(
+                """
+                insert into ai_usage (
+                    id, provider, model, operation, latency_ms, metadata_json, created_at
+                ) values (?, 'fake', 'fake-chat', 'ask', ?, ?, '2026-07-29 12:00:00')
+                """,
+                (index, index * 10, json.dumps(metadata)),
+            )
+        connection.commit()
+
+    upgrade_schema(settings)
+
+    with sqlite3.connect(db_path) as connection:
+        revision = connection.execute("select version_num from alembic_version").fetchone()
+        scopes = connection.execute(
+            """
+            select chat_id, message_thread_id
+            from ai_usage
+            order by id
+            """
+        ).fetchall()
+        indexes = {
+            row[0]
+            for row in connection.execute(
+                """
+                select name from sqlite_master
+                where type = 'index' and (
+                    tbl_name = 'ai_usage' or tbl_name = 'bot_events'
+                )
+                """
+            )
+        }
+
+    assert revision[0].startswith("0012_")
+    assert scopes == [(-100910, None), (-100910, 7), (None, None), (None, None), (None, None)]
+    assert {
+        "ix_ai_usage_scope_created_at",
+        "ix_ai_usage_operation_created_at",
+        "ix_ai_usage_error_created_at",
+        "ix_bot_events_type_scope_created_at",
+        "ix_bot_events_scope_created_at",
+    } <= indexes
+
+
+def test_message_uniqueness_migration_reconciles_main_chat_duplicates(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    db_path = configure_cli_env(monkeypatch, tmp_path)
+    settings = get_settings()
+    upgrade_schema(settings, "0007_align_telegram_identifier_types")
+    with sqlite3.connect(db_path) as connection:
+        message_values = (
+            700,
+            -100700,
+            None,
+            222,
+            "duplicate",
+            "duplicate",
+            1,
+            "2026-07-29 12:00:00",
+            "2026-07-29 12:00:00",
+        )
+        for message_id in (10, 11):
+            connection.execute(
+                """
+                insert into messages (
+                    id, telegram_message_id, chat_id, message_thread_id, user_id,
+                    text, normalized_text, learned, created_at, ingested_at
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (message_id, *message_values),
+            )
+        embedding_values = [
+            (20, 10, "provider-a", "model-a"),
+            (21, 11, "provider-a", "model-a"),
+            (22, 11, "provider-b", "model-b"),
+        ]
+        for embedding_id, target_id, provider, model in embedding_values:
+            connection.execute(
+                """
+                insert into embeddings (
+                    id, target_type, target_id, chat_id, message_thread_id,
+                    provider, model, dimension, vector, created_at
+                ) values (?, 'message', ?, -100700, null, ?, ?, 1, ?, ?)
+                """,
+                (
+                    embedding_id,
+                    target_id,
+                    provider,
+                    model,
+                    b"\x00\x00\x00\x00",
+                    "2026-07-29 12:00:00",
+                ),
+            )
+        connection.commit()
+
+    upgrade_schema(settings)
+
+    with sqlite3.connect(db_path) as connection:
+        revision = connection.execute("select version_num from alembic_version").fetchone()
+        messages = connection.execute(
+            """
+            select id from messages
+            where chat_id = -100700
+              and message_thread_id is null
+              and telegram_message_id = 700
+            """
+        ).fetchall()
+        embeddings = connection.execute(
+            """
+            select target_id, provider, model from embeddings
+            where target_type = 'message'
+            order by provider, model
+            """
+        ).fetchall()
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                """
+                insert into messages (
+                    telegram_message_id, chat_id, message_thread_id, user_id,
+                    text, normalized_text, learned, created_at, ingested_at
+                ) values (700, -100700, null, 222, 'duplicate', 'duplicate', 1, ?, ?)
+                """,
+                ("2026-07-29 12:00:00", "2026-07-29 12:00:00"),
+            )
+
+    assert revision[0].startswith("0012_")
+    assert messages == [(10,)]
+    assert embeddings == [(10, "provider-a", "model-a"), (10, "provider-b", "model-b")]
 
 
 def test_export_memory_rejects_invalid_format_and_scope(
@@ -190,6 +436,13 @@ def test_successful_cli_memory_commands(monkeypatch: pytest.MonkeyPatch, tmp_pat
     import_result = runner.invoke(
         app, ["import-jsonl", "--file", str(import_path), "--chat-id", str(scope.chat_id)]
     )
+
+    async def reject_full_export(
+        self: MemoryService, scope: Scope | None = None, fmt: str = "md"
+    ) -> str:
+        raise AssertionError("CLI export must consume incremental chunks")
+
+    monkeypatch.setattr(MemoryService, "export_memory", reject_full_export)
     export_result = runner.invoke(
         app, ["export-memory", "--format", "jsonl", "--scope", scope.key, "--out", str(export_path)]
     )

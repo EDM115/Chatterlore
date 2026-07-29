@@ -2,6 +2,7 @@
 > **Executor instructions**: Execute each step and gate, then update plans/README.md unless a reviewer owns it.
 > **Drift check (run first)**: <code>git diff --stat beda837..HEAD -- src/pzp_ai_bot/telegram/router.py tests/test_telegram_integration.py docs/commands.md PLAN.md</code>.
 ## Status
+- **Implementation status**: DONE (2026-07-29)
 - **Audit finding**: 7
 - **Priority**: P1
 - **Effort**: S
@@ -60,11 +61,13 @@ Run the commands above.
 - Unauthorized users remain rejected before parsing.
 - Error responses use safe_answer and do not echo secrets.
 ## Done criteria
-- [ ] Invalid input cannot change policy.
-- [ ] The existing strict parser is reused.
-- [ ] on/off and authorization behavior remain intact.
-- [ ] PLAN and any changed command docs are synchronized.
-- [ ] Targeted and full gates pass.
+- [x] Invalid input cannot change policy.
+- [x] The existing strict parser is reused.
+- [x] on/off and authorization behavior remain intact.
+- [x] PLAN and any changed command docs are synchronized.
+- [x] Targeted and full gates pass.
+
+Verification on 2026-07-29 used `uv run`: missing, mistyped and unrelated values were rejected without mutation, explicit on/off values each mutated once, unauthorized users were rejected before parsing, the complete Telegram integration suite passed, Ruff format and lint passed, `ty check` passed, and the full offline pytest suite passed.
 ## STOP conditions
 - _parse_on_off has changed to permissive fallback behavior.
 - A fix requires changing all boolean command semantics without a separate plan.

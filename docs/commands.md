@@ -23,7 +23,7 @@ This page is the command reference for Telegram admins, configured bot admins an
 - `/memory_status [scope=...]`: show scoped message, learned, skipped, knowledge, embedding, audit, pending-review and AI usage counts for a chat/topic or all scopes when run by a configured bot admin.
 - `/memory_scopes [scope=this_chat|all|<chat_id>:<thread_id>]`: list known chat/topic scopes, labels, learning status and message/knowledge counts so admins can discover topic allowlists.
 - `/memory_debug [scope=...] [message_id=N] [limit=N]`: explain why recent skipped messages were not learned without returning the skipped message text.
-- `/memory_export [md|jsonl] [scope=...]`: send a memory export file with readable scope/source metadata where available. Large exports are split into document parts below Telegram upload limits. Unknown formats, scopes, unauthorized foreign chat scopes or extra tokens are rejected with a usage/error message.
+- `/memory_export [md|jsonl] [scope=...]`: stream a memory export with readable scope/source metadata where available. Large exports are sent incrementally as deterministic numbered document parts below the 45 MiB safety threshold and Telegram's 50 MiB upload limit. Unknown formats, scopes, unauthorized foreign chat scopes or extra tokens are rejected with a usage/error message.
 - `/memory_prune [scope=...]`: apply configured raw-message and knowledge retention for a scope.
 - `/forget scope=this_topic|this_chat|all confirm=<token>`: delete memory after a confirmation round trip.
 
@@ -40,11 +40,11 @@ This page is the command reference for Telegram admins, configured bot admins an
 ## Reviews, Profiles And Templates
 
 - `/memory_reviews [scope=...]`: list pending review proposals for scopes with review-before-compact enabled.
-- `/memory_approve <review_id>`: approve a pending proposal and insert it as durable memory.
-- `/memory_reject <review_id>`: reject a pending proposal.
+- `/memory_approve <review_id>`: approve a pending proposal and insert it as durable memory after authorizing against the review's persisted owning scope.
+- `/memory_reject <review_id>`: reject a pending proposal after authorizing against the review's persisted owning scope.
 - `/memory_profiles`: list named cross-chat memory profiles.
 - `/memory_profile_set <name> sources=<scope,scope>`: create or replace a profile source scopes. This global cross-scope operation is restricted to configured bot admins.
-- `/memory_profile_allow <name> [scope=...] [enabled=on|off] [learn=on|off]`: allow or revoke a destination scope permission to query a profile source scopes. This global cross-scope operation is restricted to configured bot admins. Cross-chat retrieval also requires each source scope learning policy to be enabled.
+- `/memory_profile_allow <name> [scope=...] [enabled=on|off]`: allow or revoke a destination scope's permission to query a profile's source scopes. This global cross-scope operation is restricted to configured bot admins. Cross-chat retrieval also requires each source scope's own learning policy to be enabled. `learn=` and other unsupported keys are rejected without changing permission state.
 - `/memory_templates`: list built-in and custom summary templates.
 - `/memory_template_set <name> <prompt>`: create or update a reusable custom summary template. Custom template writes are restricted to configured bot admins.
 - `/system_prompts`: list built-in and custom answer system prompt templates.
@@ -55,7 +55,7 @@ This page is the command reference for Telegram admins, configured bot admins an
 - `/memory_settings [top_k=N] [summary_batch_size=N] [summary_model=name] [provider=name] [chat_model=name] [embedding_model=name] [reasoning=low|medium|high] [system_prompt=name] [raw_retention_days=N|off] [knowledge_retention_days=N|off] [review_before_compact=on|off]`: view or directly edit current-scope memory, provider, prompt and model settings.
 - `/settings [top_k=N] [summary_batch_size=N] [summary_model=name] [provider=name] [chat_model=name] [embedding_model=name] [reasoning=low|medium|high] [system_prompt=name] [raw_retention_days=N|off] [knowledge_retention_days=N|off] [review_before_compact=on|off]`: preview scoped setting changes and return a confirmation token. Re-run `/settings confirm=<token>` before expiry to apply and audit the change.
 - `/audit_events limit=N event_type=name scope=this_topic|this_chat|all`: review audit events. `scope=all` is restricted to configured bot admins.
-- `/runtime_settings reload=on`: force a safe runtime-settings refresh from Telegram. Runtime-setting reads and writes are restricted to configured bot admins because they affect global defaults.
+- `/runtime_settings [reload=on] [retrieval_candidate_limit=N] [key=value ...]`: view, edit or force a safe runtime-settings refresh from Telegram. Runtime-setting reads and writes are restricted to configured bot admins because they affect global defaults.
 - `/stats`: show global message, knowledge, embedding and event counts. `/stats scope=...` shows the richer scoped status view and requires admin access.
 - `/help`: show command help inside Telegram.
 
@@ -63,12 +63,18 @@ Configured `BOT_ADMINS` can administer every scope, including `scope=all` and ex
 
 ## CLI Reference
 
+- `pzp-bot migrate`: creates or upgrades the configured database schema through Alembic. This mutates the database; back up operator data and follow the migration guidance in [operations.md](operations.md) before running it against persistent state.
+- `pzp-bot polling`: clears any configured webhook and starts the long-running Telegram polling runtime. Complete [setup.md](setup.md) first and use [deployment.md](deployment.md) for runtime guidance.
+- `pzp-bot webhook`: registers the configured webhook and starts the long-running FastAPI webhook runtime. Configure and validate the webhook URL and secret as documented in [deployment.md](deployment.md).
+- `pzp-bot summarize-now [--scope all|<chat_id>|<chat_id>:<thread_id>]`: summarizes pending learned messages in each selected concrete scope and compacts canonical memory. This can invoke the configured AI provider and incur external cost or data transfer; review [privacy.md](privacy.md) before using an external provider.
+- `pzp-bot export-memory [--scope all|<chat_id>|<chat_id>:<thread_id>] [--format md|jsonl] [--out path]`: streams primary-key-ordered export chunks to a file or standard output without constructing a second complete payload. Treat either form as potentially sensitive and protect it according to [privacy.md](privacy.md).
+- `pzp-bot import-jsonl --file path --chat-id <id> [--thread-id <id>]`: incrementally validates and writes durable knowledge items into the selected chat/topic scope in independent 100-row checkpoints. Imports reject files over 512 MiB or 100,000 rows; a later malformed row or provider failure leaves earlier audited batches committed, and retrying skips their exact kind/content/source tuple. Review the input, target scope, provider cost and consent implications in [privacy.md](privacy.md) before importing.
 - `pzp-bot doctor`: checks configured provider profiles, missing OpenAI-compatible keys, missing local optional dependencies, SQLite parent write access and memory directory write access without starting Telegram.
-- `pzp-bot show-config`: prints non-secret runtime settings including provider profiles, default system prompt, reasoning level and admin-cache TTL. Credential-bearing database URLs are redacted before display.
+- `pzp-bot show-config`: prints non-secret runtime settings including provider profiles, default system prompt, reasoning level, retrieval candidate limit and admin-cache TTL. Credential-bearing database URLs are redacted before display.
 - `pzp-bot memory-status --scope all|<chat_id>|<chat_id>:<thread_id>`: prints the same scoped message/memory/AI usage status available through `/memory_status`.
-- `pzp-bot import-telegram-json --file result.json --chat-id <id> [--thread-id <id>]`: imports Telegram Desktop JSON exports or Bot API update dumps as learned raw-message memory for local backfill-free history loading.
+- `pzp-bot import-telegram-json --file result.json --chat-id <id> [--thread-id <id>]`: streams Telegram Desktop message arrays or Bot API update-dump arrays with `ijson==3.5.1`, then embeds and commits learned raw-message memory in independent 100-row checkpoints. The same 512 MiB and 100,000-row limits apply; unsupported shapes are rejected before business writes, while a later parse/provider failure preserves earlier audited batches for idempotent retry.
 - `pzp-bot audit-events --limit N [--event-type name] [--scope scope] [--format text|jsonl] [--out path]`: reviews or exports `bot_events`.
-- `pzp-bot runtime-settings [--reload] [--set key=value]...`: views, reloads or edits safe database-backed runtime settings.
+- `pzp-bot runtime-settings [--reload] [--set key=value]...`: views, reloads or edits safe database-backed runtime settings, including the positive `retrieval_candidate_limit` brute-force work cap.
 - `pzp-bot db-stats`: prints SQLite file size and table row counts.
 - `pzp-bot db-integrity`: runs `PRAGMA integrity_check` and exits non-zero unless SQLite reports `ok`.
 - `pzp-bot db-vacuum`: runs SQLite `VACUUM`.

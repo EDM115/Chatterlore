@@ -2,6 +2,7 @@
 > **Executor instructions**: Follow every step and verification gate. Update plans/README.md when complete unless a reviewer owns the index.
 > **Drift check (run first)**: <code>git diff --stat beda837..HEAD -- src/pzp_ai_bot/memory/service.py tests/test_memory_quality.py tests/test_ai_providers.py docs/privacy.md docs/operations.md PLAN.md</code>. Stop if the summarized/error flow no longer matches this plan.
 ## Status
+- **Implementation status**: DONE (2026-07-29)
 - **Audit finding**: 3
 - **Priority**: P1
 - **Effort**: M
@@ -72,13 +73,15 @@ Run format, lint, ty, targeted tests, and full tests.
 - Assert raw sentinel absence across KnowledgeItem, MemoryReviewItem, daily Markdown, MEMORY.md, bot_events, and AIUsage metadata.
 - Prove a subsequent retry succeeds once and source IDs remain correct.
 ## Done criteria
-- [ ] Provider failure produces no synthetic raw summary.
-- [ ] Failed source messages remain unsummarized and retryable.
-- [ ] No knowledge, review proposal, or Markdown content is created on failure.
-- [ ] Diagnostics are content-free and scoped.
-- [ ] Completion counts distinguish attempts from successful summaries.
-- [ ] Retry regression passes for review mode on and off.
-- [ ] Docs, PLAN, targeted tests, and full gates pass.
+- [x] Provider failure produces no synthetic raw summary.
+- [x] Failed source messages remain unsummarized and retryable.
+- [x] No knowledge, review proposal, or Markdown content is created on failure.
+- [x] Diagnostics are content-free and scoped.
+- [x] Completion counts distinguish attempts from successful summaries.
+- [x] Retry regression passes for review mode on and off.
+- [x] Docs, PLAN, targeted tests, and full gates pass.
+
+Verification on 2026-07-29 used `uv run`: exception and empty-response regressions passed with review mode both off and on, the ingest completion-count regression passed, the complete `tests/test_memory_quality.py` and `tests/test_ai_providers.py` target passed, Ruff format and lint passed, `ty check` passed, and the full offline pytest suite passed.
 ## STOP conditions
 - A caller requires a string on failure and would persist it without checking outcome status.
 - Safe diagnostics cannot be stored without raw content or secrets.

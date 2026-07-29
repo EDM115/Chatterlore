@@ -2,6 +2,7 @@
 > **Executor instructions**: Follow each step and gate, use the authorized uv runtime rather than system Python, and update plans/README.md when complete unless a reviewer owns it.
 > **Drift check (run first)**: <code>git diff --stat beda837..HEAD -- pyproject.toml uv.lock Dockerfile .github/workflows/ci.yml tests/test_deployment_artifacts.py docs/deployment.md docs/testing.md PLAN.md</code>.
 ## Status
+- **Status**: DONE
 - **Audit finding**: 12
 - **Priority**: P2
 - **Effort**: S
@@ -28,10 +29,12 @@ Current Docker layer:
 | Show authorized uv | <code>uv --version</code> or the operator-approved WinGet uv path | prints one version; record it |
 | Lock validation | <code>uv lock --check</code> | exit 0; lock is current |
 | Frozen dev sync | <code>uv sync --frozen --extra dev</code> | exit 0 without changing uv.lock |
-| Artifact tests | <code>.\.venv\Scripts\python.exe -m pytest -q tests/test_deployment_artifacts.py</code> | all pass |
-| Format/lint/type | <code>.\.venv\Scripts\ruff.exe format --check .; .\.venv\Scripts\ruff.exe check .; .\.venv\Scripts\ty.exe check</code> | each exits 0 |
-| Full tests | <code>.\.venv\Scripts\python.exe -m pytest -q</code> | all offline tests pass |
+| Artifact tests | <code>uv run pytest -q tests/test_deployment_artifacts.py</code> | all pass |
+| Format/lint/type | <code>uv run ruff format --check .; uv run ruff check .; uv run ty check</code> | each exits 0 |
+| Full tests | <code>uv run pytest -q</code> | all offline tests pass |
 If uv cannot execute in the sandbox, stop and ask for the explicit WinGet executable authorization; do not use system Python or guess a tool version.
+## Implementation result
+The authorized uv runtime reported 0.12.0, which is now pinned identically in GitHub Actions and Docker. CI checks the lock and frozen-syncs development dependencies; Docker copies `uv.lock` before source and performs frozen production syncs before and after project source is present. `uv lock --check`, `uv sync --frozen --extra dev`, six focused artifact tests, Ruff format/lint, `ty` and the complete 179-passed/1-skipped offline suite passed on 2026-07-29. The `uv.lock` SHA-256 remained `755DA756E2DA80E32E4912038A47754DA29C35A5325C57DA2C7AADB96F296746` with an empty working diff. Docker image execution was not claimed because Docker Desktop's Linux daemon was unavailable.
 ## Scope
 **In scope**:
 - pyproject.toml only if recording the chosen uv version there is supported by the live uv release
@@ -75,12 +78,12 @@ Run lock validation, artifact tests, format, lint, ty, and full tests.
 - Mutable legacy strings are absent.
 - Existing non-root/healthcheck/docker-smoke assertions remain.
 ## Done criteria
-- [ ] CI fails on lock drift and cannot silently rewrite uv.lock.
-- [ ] Docker installs exactly locked production dependencies.
-- [ ] uv itself is pinned consistently.
-- [ ] No unrelated dependency versions changed.
-- [ ] Deployment/testing docs and PLAN are accurate.
-- [ ] Artifact and full gates pass.
+- [x] CI fails on lock drift and cannot silently rewrite uv.lock.
+- [x] Docker installs exactly locked production dependencies.
+- [x] uv itself is pinned consistently.
+- [x] No unrelated dependency versions changed.
+- [x] Deployment/testing docs and PLAN are accurate.
+- [x] Artifact and full gates pass.
 ## STOP conditions
 - The authorized uv version cannot be determined.
 - Frozen sync exposes real pyproject/lock drift; report it rather than regenerating the lock opportunistically.

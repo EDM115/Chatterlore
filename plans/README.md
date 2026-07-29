@@ -5,26 +5,26 @@ Read a plan completely before editing, run its drift check first, and leave its 
 ## Plan index
 | Plan | Audit finding | Title | Priority | Effort | Depends on | Status |
 | --- | ---: | --- | --- | --- | --- | --- |
-| [001](001-authorize-review-decisions-by-scope.md) | 1 | Authorize every review decision against the review's owning scope | P1 | S | None | TODO |
-| [002](002-rebuild-markdown-from-committed-memory.md) | 2 | Make Markdown a privacy-correct projection of committed memory | P1 | L | None | TODO |
-| [003](003-keep-provider-failures-retryable.md) | 3 | Keep summarization failures retryable without persisting raw chat | P1 | M | None | TODO |
-| [004](004-supervise-background-runtime-tasks.md) | 4 | Keep background loops alive and make health reflect their state | P1 | M | None | TODO |
-| [005](005-validate-allow-admins-input.md) | 5 | Reject invalid allow-admins input without changing consent | P1 | S | None | TODO |
-| [006](006-gate-alembic-model-drift.md) | 6 | Fail CI when SQLAlchemy metadata drifts from Alembic history | P2 | S | None | TODO |
-| [007](007-enforce-concurrent-message-idempotency.md) | 7 | Enforce logical message uniqueness under concurrent SQLite writes | P1 | M | 006 | TODO |
-| [008](008-bound-and-claim-ai-work.md) | 8 | Bound AI batches, claim summary work atomically, and shorten database transactions | P1 | L | 002, 003, 006, 007 | TODO |
-| [009](009-remove-unused-cross-scope-learning-permission.md) | 9 | Remove advertised but unused cross-scope learning permission | P2 | M | 006 | TODO |
-| [010](010-persist-provider-failure-telemetry.md) | 10 | Persist provider failure telemetry after business rollback | P2 | M | 008 | TODO |
-| [011](011-bound-and-batch-retrieval.md) | 11 | Batch retrieval hydration and enforce a measured candidate bound | P2 | L | None | TODO |
-| [012](012-compact-only-dirty-scopes.md) | 12 | Canonicalize only dirty scopes and reuse committed snapshots | P2 | L | 002, 006, 008, 010 | TODO |
-| [013](013-make-lockfile-consumption-reproducible.md) | 13 | Make CI and Docker consume the uv lockfile immutably | P2 | S | None | TODO |
+| [001](001-authorize-review-decisions-by-scope.md) | 1 | Authorize every review decision against the review's owning scope | P1 | S | None | DONE |
+| [002](002-rebuild-markdown-from-committed-memory.md) | 2 | Make Markdown a privacy-correct projection of committed memory | P1 | L | None | DONE |
+| [003](003-keep-provider-failures-retryable.md) | 3 | Keep summarization failures retryable without persisting raw chat | P1 | M | None | DONE |
+| [004](004-supervise-background-runtime-tasks.md) | 4 | Keep background loops alive and make health reflect their state | P1 | M | None | DONE |
+| [005](005-validate-allow-admins-input.md) | 5 | Reject invalid allow-admins input without changing consent | P1 | S | None | DONE |
+| [006](006-gate-alembic-model-drift.md) | 6 | Fail CI when SQLAlchemy metadata drifts from Alembic history | P2 | S | None | DONE |
+| [007](007-enforce-concurrent-message-idempotency.md) | 7 | Enforce logical message uniqueness under concurrent SQLite writes | P1 | M | 006 | DONE |
+| [008](008-bound-and-claim-ai-work.md) | 8 | Bound AI batches, claim summary work atomically, and shorten database transactions | P1 | L | 002, 003, 006, 007 | DONE |
+| [009](009-remove-unused-cross-scope-learning-permission.md) | 9 | Remove advertised but unused cross-scope learning permission | P2 | M | 006 | DONE |
+| [010](010-persist-provider-failure-telemetry.md) | 10 | Persist provider failure telemetry after business rollback | P2 | M | 008 | DONE |
+| [011](011-bound-and-batch-retrieval.md) | 11 | Batch retrieval hydration and enforce a measured candidate bound | P2 | L | None | DONE |
+| [012](012-compact-only-dirty-scopes.md) | 12 | Canonicalize only dirty scopes and reuse committed snapshots | P2 | L | 002, 006, 008, 010 | DONE |
+| [013](013-make-lockfile-consumption-reproducible.md) | 13 | Make CI and Docker consume the uv lockfile immutably | P2 | S | None | DONE |
 | [014](014-reconcile-living-roadmap.md) | 14 | Reconcile `PLAN.md` with current repository and release gates | P2 | S | None | TODO |
-| [015](015-complete-cli-command-reference.md) | 15 | Make the canonical CLI reference complete and self-checking | P3 | S | None | TODO |
-| [016](016-enforce-coverage-regression-signal.md) | 16 | Turn existing coverage tooling into a conservative CI regression gate | P3 | S | None | TODO |
-| [017](017-load-policy-snapshots-once.md) | Additional A | Evaluate learning policy from one immutable snapshot per operation | P3 | S | None | TODO |
-| [018](018-aggregate-and-index-telemetry.md) | Additional B | Normalize telemetry scope, aggregate in SQL, and index audit queries | P3 | M | 006, 010 | TODO |
-| [019](019-stream-and-batch-bulk-transfer.md) | Additional C | Stream and batch memory imports and exports | P3 | L | 008, 013 | TODO |
-| [020](020-split-hotspots-behind-compatible-facades.md) | Additional D | Split service, repository, and router hotspots behind compatible facades | P3 | L | 001-005, 007-012, 017-019 | TODO |
+| [015](015-complete-cli-command-reference.md) | 15 | Make the canonical CLI reference complete and self-checking | P3 | S | None | DONE |
+| [016](016-enforce-coverage-regression-signal.md) | 16 | Turn existing coverage tooling into a conservative CI regression gate | P3 | S | None | DONE |
+| [017](017-load-policy-snapshots-once.md) | Additional A | Evaluate learning policy from one immutable snapshot per operation | P3 | S | None | DONE |
+| [018](018-aggregate-and-index-telemetry.md) | Additional B | Normalize telemetry scope, aggregate in SQL, and index audit queries | P3 | M | 006, 010 | DONE |
+| [019](019-stream-and-batch-bulk-transfer.md) | Additional C | Stream and batch memory imports and exports | P3 | L | 008, 013 | DONE |
+| [020](020-split-hotspots-behind-compatible-facades.md) | Additional D | Split service, repository, and router hotspots behind compatible facades | P3 | L | 001-005, 007-012, 017-019 | PARTIAL |
 ## Recommended execution order
 Wave A contains the independent safety fixes, gates, documentation repairs, and low-risk efficiency work: 001, 002, 003, 004, 005, 006, 011, 013, 015, 016, and 017. Plan 014 is also independent, but it is usually cheaper to execute it after an implementation batch so `PLAN.md` is reconciled once against the resulting state.
 Wave B starts after the migration drift gate exists: 007 and 009.

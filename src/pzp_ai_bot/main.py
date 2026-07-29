@@ -10,11 +10,12 @@ from urllib.parse import urlsplit, urlunsplit
 import typer
 from rich.console import Console
 
-from pzp_ai_bot.app_context import build_context
+from pzp_ai_bot.app_context import AppContext, build_context
 from pzp_ai_bot.config import Settings, get_settings
 from pzp_ai_bot.db.session import upgrade_schema
 from pzp_ai_bot.memory.scope import Scope, parse_scope
 from pzp_ai_bot.memory.service import (
+    MemoryExportFormat,
     audit_events_jsonl,
     format_audit_events,
     format_memory_status,
@@ -108,13 +109,26 @@ def export_memory(
         raise typer.BadParameter(str(exc)) from exc
     settings = get_settings()
     context = run(build_context(settings))
-    payload = run(context.memory.export_memory(None if parsed.is_global else parsed, fmt=fmt))
+    target_scope = None if parsed.is_global else parsed
     if out is not None:
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(payload, encoding="utf-8")
+        run(write_memory_export(context, target_scope, fmt=fmt, out=out))
         console.print(f"Wrote {out}")
         return
-    console.print(payload)
+    run(write_memory_export(context, target_scope, fmt=fmt, out=None))
+
+
+async def write_memory_export(
+    context: AppContext, scope: Scope | None, *, fmt: MemoryExportFormat, out: Path | None
+) -> None:
+    if out is not None:
+        with out.open("w", encoding="utf-8") as handle:
+            async for chunk in context.memory.export_memory_chunks(scope, fmt=fmt):
+                handle.write(chunk.text)
+        return
+    async for chunk in context.memory.export_memory_chunks(scope, fmt=fmt):
+        console.file.write(chunk.text)
+    console.file.flush()
 
 
 @app.command("import-jsonl")
@@ -246,7 +260,7 @@ def runtime_settings(
         unknown = sorted(
             set(updates)
             - set(parsed_updates)
-            - {"top_k", "provider", "system_prompt", "raw_retention_days"}
+            - {"candidate_limit", "top_k", "provider", "system_prompt", "raw_retention_days"}
         )
         if unknown:
             raise typer.BadParameter(f"unknown runtime setting: {unknown[0]}")
@@ -317,6 +331,7 @@ def show_config() -> None:
         "system_prompt_template": settings.system_prompt_template,
         "reasoning_level": settings.reasoning_level,
         "learning_default_enabled": settings.learning_default_enabled,
+        "retrieval_candidate_limit": settings.retrieval_candidate_limit,
         "runtime_settings_refresh_seconds": settings.runtime_settings_refresh_seconds,
         "admin_cache_ttl_seconds": settings.admin_cache_ttl_seconds,
         "forget_confirm_ttl_seconds": settings.forget_confirm_ttl_seconds,

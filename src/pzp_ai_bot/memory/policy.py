@@ -14,6 +14,85 @@ class LearnDecision:
     reason: str
 
 
+@dataclass(frozen=True, slots=True)
+class PolicyRule:
+    policy_type: str
+    enabled: bool
+    chat_id: int | None
+    message_thread_id: int | None
+    user_id: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class PolicySnapshot:
+    rules: tuple[PolicyRule, ...]
+
+    @classmethod
+    def from_policies(cls, policies: list[LearningPolicy]) -> PolicySnapshot:
+        return cls(
+            tuple(
+                PolicyRule(
+                    policy_type=policy.policy_type,
+                    enabled=policy.enabled,
+                    chat_id=policy.chat_id,
+                    message_thread_id=policy.message_thread_id,
+                    user_id=policy.user_id,
+                )
+                for policy in policies
+            )
+        )
+
+    def scope_enabled(self, scope: Scope, *, default: bool) -> bool:
+        topic = self._find("topic_learning", scope)
+        if scope.thread_id is not None and topic is not None:
+            return topic.enabled
+        chat = self._find("chat_learning", Scope(scope.chat_id, None))
+        if chat is not None:
+            return chat.enabled
+        global_policy = self._find("global_learning", Scope.global_scope())
+        if global_policy is not None:
+            return global_policy.enabled
+        return default
+
+    def user_denied(self, scope: Scope, user_id: int) -> bool:
+        return any(
+            rule.enabled
+            and rule.policy_type == "user_deny"
+            and rule.user_id == user_id
+            and _policy_matches_scope(rule, scope)
+            for rule in self.rules
+        )
+
+    def user_allowed(self, scope: Scope, user_id: int) -> bool:
+        return any(
+            rule.enabled
+            and rule.policy_type == "user_allow"
+            and rule.user_id == user_id
+            and _policy_matches_scope(rule, scope)
+            for rule in self.rules
+        )
+
+    def has_allowlist(self, scope: Scope) -> bool:
+        return any(
+            rule.enabled and rule.policy_type == "user_allow" and _policy_matches_scope(rule, scope)
+            for rule in self.rules
+        )
+
+    def admins_allowed(self, scope: Scope) -> bool:
+        return any(
+            rule.enabled
+            and rule.policy_type == "allow_admins"
+            and _policy_matches_scope(rule, scope)
+            for rule in self.rules
+        )
+
+    def _find(self, policy_type: str, scope: Scope) -> PolicyRule | None:
+        for rule in self.rules:
+            if rule.policy_type == policy_type and _same_scope(rule, scope):
+                return rule
+        return None
+
+
 class PolicyService:
     """Evaluates chat/topic/user learning policy for a single DB session."""
 
@@ -58,6 +137,9 @@ class PolicyService:
             policy_type="allow_admins", enabled=enabled, scope=scope, updated_by=updated_by
         )
 
+    async def load_snapshot(self) -> PolicySnapshot:
+        return PolicySnapshot.from_policies(await self.repository.list_policies())
+
     async def decide(
         self,
         *,
@@ -74,91 +156,42 @@ class PolicyService:
             return LearnDecision(False, "command")
         if not text.strip():
             return LearnDecision(False, "empty_text")
-        if not await self._scope_enabled(scope):
+        snapshot = await self.load_snapshot()
+        if not snapshot.scope_enabled(scope, default=self._learning_default_enabled()):
             return LearnDecision(False, "learning_disabled")
         if user_id is None:
             return LearnDecision(False, "missing_user")
-        if await self._user_denied(scope, user_id):
+        if snapshot.user_denied(scope, user_id):
             return LearnDecision(False, "user_denied")
-        if await self._has_allowlist(scope):
-            if await self._user_allowed(scope, user_id):
+        if snapshot.has_allowlist(scope):
+            if snapshot.user_allowed(scope, user_id):
                 return LearnDecision(True, "allowed")
-            if await self._admins_allowed(scope) and is_chat_admin:
+            if snapshot.admins_allowed(scope) and is_chat_admin:
                 return LearnDecision(True, "allowed_admin")
             return LearnDecision(False, "user_not_allowed")
-        if await self._admins_allowed(scope):
+        if snapshot.admins_allowed(scope):
             return LearnDecision(True, "allowed_admin" if is_chat_admin else "allowed")
         return LearnDecision(True, "allowed")
 
-    async def status(self, scope: Scope) -> dict[str, bool | str]:
-        enabled = await self._scope_enabled(scope)
-        admins = await self._admins_allowed(scope)
+    async def status(
+        self, scope: Scope, *, snapshot: PolicySnapshot | None = None
+    ) -> dict[str, bool | str]:
+        effective_snapshot = snapshot if snapshot is not None else await self.load_snapshot()
+        enabled = effective_snapshot.scope_enabled(scope, default=self._learning_default_enabled())
+        admins = effective_snapshot.admins_allowed(scope)
         return {"scope": scope.key, "learning_enabled": enabled, "allow_admins": admins}
 
-    async def _scope_enabled(self, scope: Scope) -> bool:
-        policies = await self.repository.list_policies()
-        topic = _find_policy(policies, "topic_learning", scope)
-        if scope.thread_id is not None and topic is not None:
-            return topic.enabled
-        chat = _find_policy(policies, "chat_learning", Scope(scope.chat_id, None))
-        if chat is not None:
-            return chat.enabled
-        global_policy = _find_policy(policies, "global_learning", Scope.global_scope())
-        if global_policy is not None:
-            return global_policy.enabled
+    def _learning_default_enabled(self) -> bool:
         if self.learning_default_enabled is not None:
             return self.learning_default_enabled
         return self.settings.learning_default_enabled
 
-    async def _user_denied(self, scope: Scope, user_id: int) -> bool:
-        policies = await self.repository.list_policies()
-        return any(
-            p.enabled
-            and p.policy_type == "user_deny"
-            and p.user_id == user_id
-            and _policy_matches_scope(p, scope)
-            for p in policies
-        )
 
-    async def _user_allowed(self, scope: Scope, user_id: int) -> bool:
-        policies = await self.repository.list_policies()
-        return any(
-            p.enabled
-            and p.policy_type == "user_allow"
-            and p.user_id == user_id
-            and _policy_matches_scope(p, scope)
-            for p in policies
-        )
-
-    async def _has_allowlist(self, scope: Scope) -> bool:
-        policies = await self.repository.list_policies()
-        return any(
-            p.enabled and p.policy_type == "user_allow" and _policy_matches_scope(p, scope)
-            for p in policies
-        )
-
-    async def _admins_allowed(self, scope: Scope) -> bool:
-        policies = await self.repository.list_policies()
-        return any(
-            p.enabled and p.policy_type == "allow_admins" and _policy_matches_scope(p, scope)
-            for p in policies
-        )
-
-
-def _find_policy(
-    policies: list[LearningPolicy], policy_type: str, scope: Scope
-) -> LearningPolicy | None:
-    for policy in policies:
-        if policy.policy_type == policy_type and _same_scope(policy, scope):
-            return policy
-    return None
-
-
-def _same_scope(policy: LearningPolicy, scope: Scope) -> bool:
+def _same_scope(policy: PolicyRule, scope: Scope) -> bool:
     return policy.chat_id == scope.chat_id and policy.message_thread_id == scope.thread_id
 
 
-def _policy_matches_scope(policy: LearningPolicy, scope: Scope) -> bool:
+def _policy_matches_scope(policy: PolicyRule, scope: Scope) -> bool:
     if policy.chat_id is None:
         return True
     if policy.chat_id != scope.chat_id:

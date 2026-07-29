@@ -2,6 +2,7 @@
 > **Executor instructions**: Follow every step and gate, preserve policy semantics exactly, and update plans/README.md when complete unless a reviewer owns it.
 > **Drift check (run first)**: <code>git diff --stat beda837..HEAD -- src/pzp_ai_bot/memory/policy.py src/pzp_ai_bot/memory/service.py src/pzp_ai_bot/db/repositories.py tests/test_policy_and_ingestion.py tests/test_memory_correctness.py tests/test_product_controls.py docs/architecture.md PLAN.md</code>.
 ## Status
+- **Status**: DONE
 - **Audit finding**: lower-priority policy-query opportunity
 - **Priority**: P3
 - **Effort**: S
@@ -23,9 +24,11 @@ Current helper:
 ## Commands you will need
 | Purpose | Command | Expected on success |
 |---|---|---|
-| Policy tests | <code>.\.venv\Scripts\python.exe -m pytest -q tests/test_policy_and_ingestion.py tests/test_memory_correctness.py tests/test_product_controls.py</code> | all pass |
-| Format/lint/type | <code>.\.venv\Scripts\ruff.exe format --check .; .\.venv\Scripts\ruff.exe check .; .\.venv\Scripts\ty.exe check</code> | each exits 0 |
-| Full tests | <code>.\.venv\Scripts\python.exe -m pytest -q</code> | all offline tests pass |
+| Policy tests | <code>uv run pytest -q tests/test_policy_and_ingestion.py tests/test_memory_correctness.py tests/test_product_controls.py</code> | all pass |
+| Format/lint/type | <code>uv run ruff format --check .; uv run ruff check .; uv run ty check</code> | each exits 0 |
+| Full tests | <code>uv run pytest -q --cov=pzp_ai_bot --cov-branch --cov-report=term-missing</code> | all offline tests pass and coverage stays above the floor |
+## Implementation result
+`PolicySnapshot` copies persisted policy fields into frozen values and exposes pure scope, deny, allowlist, allow and admin evaluators. Fast bot/command/empty rejections still avoid loading policies; an enabled decision and standalone status now each perform one policy SELECT, while `known_scopes` reuses one snapshot for discovery and all statuses. The red baseline measured four SELECTs for one enabled decision and thirteen for six policy-only scopes; both are now one. Exact reason/preference semantics and next-operation mutation visibility pass. The 24-test focused target, Ruff format/lint, `ty` and the complete branch-coverage suite passed on 2026-07-29 with 184 passed, 1 skipped and 81.09% coverage.
 ## Scope
 **In scope**:
 - src/pzp_ai_bot/memory/policy.py
@@ -67,11 +70,11 @@ Run all commands above.
 - known_scopes issues one policy SELECT regardless of scope count.
 - Mutations in a later transaction are visible to the next decision; no stale global cache exists.
 ## Done criteria
-- [ ] One decision/status batch loads one policy snapshot.
-- [ ] Policy semantics and reason strings remain unchanged.
-- [ ] No cross-request mutable cache exists.
-- [ ] Query-count and semantic tests pass.
-- [ ] Architecture docs, PLAN, and full gates pass.
+- [x] One decision/status batch loads one policy snapshot.
+- [x] Policy semantics and reason strings remain unchanged.
+- [x] No cross-request mutable cache exists.
+- [x] Query-count and semantic tests pass.
+- [x] Architecture docs, PLAN, and full gates pass.
 ## STOP conditions
 - A helper relies on observing policy mutations performed later in the same logical operation.
 - The refactor changes precedence or LearnDecision reason strings.

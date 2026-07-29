@@ -2,6 +2,7 @@
 > **Executor instructions**: Follow each step and gate, stop on any STOP condition, and update plans/README.md when complete unless a reviewer owns it.
 > **Drift check (run first)**: <code>git diff --stat beda837..HEAD -- src/pzp_ai_bot/telegram/router.py src/pzp_ai_bot/telegram/commands.py src/pzp_ai_bot/memory/service.py src/pzp_ai_bot/db/models.py src/pzp_ai_bot/db/repositories.py alembic/versions tests/test_memory_tools.py tests/test_telegram_integration.py docs/commands.md docs/architecture.md PLAN.md</code>.
 ## Status
+- **Status**: DONE
 - **Audit finding**: 8
 - **Priority**: P2
 - **Effort**: M
@@ -75,12 +76,12 @@ Run profile tests, migrations, format, lint, ty, and full tests.
 - Upgrade preserves can_query while dropping can_learn.
 - Fresh schema has no can_learn column and matches Alembic metadata.
 ## Done criteria
-- [ ] No active command, service, repository, model, formatter, or doc exposes can_learn.
-- [ ] Unknown learn= input fails without changing permission.
-- [ ] can_query and source learning policy behavior remain intact.
-- [ ] Migration preserves real permission data and passes drift check.
-- [ ] PLAN uses retrieval/query terminology accurately.
-- [ ] Targeted and full gates pass.
+- [x] No active command, service, repository, model, formatter, or doc exposes can_learn.
+- [x] Unknown learn= input fails without changing permission.
+- [x] can_query and source learning policy behavior remain intact.
+- [x] Migration preserves real permission data and passes drift check.
+- [x] PLAN uses retrieval/query terminology accurately.
+- [x] Targeted and full gates pass.
 ## STOP conditions
 - A live runtime path, external API contract, or persisted workflow is found to read can_learn.
 - Product documentation outside this repo defines concrete cross-scope learning semantics.

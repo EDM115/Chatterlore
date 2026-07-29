@@ -2,6 +2,7 @@
 > **Executor instructions**: Follow each step and gate. Do not add low-value tests merely to raise a percentage. Update plans/README.md when complete unless a reviewer owns it.
 > **Drift check (run first)**: <code>git diff --stat beda837..HEAD -- pyproject.toml .github/workflows/ci.yml tests/test_deployment_artifacts.py docs/testing.md PLAN.md</code>.
 ## Status
+- **Status**: DONE
 - **Audit finding**: 16
 - **Priority**: P3
 - **Effort**: S
@@ -20,10 +21,12 @@ pytest-cov is installed and branch coverage is configured, but CI runs plain pyt
 ## Commands you will need
 | Purpose | Command | Expected on success |
 |---|---|---|
-| Measure baseline | <code>.\.venv\Scripts\python.exe -m pytest -q --cov=pzp_ai_bot --cov-branch --cov-report=term-missing</code> | tests pass; total remains at least 79 before threshold change |
-| Artifact tests | <code>.\.venv\Scripts\python.exe -m pytest -q tests/test_deployment_artifacts.py</code> | all pass |
-| Format/lint/type | <code>.\.venv\Scripts\ruff.exe format --check .; .\.venv\Scripts\ruff.exe check .; .\.venv\Scripts\ty.exe check</code> | each exits 0 |
-| Full coverage gate | <code>.\.venv\Scripts\python.exe -m pytest -q --cov=pzp_ai_bot --cov-branch --cov-report=term-missing</code> | tests pass and coverage is at least configured floor |
+| Measure baseline | <code>uv run pytest -q --cov=pzp_ai_bot --cov-branch --cov-report=term-missing</code> | tests pass; total remains at least 79 before threshold change |
+| Artifact tests | <code>uv run pytest -q tests/test_deployment_artifacts.py</code> | all pass |
+| Format/lint/type | <code>uv run ruff format --check .; uv run ruff check .; uv run ty check</code> | each exits 0 |
+| Full coverage gate | <code>uv run pytest -q --cov=pzp_ai_bot --cov-branch --cov-report=term-missing</code> | tests pass and coverage is at least configured floor |
+## Implementation result
+The unmodified live baseline measured 80.72%, reported as 81%, across 5,037 statements and 1,442 branches. `pyproject.toml` now enforces `fail_under = 78` with missing lines visible, and CI runs the exact branch-coverage command. Seven focused artifact tests, Ruff format/lint, `ty` and the complete 180-passed/1-skipped coverage suite passed on 2026-07-29. A repository-unmodified `--cov-fail-under=82` proof ran the same passing tests but exited non-zero with `total of 81 is less than fail-under=82`, proving the signal trips above the measured baseline.
 ## Scope
 **In scope**:
 - pyproject.toml
@@ -64,11 +67,11 @@ Run artifact tests, format, lint, ty, and the full coverage gate.
 - A local temporary threshold above measured total proves pytest-cov exits non-zero, but do not commit that temporary value.
 - telegram_live remains skipped by default.
 ## Done criteria
-- [ ] CI collects branch coverage and shows missing lines.
-- [ ] A conservative 78-percent floor prevents major silent regression.
-- [ ] No production modules are omitted to game the number.
-- [ ] Docs and PLAN distinguish baseline, floor, and critical-path quality.
-- [ ] All gates pass.
+- [x] CI collects branch coverage and shows missing lines.
+- [x] A conservative 78-percent floor prevents major silent regression.
+- [x] No production modules are omitted to game the number.
+- [x] Docs and PLAN distinguish baseline, floor, and critical-path quality.
+- [x] All gates pass.
 ## STOP conditions
 - Fresh measured coverage is below 79 before changes.
 - Enabling coverage changes test behavior or external-network isolation.

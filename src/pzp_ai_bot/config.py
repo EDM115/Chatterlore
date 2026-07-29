@@ -29,7 +29,9 @@ class ProviderProfile:
 class Settings(BaseSettings):
     """Application settings loaded from environment variables and `.env`."""
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", env_ignore_empty=True, extra="ignore"
+    )
 
     telegram_bot_token: str = ""
     bot_admins: str = ""
@@ -69,6 +71,7 @@ class Settings(BaseSettings):
     admin_cache_ttl_seconds: int = Field(default=300, ge=0)
     forget_confirm_ttl_seconds: int = Field(default=600, ge=1)
     retrieval_top_k: int = Field(default=6, ge=1)
+    retrieval_candidate_limit: int = Field(default=5_000, ge=1)
     raw_message_retention_days: int | None = Field(default=None, ge=1)
     knowledge_retention_days: int | None = Field(default=None, ge=1)
     review_before_compact: bool = False

@@ -9,7 +9,7 @@ from pzp_ai_bot.db.repositories import (
     RetrievedItem,
 )
 from pzp_ai_bot.memory.scope import Scope
-from pzp_ai_bot.memory.vector import cosine_similarity
+from pzp_ai_bot.memory.vector import normalize, normalized_cosine_similarity
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,23 +34,43 @@ class Retriever:
         self.message_repo = message_repo
 
     async def search(
-        self, query_vector: list[float], scope: Scope, top_k: int = 6
+        self,
+        query_vector: list[float],
+        scope: Scope,
+        top_k: int = 6,
+        *,
+        candidate_limit: int = 5_000,
     ) -> list[SearchResult]:
-        embeddings = await self.embedding_repo.list_for_retrieval(scope)
+        embeddings = await self.embedding_repo.list_for_retrieval(scope, limit=candidate_limit)
+        normalized_query = normalize(query_vector)
+        knowledge_by_id = await self.knowledge_repo.get_many(
+            [
+                embedding.target_id
+                for embedding, _vector in embeddings
+                if embedding.target_type == "knowledge_item"
+            ]
+        )
+        messages_by_id = await self.message_repo.get_many(
+            [
+                embedding.target_id
+                for embedding, _vector in embeddings
+                if embedding.target_type == "message"
+            ]
+        )
         knowledge_scored: list[RetrievedItem] = []
         message_scored: list[RetrievedItem] = []
         for embedding, vector in embeddings:
-            score = cosine_similarity(query_vector, vector)
+            score = normalized_cosine_similarity(normalized_query, vector)
             content = ""
             source_ids: list[int] = []
             if embedding.target_type == "knowledge_item":
-                item = await self.knowledge_repo.get(embedding.target_id)
+                item = knowledge_by_id.get(embedding.target_id)
                 if item is None:
                     continue
                 content = item.content
                 source_ids = list(item.source_message_ids)
             elif embedding.target_type == "message":
-                message = await self.message_repo.get(embedding.target_id)
+                message = messages_by_id.get(embedding.target_id)
                 if message is None or not message.learned:
                     continue
                 content = message.text

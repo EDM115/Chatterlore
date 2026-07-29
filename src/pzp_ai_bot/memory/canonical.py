@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from typing import Any
 
 from pzp_ai_bot.db.models import KnowledgeItem
 from pzp_ai_bot.memory.prompts import CANONICAL_PROMPT_VERSION
@@ -109,6 +114,77 @@ def fallback_entries(items: list[KnowledgeItem]) -> list[CanonicalMemoryEntry]:
                 )
             )
     return deduplicate_entries(entries)
+
+
+def canonical_entries_json(entries: Sequence[CanonicalMemoryEntry]) -> list[dict[str, Any]]:
+    return [
+        {
+            "category": entry.category,
+            "content": entry.content,
+            "source_message_ids": list(entry.source_message_ids),
+            "item_ids": list(entry.item_ids),
+        }
+        for entry in entries
+    ]
+
+
+def parse_canonical_entries_json(payload: Any) -> tuple[CanonicalMemoryEntry, ...] | None:
+    if not isinstance(payload, list):
+        return None
+    entries: list[CanonicalMemoryEntry] = []
+    for value in payload:
+        if not isinstance(value, dict) or set(value) != {
+            "category",
+            "content",
+            "source_message_ids",
+            "item_ids",
+        }:
+            return None
+        category = value["category"]
+        content = value["content"]
+        source_message_ids = value["source_message_ids"]
+        item_ids = value["item_ids"]
+        if (
+            not isinstance(category, str)
+            or category not in CATEGORY_HEADINGS
+            or not isinstance(content, str)
+            or not content.strip()
+            or not _is_int_list(source_message_ids)
+            or not _is_int_list(item_ids)
+        ):
+            return None
+        entries.append(
+            CanonicalMemoryEntry(
+                category=category,
+                content=content,
+                source_message_ids=list(source_message_ids),
+                item_ids=list(item_ids),
+            )
+        )
+    return tuple(entries)
+
+
+def canonical_scope_fingerprint(
+    scope_key: str, items: list[KnowledgeItem], output_settings: dict[str, Any]
+) -> str:
+    payload = {
+        "scope": scope_key,
+        "items": [
+            {
+                "id": int(item.id),
+                "kind": item.kind,
+                "content_sha256": hashlib.sha256(item.content.encode("utf-8")).hexdigest(),
+                "source_message_ids": sorted(int(value) for value in item.source_message_ids),
+                "updated_at": _as_utc(item.updated_at).isoformat(timespec="microseconds"),
+            }
+            for item in sorted(items, key=lambda value: int(value.id))
+        ],
+        "output_settings": output_settings,
+    }
+    encoded = json.dumps(
+        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def deduplicate_entries(entries: list[CanonicalMemoryEntry]) -> list[CanonicalMemoryEntry]:
@@ -228,3 +304,15 @@ def _parse_source_values(raw: str) -> list[int]:
         except ValueError:
             continue
     return ids
+
+
+def _is_int_list(value: Any) -> bool:
+    return isinstance(value, list) and all(
+        isinstance(item, int) and not isinstance(item, bool) for item in value
+    )
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)

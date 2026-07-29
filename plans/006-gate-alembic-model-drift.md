@@ -2,6 +2,7 @@
 > **Executor instructions**: Follow every step and verification gate, then update plans/README.md unless a reviewer owns it.
 > **Drift check (run first)**: <code>git diff --stat beda837..HEAD -- .github/workflows/ci.yml alembic/env.py tests/test_deployment_artifacts.py docs/testing.md PLAN.md</code>.
 ## Status
+- **Status**: DONE
 - **Audit finding**: 13
 - **Priority**: P2
 - **Effort**: S
@@ -19,19 +20,23 @@ CI upgrades an empty database to head, but that proves only that existing revisi
 Current gate:
     - name: Migration check
       run: uv run alembic upgrade head
+
+Execution on 2026-07-29 found real drift in nine Telegram identifier columns: the live SQLAlchemy models used `BigInteger` while the initial migration still declared `Integer`. Revision `0007_align_telegram_identifier_types` now aligns the history without suppressing type comparison.
 ## Commands you will need
 | Purpose | Command | Expected on success |
 |---|---|---|
-| Artifact tests | <code>.\.venv\Scripts\python.exe -m pytest -q tests/test_deployment_artifacts.py tests/test_cli.py</code> | all pass |
-| Local migration upgrade | <code>.\.venv\Scripts\alembic.exe upgrade head</code> | exit 0 |
-| Local drift check | <code>.\.venv\Scripts\alembic.exe check</code> | exit 0 and reports no new upgrade operations |
-| Format/lint/type | <code>.\.venv\Scripts\ruff.exe format --check .; .\.venv\Scripts\ruff.exe check .; .\.venv\Scripts\ty.exe check</code> | each exits 0 |
-| Full tests | <code>.\.venv\Scripts\python.exe -m pytest -q</code> | all offline tests pass |
+| Artifact tests | <code>uv run pytest -q tests/test_deployment_artifacts.py tests/test_cli.py</code> | all pass |
+| Local migration upgrade | <code>uv run alembic upgrade head</code> | exit 0 |
+| Local drift check | <code>uv run alembic check</code> | exit 0 and reports no new upgrade operations |
+| Format/lint/type | <code>uv run ruff format --check .; uv run ruff check .; uv run ty check</code> | each exits 0 |
+| Full tests | <code>uv run pytest -q</code> | all offline tests pass |
 Run migration commands against a disposable SQLite DB through DB_URL, never a real operator database.
 ## Scope
 **In scope**:
 - .github/workflows/ci.yml
 - tests/test_deployment_artifacts.py
+- tests/test_cli.py
+- alembic/versions/0007_align_telegram_identifier_types.py
 - docs/testing.md
 - PLAN.md
 - alembic/env.py only if comparison configuration requires a narrowly documented adjustment
@@ -63,11 +68,11 @@ Run artifact/CLI tests, format, lint, ty, and full tests.
 - Local disposable DB reaches head and reports no metadata operations.
 - Do not create a fake drift inside committed source merely to test failure; the CI command itself is the guard.
 ## Done criteria
-- [ ] CI runs alembic upgrade head and alembic check against the same disposable DB.
-- [ ] Artifact tests enforce both commands.
-- [ ] Local drift check exits 0 at current head.
-- [ ] Testing docs and PLAN describe the exact gate honestly.
-- [ ] All quality gates pass.
+- [x] CI runs alembic upgrade head and alembic check against the same disposable DB.
+- [x] Artifact tests enforce both commands.
+- [x] Local drift check exits 0 at current head.
+- [x] Testing docs and PLAN describe the exact gate honestly.
+- [x] All quality gates pass.
 ## STOP conditions
 - alembic check reports real drift at commit beda837; stop and report the specific metadata difference instead of suppressing it.
 - The check requires compare-type/default exclusions that would hide legitimate schema changes.

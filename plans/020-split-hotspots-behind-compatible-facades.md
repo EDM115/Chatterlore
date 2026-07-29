@@ -3,6 +3,7 @@
 > **Drift check (run first)**: <code>git diff --stat beda837..HEAD -- src/pzp_ai_bot/memory/service.py src/pzp_ai_bot/db/repositories.py src/pzp_ai_bot/telegram/router.py tests docs/architecture.md PLAN.md</code>. Extensive expected drift from prerequisite plans requires refreshing excerpts and inventories before implementation.
 ## Status
 - **Audit finding**: lower-priority architecture hotspot opportunity
+- **Execution status**: PARTIAL as of 2026-07-29
 - **Priority**: P3
 - **Effort**: L
 - **Risk**: MED
@@ -90,3 +91,15 @@ Run format, lint, ty, full tests, and read-only git diff/status.
 ## Maintenance notes
 - Future features should enter the owning slice while MemoryService remains a stable orchestration facade.
 - Reviewers should reject speculative abstractions, parallel parsers/formatters, and service-locator patterns.
+
+## 2026-07-29 execution checkpoint and handoff
+- **DONE**: Added `tests/test_architecture_facades.py` to characterize all 52 public `MemoryService` methods, the repository compatibility export surface and Telegram command uniqueness/order.
+- **DONE**: Moved repository implementations into cohesive `src/pzp_ai_bot/db/repos/` modules with shared filters/value types in `shared.py`; `db.repositories` remains a thin compatibility facade and the characterization test asserts representative exports are identical objects.
+- **DONE**: Moved shared service value objects to `memory/contracts.py`, streamed bulk transfer to `memory/transfer.py`, and provider execution/telemetry persistence to `memory/provider_operations.py`; `MemoryService` remains the `build_context`-facing facade with delegate methods and compatibility re-exports.
+- **DONE**: Updated `docs/architecture.md`, the `PLAN.md` source/ownership maps and this plan index for only the modules actually landed.
+- **DONE**: The 2026-07-29 stop checkpoint passed whole-project `ruff format --check .`, `ruff check .`, `ty check` and a fresh external-base-temp offline suite with 222 passed and 1 skipped in 166.64 seconds.
+- **NEXT**: Split `telegram/router.py` into command-family builders for learning policy, memory/reviews, profiles/templates/settings, retrieval/summarization and operations while preserving root composition, command registration order, authorization, safe-send behavior and exact handler output.
+- **NEXT**: Extract the remaining `MemoryService` collaborators for query/retrieval, mutation/reviews/retention, summary/compaction and settings/profiles/templates one slice at a time, keeping public facade methods and parser/formatter imports stable.
+- **NEXT**: Finish Plan 020 dependency-direction/import-graph checks, prove no lower-layer Telegram imports or new cycles, run Ruff/ty/full branch coverage and mark the checklist DONE only when the router and remaining service slices are complete.
+- **NEXT**: Reconcile Plan 014 and the complete roadmap only after Plan 020 is fully gated; then run Docker build/run/health/doctor/migration acceptance, live OpenAI acceptance with `gpt-5.6-terra` and reasoning `medium`, and local-provider/Telegram checks where installed models and credentials permit.
+- **NEXT**: Produce the final source-backed implemented/partial/not-implemented audit only after those acceptance results are recorded, distinguishing unavailable credentials/models from application failures.

@@ -7,11 +7,14 @@ from typing import Any
 from aiogram import Bot, Dispatcher
 from aiogram.types import Update
 from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 from pzp_ai_bot.app_context import AppContext
 from pzp_ai_bot.telegram.commands import register_bot_commands
 from pzp_ai_bot.telegram.dispatcher import build_dispatcher
 from pzp_ai_bot.telegram.scheduler import (
+    IDLE_SUMMARIZER_TASK_NAME,
+    RUNTIME_SETTINGS_REFRESHER_TASK_NAME,
     start_idle_summarizer,
     start_runtime_settings_refresher,
     stop_task,
@@ -42,6 +45,7 @@ def create_webhook_app(
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         idle_task = start_idle_summarizer(context)
         settings_task = start_runtime_settings_refresher(context)
+        app.state.background_tasks = {idle_task.name: idle_task, settings_task.name: settings_task}
         try:
             await register_bot_commands(telegram_bot)
             await telegram_bot.set_webhook(
@@ -71,8 +75,16 @@ def create_webhook_app(
         return {"ok": True}
 
     @app.get("/health")
-    async def health() -> dict[str, bool]:
-        return {"ok": True}
+    async def health() -> JSONResponse:
+        handles = getattr(app.state, "background_tasks", {})
+        task_health = {
+            task_name: bool((handle := handles.get(task_name)) is not None and handle.healthy)
+            for task_name in (IDLE_SUMMARIZER_TASK_NAME, RUNTIME_SETTINGS_REFRESHER_TASK_NAME)
+        }
+        healthy = all(task_health.values())
+        return JSONResponse(
+            status_code=200 if healthy else 503, content={"ok": healthy, "tasks": task_health}
+        )
 
     return app
 

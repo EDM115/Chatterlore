@@ -2,6 +2,7 @@
 > **Executor instructions**: Execute only after plan 008 establishes provider calls outside write transactions. Follow every gate and update plans/README.md when complete unless a reviewer owns it.
 > **Drift check (run first)**: <code>git diff --stat beda837..HEAD -- src/pzp_ai_bot/memory/service.py src/pzp_ai_bot/db/repositories.py src/pzp_ai_bot/db/models.py tests/test_ai_providers.py tests/test_memory_correctness.py docs/operations.md docs/architecture.md PLAN.md</code>.
 ## Status
+- **Status**: DONE
 - **Audit finding**: 11
 - **Priority**: P2
 - **Effort**: M
@@ -71,12 +72,12 @@ Run all commands above.
 - Raw sentinel and secrets are absent from telemetry.
 - Success paths still produce exactly one usage row.
 ## Done criteria
-- [ ] Failed provider calls persist one AIUsage error after business rollback/release.
-- [ ] No failed business mutation is committed for telemetry.
-- [ ] No nested competing SQLite writer is opened during an active write transaction.
-- [ ] All provider call sites use one safe record shape.
-- [ ] Operations/architecture docs and PLAN are current.
-- [ ] Targeted and full gates pass.
+- [x] Failed provider calls persist one AIUsage error after business rollback/release.
+- [x] No failed business mutation is committed for telemetry.
+- [x] No nested competing SQLite writer is opened during an active write transaction.
+- [x] All provider call sites use one safe record shape.
+- [x] Operations/architecture docs and PLAN are current.
+- [x] Targeted and full gates pass.
 ## STOP conditions
 - Plan 008 is not complete and provider calls still execute inside active write sessions.
 - The only proposed solution requires committing partial business data.

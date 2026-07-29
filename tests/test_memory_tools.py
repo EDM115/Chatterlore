@@ -17,10 +17,20 @@ class RecordingFakeProvider(FakeProvider):
         self.prompts: list[str] = []
 
     async def generate(
-        self, messages: Sequence[ChatMessage], *, temperature: float = 0.2, max_tokens: int = 700
+        self,
+        messages: Sequence[ChatMessage],
+        *,
+        temperature: float = 0.2,
+        max_tokens: int = 700,
+        reasoning_effort: str | None = None,
     ) -> ChatResult:
         self.prompts.append("\n".join(message.content for message in messages))
-        return await super().generate(messages, temperature=temperature, max_tokens=max_tokens)
+        return await super().generate(
+            messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            reasoning_effort=reasoning_effort,
+        )
 
 
 def incoming(
