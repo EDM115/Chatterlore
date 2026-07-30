@@ -1,0 +1,11 @@
+{
+  "plugins": ["vue"],
+  "ignorePatterns": [
+    ".nuxt/**",
+    ".output/**",
+    "app/types/openapi.d.ts",
+    "node_modules/**",
+    "playwright-report/**",
+    "test-results/**"
+  ]
+}

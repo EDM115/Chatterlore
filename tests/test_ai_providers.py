@@ -234,6 +234,20 @@ def test_provider_profile_missing_openai_key_fails_closed() -> None:
         ProviderRegistry(settings).select()
 
 
+def test_provider_registry_reuses_only_the_same_profile_and_model_selection() -> None:
+    registry = ProviderRegistry(Settings(ai_provider="fake"))
+
+    default_selection = registry.select()
+    repeated_selection = registry.select()
+    chat_override = registry.select(chat_model="alternate-chat")
+    repeated_override = registry.select(chat_model="alternate-chat")
+
+    assert repeated_selection is default_selection
+    assert repeated_override is chat_override
+    assert chat_override is not default_selection
+    assert chat_override.chat_provider is not default_selection.chat_provider
+
+
 def test_doctor_reports_missing_openai_key(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("AI_PROVIDER", "openai_compatible")

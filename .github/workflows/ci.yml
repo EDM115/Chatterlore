@@ -59,6 +59,57 @@ jobs:
       - name: Doctor check
         run: uv run pzp-bot doctor
 
+  frontend:
+    name: Frontend Gates
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d # v6.0.5
+        with:
+          version: 11.18.0
+          run_install: false
+
+      - name: Install frontend dependencies and managed runtime
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify managed Node runtime
+        run: pnpm runtime:check
+
+      - name: Check frontend formatting
+        run: pnpm format:check
+
+      - name: Lint frontend
+        run: pnpm lint
+
+      - name: Type check frontend
+        run: pnpm typecheck
+
+      - name: Test frontend
+        run: pnpm test
+
+      - name: Check generated API types
+        run: pnpm openapi:check
+
+      - name: Generate static frontend
+        run: pnpm generate
+
+      - name: Scan generated frontend for server-only data
+        env:
+          CONTROL_PLANE_MASTER_KEYS: '{"ci":"cGhhc2UyLWNpLW1hc3Rlci1rZXktdGhhdC1uZXZlci1zaGlwcw=="}'
+          DB_URL: sqlite+aiosqlite:///phase2-ci-secret.db
+          OPENAI_API_KEY: sk-phase2-ci-secret-that-must-never-ship
+          PZP_API_DEV_ORIGIN: https://phase2-ci-internal-api.example
+          TELEGRAM_BOT_TOKEN: 123456789:phase2-ci-telegram-secret-that-must-never-ship
+          TELEGRAM_OIDC_CLIENT_SECRET: phase2-ci-oidc-secret-that-must-never-ship
+          WEBHOOK_SECRET: phase2-ci-webhook-secret-that-must-never-ship
+        run: pnpm scan:generated
+
   docker:
     name: Docker Smoke
     runs-on: ubuntu-latest
