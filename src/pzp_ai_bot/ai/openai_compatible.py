@@ -55,14 +55,14 @@ class OpenAICompatibleProvider:
             )
             for message in messages
         ]
-        request: dict[str, Any] = {
-            "model": self.model,
-            "messages": payload,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-        }
-        if reasoning_effort is not None and supports_reasoning_effort(self.model):
-            request["reasoning_effort"] = reasoning_effort
+        request: dict[str, Any] = {"model": self.model, "messages": payload}
+        reasoning_model = supports_reasoning_effort(self.model)
+        request["max_completion_tokens" if reasoning_model else "max_tokens"] = max_tokens
+        if reasoning_model:
+            if reasoning_effort is not None:
+                request["reasoning_effort"] = reasoning_effort
+        else:
+            request["temperature"] = temperature
         response = await retry_provider_call(
             lambda: self.client.chat.completions.create(**request),
             attempts=self.retry_attempts,

@@ -168,6 +168,51 @@ async def test_openai_compatible_retries_and_redacts_chat_and_embedding_payloads
 
 
 @pytest.mark.asyncio
+async def test_openai_compatible_selects_token_budget_field_by_model_family() -> None:
+    response = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))], usage=None
+    )
+    calls: list[dict] = []
+
+    async def create(**kwargs):
+        calls.append(kwargs)
+        return response
+
+    client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create)),
+        embeddings=SimpleNamespace(),
+    )
+    reasoning_models = (
+        "gpt-5.4",
+        "gpt-5.4-mini",
+        "gpt-5.4-nano",
+        "gpt-5.5",
+        "gpt-5.6-luna",
+        "gpt-5.6-terra",
+        "gpt-5.6-sol",
+    )
+    for model in (*reasoning_models, "gpt-4.1"):
+        provider = OpenAICompatibleProvider(
+            api_key="sk-test",
+            base_url="https://example.test/v1",
+            chat_model=model,
+            embedding_model="embed-a",
+            client=client,
+        )
+        await provider.generate([ChatMessage(role="user", content="token budget")], max_tokens=123)
+
+    for model, call in zip(reasoning_models, calls[:-1], strict=True):
+        assert call["model"] == model
+        assert call["max_completion_tokens"] == 123
+        assert "max_tokens" not in call
+        assert "temperature" not in call
+    legacy_call = calls[-1]
+    assert legacy_call["max_tokens"] == 123
+    assert "max_completion_tokens" not in legacy_call
+    assert legacy_call["temperature"] == 0.2
+
+
+@pytest.mark.asyncio
 async def test_local_embedding_provider_missing_extra_has_actionable_message(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
