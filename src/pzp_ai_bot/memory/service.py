@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import hashlib
 import json
 from collections.abc import AsyncIterator
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
-from secrets import token_urlsafe
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -13,37 +11,21 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from pzp_ai_bot.ai.factory import ProviderRegistry, ProviderSelection
 from pzp_ai_bot.ai.protocols import ChatMessage, ChatProvider, EmbeddingProvider
 from pzp_ai_bot.config import Settings
-from pzp_ai_bot.db.models import KnowledgeItem
 from pzp_ai_bot.db.repositories import (
     AIUsageStats,
-    CanonicalScopeSnapshotRepository,
     EffectiveScopeSettings,
     EmbeddingRepository,
     EventRepository,
-    ForgetChallengeRepository,
     KnowledgeRepository,
-    MemoryProfileRepository,
     MemoryProfileView,
     MemoryReviewRepository,
     MessageRepository,
     PolicyRepository,
-    RuntimeSettingRepository,
-    RuntimeSettingView,
     ScopeMetadataRepository,
     ScopeSettingsRepository,
-    SettingsChallengeRepository,
-    SummaryTemplateRepository,
-    SystemPromptTemplateRepository,
-    utc_now,
 )
 from pzp_ai_bot.db.session import session_scope
-from pzp_ai_bot.memory.canonical import (
-    CanonicalMemoryEntry,
-    canonical_prompt,
-    canonical_scope_fingerprint,
-    fallback_entries,
-    parse_canonical_response,
-)
+from pzp_ai_bot.memory.canonical import CanonicalMemoryEntry
 from pzp_ai_bot.memory.contracts import (
     AIRequestOptions,
     AuditEventPreview,
@@ -60,7 +42,6 @@ from pzp_ai_bot.memory.contracts import (
     MemoryStatusPreview,
     PendingSummaryOutcome,
     ProviderCallTelemetry,
-    ProviderOperationError,
     RangeSummaryResult,
     RuntimeSettingPreview,
     ScopeStatusPreview,
@@ -73,20 +54,34 @@ from pzp_ai_bot.memory.contracts import (
     SystemPromptTemplatePreview,
 )
 from pzp_ai_bot.memory.markdown import MarkdownMemoryStore
+from pzp_ai_bot.memory.mutation_service import MemoryMutationService
+from pzp_ai_bot.memory.mutation_service import memory_item_preview as memory_item_preview
+from pzp_ai_bot.memory.mutation_service import memory_note_preview as memory_note_preview
+from pzp_ai_bot.memory.mutation_service import normalize_tags as normalize_tags
+from pzp_ai_bot.memory.mutation_service import note_metadata as note_metadata
 from pzp_ai_bot.memory.policy import PolicyService
-from pzp_ai_bot.memory.prompts import (
-    ANSWER_INSUFFICIENT_CONTEXT,
-    BUILTIN_SYSTEM_PROMPTS,
-    CANONICAL_PROMPT_VERSION,
-    PROMPT_VERSION,
-    SUMMARY_BASE_PROMPT,
-    PromptTemplate,
-    prompt_metadata,
-)
-from pzp_ai_bot.memory.provider_operations import ProviderOperations, provider_call_telemetry
+from pzp_ai_bot.memory.prompts import PromptTemplate
+from pzp_ai_bot.memory.provider_operations import ProviderOperations
+from pzp_ai_bot.memory.provider_operations import provider_call_telemetry as provider_call_telemetry
 from pzp_ai_bot.memory.provider_operations import telemetry_scope as telemetry_scope
-from pzp_ai_bot.memory.retrieval import Retriever, SearchResult
+from pzp_ai_bot.memory.retrieval import SearchResult
+from pzp_ai_bot.memory.retrieval_service import MemoryRetrievalService
+from pzp_ai_bot.memory.retrieval_service import append_answer_sources as append_answer_sources
+from pzp_ai_bot.memory.retrieval_service import compact_answer_sources as compact_answer_sources
+from pzp_ai_bot.memory.retrieval_service import dedupe_scope_list as dedupe_scope_list
+from pzp_ai_bot.memory.retrieval_service import fallback_answer as fallback_answer
+from pzp_ai_bot.memory.retrieval_service import format_results as format_results
+from pzp_ai_bot.memory.retrieval_service import search_result_rank as search_result_rank
 from pzp_ai_bot.memory.scope import Scope, parse_scope
+from pzp_ai_bot.memory.settings_profiles import (
+    SAFE_RUNTIME_SETTING_TYPES,
+    MemorySettingsService,
+    validate_scope_settings,
+)
+from pzp_ai_bot.memory.summary_service import (
+    SUMMARY_CLAIM_TIMEOUT_SECONDS as SUMMARY_CLAIM_TIMEOUT_SECONDS,
+)
+from pzp_ai_bot.memory.summary_service import MemorySummaryService
 from pzp_ai_bot.memory.transfer import (
     MemoryExportChunk,
     MemoryExportFormat,
@@ -96,41 +91,6 @@ from pzp_ai_bot.memory.transfer import (
 )
 from pzp_ai_bot.memory.transfer import format_item_metadata as format_item_metadata
 from pzp_ai_bot.memory.transfer import parse_memory_export_format as parse_memory_export_format
-
-SAFE_RUNTIME_SETTING_TYPES: dict[str, str] = {
-    "learning_default_enabled": "bool",
-    "retrieval_candidate_limit": "positive_int",
-    "retrieval_top_k": "positive_int",
-    "summary_batch_size": "positive_int",
-    "summary_idle_seconds": "positive_int",
-    "summary_model": "str",
-    "system_prompt_template": "str",
-    "provider_profile": "str",
-    "chat_model": "str",
-    "embedding_model": "str",
-    "reasoning_level": "str",
-    "answer_min_score": "non_negative_float",
-    "forget_confirm_ttl_seconds": "positive_int",
-    "raw_message_retention_days": "optional_positive_int",
-    "knowledge_retention_days": "optional_positive_int",
-    "review_before_compact": "bool",
-}
-
-SUMMARY_CLAIM_TIMEOUT_SECONDS = 15 * 60
-
-
-BUILTIN_SUMMARY_TEMPLATES: dict[str, str] = {
-    "general": "Keep stable facts, decisions, preferences, todos, and open questions.",
-    "decisions": "Extract only durable decisions, owners, deadlines, and source-backed rationale.",
-    "todos": "Extract action items, owners, due dates when present, blockers, and open follow-ups.",
-    "meeting": (
-        "Write concise meeting notes with decisions, todos, risks, and unresolved questions."
-    ),
-    "incident": (
-        "Write an incident recap with impact, timeline, decisions, remediation todos, "
-        "and open questions."
-    ),
-}
 
 
 class MemoryService:
@@ -149,8 +109,34 @@ class MemoryService:
         self.embedding_provider = embedding_provider
         self.provider_registry = provider_registry or ProviderRegistry(settings)
         self.markdown = MarkdownMemoryStore(settings.memory_dir)
-        self._runtime_overrides: dict[str, Any] = {}
         self._provider_operations = ProviderOperations()
+        self._settings_profiles = MemorySettingsService(
+            settings=self.settings, session_factory=self.session_factory
+        )
+        self._retrieval_service = MemoryRetrievalService(
+            settings=self.settings,
+            session_factory=self.session_factory,
+            settings_profiles=self._settings_profiles,
+            select_provider=self._select_provider,
+            reasoning_level=self._reasoning_level,
+            provider_operations=self._provider_operations,
+        )
+        self._mutation_service = MemoryMutationService(
+            session_factory=self.session_factory,
+            settings_profiles=self._settings_profiles,
+            select_provider=self._select_provider,
+            provider_operations=self._provider_operations,
+            compact_memory=self.compact_memory,
+            rebuild_daily_projection=self.rebuild_daily_projection,
+        )
+        self._summary_service = MemorySummaryService(
+            session_factory=self.session_factory,
+            markdown=self.markdown,
+            settings_profiles=self._settings_profiles,
+            select_provider=self._select_provider,
+            reasoning_level=self._reasoning_level,
+            provider_operations=self._provider_operations,
+        )
         self._transfer = MemoryTransferService(
             session_factory=self.session_factory,
             markdown=self.markdown,
@@ -223,16 +209,12 @@ class MemoryService:
         topic_title: str | None = None,
         chat_username: str | None = None,
     ) -> None:
-        async with session_scope(self.session_factory) as session:
-            await ScopeMetadataRepository(session).upsert(
-                scope, chat_title=chat_title, topic_title=topic_title, chat_username=chat_username
-            )
+        await self._settings_profiles.set_scope_metadata(
+            scope, chat_title=chat_title, topic_title=topic_title, chat_username=chat_username
+        )
 
     async def get_scope_settings(self, scope: Scope) -> EffectiveScopeSettings:
-        async with session_scope(self.session_factory) as session:
-            return await ScopeSettingsRepository(session).effective(
-                scope, self._default_scope_settings()
-            )
+        return await self._settings_profiles.get_scope_settings(scope)
 
     async def set_scope_settings(
         self,
@@ -241,134 +223,35 @@ class MemoryService:
         *,
         updated_by: int | None = None,
     ) -> EffectiveScopeSettings:
-        validate_scope_settings(updates, self.settings)
-        async with session_scope(self.session_factory) as session:
-            repo = ScopeSettingsRepository(session)
-            await repo.set_settings(scope, updates, updated_by)
-            await EventRepository(session).add(
-                event_type="scope_settings", scope=scope, user_id=updated_by, payload=dict(updates)
-            )
-            return await repo.effective(scope, self._default_scope_settings())
+        return await self._settings_profiles.set_scope_settings(
+            scope, updates, updated_by=updated_by
+        )
 
     def settings_token_hash(self, scope: Scope, user_id: int, token: str) -> str:
-        payload = f"settings:{scope.key}:{user_id}:{token}".encode()
-        return hashlib.sha256(payload).hexdigest()
+        return self._settings_profiles.settings_token_hash(scope, user_id, token)
 
     async def preview_scope_settings(
         self, scope: Scope, updates: dict[str, int | str | bool | None], *, user_id: int
     ) -> SettingsChangePreview:
-        validate_scope_settings(updates, self.settings)
-        token = token_urlsafe(8)
-        expires_at = utc_now() + timedelta(
-            seconds=int(self.runtime_setting("forget_confirm_ttl_seconds"))
-        )
-        async with session_scope(self.session_factory) as session:
-            current = await ScopeSettingsRepository(session).effective(
-                scope, self._default_scope_settings()
-            )
-            await SettingsChallengeRepository(session).create(
-                scope=scope,
-                user_id=user_id,
-                token_hash=self.settings_token_hash(scope, user_id, token),
-                updates=dict(updates),
-                expires_at=expires_at,
-            )
-            await EventRepository(session).add(
-                event_type="scope_settings_preview",
-                scope=scope,
-                user_id=user_id,
-                payload={"updates": dict(updates), "expires_at": expires_at.isoformat()},
-            )
-            current_values = {key: current.as_dict().get(key) for key in updates}
-        return SettingsChangePreview(
-            scope=scope,
-            updates=dict(updates),
-            current_values=current_values,
-            token=token,
-            expires_at=expires_at,
-            applied=False,
-        )
+        return await self._settings_profiles.preview_scope_settings(scope, updates, user_id=user_id)
 
     async def confirm_scope_settings(
         self, scope: Scope, *, user_id: int, confirm: str
     ) -> SettingsChangePreview:
-        async with session_scope(self.session_factory) as session:
-            challenge_repo = SettingsChallengeRepository(session)
-            challenge = await challenge_repo.latest_active(scope=scope, user_id=user_id)
-            if challenge is None or challenge.token_hash != self.settings_token_hash(
-                scope, user_id, confirm
-            ):
-                raise ValueError(
-                    "No matching pending settings confirmation. Re-run /settings with the "
-                    "desired key=value changes."
-                )
-            updates = dict(challenge.updates)
-            validate_scope_settings(updates, self.settings)
-            settings_repo = ScopeSettingsRepository(session)
-            current = await settings_repo.effective(scope, self._default_scope_settings())
-            await settings_repo.set_settings(scope, updates, user_id)
-            await challenge_repo.consume(challenge.id)
-            await EventRepository(session).add(
-                event_type="scope_settings_confirmed",
-                scope=scope,
-                user_id=user_id,
-                payload={"updates": updates, "challenge_id": challenge.id},
-            )
-            current_values = {key: current.as_dict().get(key) for key in updates}
-        return SettingsChangePreview(
-            scope=scope,
-            updates=updates,
-            current_values=current_values,
-            token=None,
-            expires_at=None,
-            applied=True,
+        return await self._settings_profiles.confirm_scope_settings(
+            scope, user_id=user_id, confirm=confirm
         )
 
     async def refresh_runtime_settings(self) -> dict[str, Any]:
-        async with session_scope(self.session_factory) as session:
-            values = await RuntimeSettingRepository(session).values()
-        self._runtime_overrides = validate_runtime_settings_values(values, self.settings)
-        return dict(self._runtime_overrides)
+        return await self._settings_profiles.refresh_runtime_settings()
 
     async def set_runtime_settings(
         self, updates: dict[str, Any], *, updated_by: int | None = None
     ) -> list[RuntimeSettingPreview]:
-        validated = validate_runtime_settings_values(updates, self.settings)
-        async with session_scope(self.session_factory) as session:
-            repo = RuntimeSettingRepository(session)
-            rows: list[RuntimeSettingView] = []
-            for key, value in validated.items():
-                rows.append(await repo.set_value(key=key, value=value, updated_by=updated_by))
-            await EventRepository(session).add(
-                event_type="runtime_settings_update",
-                user_id=updated_by,
-                payload={"updates": validated},
-            )
-        await self.refresh_runtime_settings()
-        return [self._runtime_setting_preview(row) for row in rows]
+        return await self._settings_profiles.set_runtime_settings(updates, updated_by=updated_by)
 
     async def list_runtime_settings(self) -> list[RuntimeSettingPreview]:
-        async with session_scope(self.session_factory) as session:
-            rows = await RuntimeSettingRepository(session).list_settings()
-        stored = {row.key: row for row in rows}
-        previews: list[RuntimeSettingPreview] = []
-        for key in sorted(SAFE_RUNTIME_SETTING_TYPES):
-            row = stored.get(key)
-            if row is None:
-                previews.append(
-                    RuntimeSettingPreview(
-                        key=key,
-                        value=self.runtime_setting(key),
-                        default_value=self.runtime_default(key),
-                        previous_value=None,
-                        updated_by=None,
-                        updated_at=None,
-                        version=None,
-                    )
-                )
-            else:
-                previews.append(self._runtime_setting_preview(row))
-        return previews
+        return await self._settings_profiles.list_runtime_settings()
 
     async def audit_events(
         self, *, limit: int = 50, event_type: str | None = None, scope: Scope | None = None
@@ -499,41 +382,10 @@ class MemoryService:
             ]
 
     def runtime_default(self, key: str) -> Any:
-        defaults = {
-            "learning_default_enabled": self.settings.learning_default_enabled,
-            "retrieval_candidate_limit": self.settings.retrieval_candidate_limit,
-            "retrieval_top_k": self.settings.retrieval_top_k,
-            "summary_batch_size": self.settings.summary_batch_size,
-            "summary_idle_seconds": self.settings.summary_idle_seconds,
-            "summary_model": self.settings.chat_model,
-            "system_prompt_template": self.settings.system_prompt_template,
-            "provider_profile": self.settings.ai_provider_profile,
-            "chat_model": self.settings.chat_model,
-            "embedding_model": self.settings.embedding_model,
-            "reasoning_level": self.settings.reasoning_level,
-            "answer_min_score": self.settings.answer_min_score,
-            "forget_confirm_ttl_seconds": self.settings.forget_confirm_ttl_seconds,
-            "raw_message_retention_days": self.settings.raw_message_retention_days,
-            "knowledge_retention_days": self.settings.knowledge_retention_days,
-            "review_before_compact": self.settings.review_before_compact,
-        }
-        if key not in defaults:
-            raise ValueError(f"unknown runtime setting: {key}")
-        return defaults[key]
+        return self._settings_profiles.runtime_default(key)
 
     def runtime_setting(self, key: str) -> Any:
-        return self._runtime_overrides.get(key, self.runtime_default(key))
-
-    def _runtime_setting_preview(self, row: RuntimeSettingView) -> RuntimeSettingPreview:
-        return RuntimeSettingPreview(
-            key=row.key,
-            value=row.value,
-            default_value=self.runtime_default(row.key),
-            previous_value=row.previous_value,
-            updated_by=row.updated_by,
-            updated_at=row.updated_at,
-            version=row.version,
-        )
+        return self._settings_profiles.runtime_setting(key)
 
     async def ingest(self, incoming: IncomingMessage) -> IngestResult:
         text = normalize_text(incoming.text)
@@ -651,48 +503,12 @@ class MemoryService:
         template_name: str | None = None,
         ai_options: AIRequestOptions | None = None,
     ) -> int:
-        if scope.is_global and template_name is not None:
-            raise ValueError("template summaries require a concrete scope")
-        if scope.is_global:
-            async with session_scope(self.session_factory) as session:
-                scopes = await MessageRepository(session).pending_scopes()
-        else:
-            scopes = [scope]
-        count = 0
-        dirty_scopes: set[Scope] = set()
-        for pending_scope in scopes:
-            while True:
-                summary_outcome = await self._process_summary_batch(
-                    pending_scope, template_name=template_name, ai_options=ai_options
-                )
-                if summary_outcome.claimed_messages == 0:
-                    break
-                count += summary_outcome.completed_messages
-                if summary_outcome.needs_compact:
-                    dirty_scopes.add(pending_scope)
-                if summary_outcome.completed_messages == 0:
-                    break
-        if dirty_scopes:
-            await self.compact_memory(dirty_scopes=dirty_scopes)
-        return count
+        return await self._summary_service.summarize_now(
+            scope, template_name=template_name, ai_options=ai_options
+        )
 
     async def summarize_idle(self, *, now: datetime | None = None) -> int:
-        claim_now = now or utc_now()
-        cutoff = claim_now - timedelta(seconds=int(self.runtime_setting("summary_idle_seconds")))
-        async with session_scope(self.session_factory) as session:
-            scopes = await MessageRepository(session).pending_scopes(idle_before=cutoff)
-        count = 0
-        dirty_scopes: set[Scope] = set()
-        for scope in scopes:
-            summary_outcome = await self._process_summary_batch(
-                scope, now=claim_now, created_before=cutoff
-            )
-            count += summary_outcome.completed_messages
-            if summary_outcome.needs_compact:
-                dirty_scopes.add(scope)
-        if dirty_scopes:
-            await self.compact_memory(dirty_scopes=dirty_scopes)
-        return count
+        return await self._summary_service.summarize_idle(now=now)
 
     async def remember(
         self,
@@ -704,72 +520,14 @@ class MemoryService:
         priority: int | None = None,
         source: str | None = None,
     ) -> int:
-        metadata = note_metadata(tags=tags, priority=priority, source=source)
-        clean_content = content.strip()
-        async with session_scope(self.session_factory) as session:
-            scope_settings = await ScopeSettingsRepository(session).effective(
-                scope, self._default_scope_settings()
-            )
-        selection = self._select_provider(scope_settings)
-        embedding_generation = await self._generate_embeddings(
-            selection,
-            [clean_content],
-            operation="embed_knowledge",
-            metadata={"scope": scope.key, "target_type": "knowledge_item", "kind": "manual_note"},
+        return await self._mutation_service.remember(
+            scope, content, source_message_id, tags=tags, priority=priority, source=source
         )
-        if embedding_generation.error is not None:
-            async with session_scope(self.session_factory) as session:
-                await self._add_embedding_usage_in_session(
-                    session,
-                    selection=selection,
-                    generation=embedding_generation,
-                    texts_count=1,
-                    operation="embed_knowledge",
-                    metadata={
-                        "scope": scope.key,
-                        "target_type": "knowledge_item",
-                        "kind": "manual_note",
-                    },
-                )
-            raise embedding_generation.error
-        async with session_scope(self.session_factory) as session:
-            item = await KnowledgeRepository(session).add(
-                scope=scope,
-                kind="manual_note",
-                content=clean_content,
-                source_message_ids=[] if source_message_id is None else [source_message_id],
-                metadata_json=metadata,
-            )
-            await self._add_embedding_usage_in_session(
-                session,
-                selection=selection,
-                generation=embedding_generation,
-                texts_count=1,
-                operation="embed_knowledge",
-                metadata={
-                    "scope": scope.key,
-                    "target_type": "knowledge_item",
-                    "kind": "manual_note",
-                },
-            )
-            await EmbeddingRepository(session).add(
-                target_type="knowledge_item",
-                target_id=item.id,
-                scope=scope,
-                provider=selection.embedding_provider.name,
-                model=selection.embedding_model,
-                vector=embedding_generation.vectors[0],
-            )
-            item_id = item.id
-        await self.compact_memory(dirty_scopes={scope})
-        return item_id
 
     async def list_notes(
         self, scope: Scope | None = None, *, tag: str | None = None
     ) -> list[MemoryNotePreview]:
-        async with session_scope(self.session_factory) as session:
-            rows = await KnowledgeRepository(session).list_manual_notes(scope, tag)
-            return [memory_note_preview(row) for row in rows]
+        return await self._mutation_service.list_notes(scope, tag=tag)
 
     async def edit_note(
         self,
@@ -783,108 +541,19 @@ class MemoryService:
         clear_priority: bool = False,
         clear_source: bool = False,
     ) -> MemoryNotePreview:
-        metadata_updates: dict[str, Any] = {}
-        if tags is not None:
-            metadata_updates["tags"] = normalize_tags(tags)
-        if priority is not None or clear_priority:
-            metadata_updates["priority"] = priority
-        if source is not None or clear_source:
-            metadata_updates["source"] = source
-        async with session_scope(self.session_factory) as session:
-            repo = KnowledgeRepository(session)
-            item = await repo.get(item_id)
-            if item is not None and (
-                item.kind != "manual_note"
-                or not scope.contains(Scope(item.chat_id, item.message_thread_id))
-            ):
-                item = None
-            if item is None:
-                raise ValueError(f"manual note #{item_id} was not found in scope {scope.key}")
-            item_scope = Scope(item.chat_id, item.message_thread_id)
-            updated_content = content.strip() if content is not None else item.content
-            scope_settings = await ScopeSettingsRepository(session).effective(
-                item_scope, self._default_scope_settings()
-            )
-        selection = self._select_provider(scope_settings)
-        embedding_generation = await self._generate_embeddings(
-            selection,
-            [updated_content],
-            operation="embed_knowledge",
-            metadata={"scope": item_scope.key, "target_type": "knowledge_item"},
+        return await self._mutation_service.edit_note(
+            scope,
+            item_id,
+            content=content,
+            tags=tags,
+            priority=priority,
+            source=source,
+            clear_priority=clear_priority,
+            clear_source=clear_source,
         )
-        if embedding_generation.error is not None:
-            async with session_scope(self.session_factory) as session:
-                await self._add_embedding_usage_in_session(
-                    session,
-                    selection=selection,
-                    generation=embedding_generation,
-                    texts_count=1,
-                    operation="embed_knowledge",
-                    metadata={"scope": item_scope.key, "target_type": "knowledge_item"},
-                )
-            raise embedding_generation.error
-        async with session_scope(self.session_factory) as session:
-            repo = KnowledgeRepository(session)
-            item = await repo.update_manual_note(
-                item_id,
-                scope=scope,
-                content=content.strip() if content is not None else None,
-                metadata_updates=metadata_updates,
-            )
-            if item is None:
-                raise ValueError(f"manual note #{item_id} was not found in scope {scope.key}")
-            await EmbeddingRepository(session).delete_targets(
-                target_type="knowledge_item", target_ids=[item.id]
-            )
-            await self._add_embedding_usage_in_session(
-                session,
-                selection=selection,
-                generation=embedding_generation,
-                texts_count=1,
-                operation="embed_knowledge",
-                metadata={"scope": item_scope.key, "target_type": "knowledge_item"},
-            )
-            await EmbeddingRepository(session).add(
-                target_type="knowledge_item",
-                target_id=item.id,
-                scope=item_scope,
-                provider=selection.embedding_provider.name,
-                model=selection.embedding_model,
-                vector=embedding_generation.vectors[0],
-            )
-            await EventRepository(session).add(
-                event_type="manual_note_updated",
-                scope=scope,
-                payload={"knowledge_item_id": item.id, "metadata": item.metadata_json or {}},
-            )
-            preview = memory_note_preview(item)
-        await self.compact_memory(dirty_scopes={item_scope})
-        return preview
 
     async def delete_note(self, scope: Scope, item_id: int) -> None:
-        async with session_scope(self.session_factory) as session:
-            repository = KnowledgeRepository(session)
-            item = await repository.get(item_id)
-            if item is not None and (
-                item.kind != "manual_note"
-                or not scope.contains(Scope(item.chat_id, item.message_thread_id))
-            ):
-                item = None
-            if item is None:
-                raise ValueError(f"manual note #{item_id} was not found in scope {scope.key}")
-            item_scope = Scope(item.chat_id, item.message_thread_id)
-            deleted = await repository.delete_manual_note(item_id, scope=item_scope)
-            if not deleted:
-                raise ValueError(f"manual note #{item_id} was not found in scope {scope.key}")
-            await EmbeddingRepository(session).delete_targets(
-                target_type="knowledge_item", target_ids=[item_id]
-            )
-            await EventRepository(session).add(
-                event_type="manual_note_deleted",
-                scope=item_scope,
-                payload={"knowledge_item_id": item_id},
-            )
-        await self.compact_memory(dirty_scopes={item_scope})
+        await self._mutation_service.delete_note(scope, item_id)
 
     async def ask(
         self,
@@ -895,64 +564,9 @@ class MemoryService:
         profile_name: str | None = None,
         ai_options: AIRequestOptions | None = None,
     ) -> str:
-        scope_settings = await self.get_scope_settings(scope)
-        if top_k is None:
-            top_k = scope_settings.retrieval_top_k
-        results = await self.search(
+        return await self._retrieval_service.ask(
             scope, question, top_k=top_k, profile_name=profile_name, ai_options=ai_options
         )
-        best_score = max((result.score for result in results), default=0.0)
-        if not results or best_score < float(self.runtime_setting("answer_min_score")):
-            return f"{ANSWER_INSUFFICIENT_CONTEXT} Best scoped-memory score: {best_score:.3f}."
-        context = format_results(results)
-        async with session_scope(self.session_factory) as session:
-            scope_settings = await ScopeSettingsRepository(session).effective(
-                scope, self._default_scope_settings()
-            )
-            selection = self._select_provider(scope_settings, ai_options)
-            reasoning_level = self._reasoning_level(scope_settings, ai_options)
-            system_template = await self._answer_system_prompt_in_session(
-                session, scope_settings, ai_options
-            )
-        messages = [
-            ChatMessage(
-                role="system",
-                content=(
-                    f"{system_template.prompt}\n"
-                    f"Prompt version: {system_template.version}.\n"
-                    f"Reasoning level setting: {reasoning_level}."
-                ),
-            ),
-            ChatMessage(role="user", content=f"Question: {question}\n\nScoped memory:\n{context}"),
-        ]
-        execution = await self._execute_chat_provider(
-            selection,
-            messages,
-            operation="ask",
-            metadata={
-                **prompt_metadata(
-                    template_name=system_template.name,
-                    template_version=system_template.version,
-                    reasoning_level=reasoning_level,
-                    provider_profile=selection.profile.name,
-                ),
-                "chat_model": selection.chat_model,
-                "embedding_model": selection.embedding_model,
-                "scope": scope.key,
-                "retrieval_results": len(results),
-                "best_score": best_score,
-                "memory_profile": profile_name,
-            },
-            temperature=0.1,
-            max_tokens=700,
-            reasoning_effort=reasoning_level,
-        )
-        content = (
-            execution.result.content if execution.result is not None else fallback_answer(results)
-        )
-        async with session_scope(self.session_factory) as session:
-            await self._add_provider_usage_in_session(session, execution.telemetry)
-        return append_answer_sources(content, results)
 
     async def search(
         self,
@@ -963,150 +577,17 @@ class MemoryService:
         profile_name: str | None = None,
         ai_options: AIRequestOptions | None = None,
     ) -> list[SearchResult]:
-        async with session_scope(self.session_factory) as session:
-            scope_settings = await ScopeSettingsRepository(session).effective(
-                scope, self._default_scope_settings()
-            )
-            selection = self._select_provider(scope_settings, ai_options)
-            scopes = await self._retrieval_scopes_in_session(session, scope, profile_name)
-        embedding_generation = await self._generate_embeddings(
-            selection,
-            [query],
-            operation="embed_query",
-            metadata={"scope": scope.key, "memory_profile": profile_name},
+        return await self._retrieval_service.search(
+            scope, query, top_k=top_k, profile_name=profile_name, ai_options=ai_options
         )
-        if embedding_generation.error is not None:
-            async with session_scope(self.session_factory) as session:
-                await self._add_embedding_usage_in_session(
-                    session,
-                    selection=selection,
-                    generation=embedding_generation,
-                    texts_count=1,
-                    operation="embed_query",
-                    metadata={"scope": scope.key, "memory_profile": profile_name},
-                )
-            raise embedding_generation.error
-        query_vector = embedding_generation.vectors[0]
-        async with session_scope(self.session_factory) as session:
-            await self._add_embedding_usage_in_session(
-                session,
-                selection=selection,
-                generation=embedding_generation,
-                texts_count=1,
-                operation="embed_query",
-                metadata={"scope": scope.key, "memory_profile": profile_name},
-            )
-            retriever = Retriever(
-                embedding_repo=EmbeddingRepository(session),
-                knowledge_repo=KnowledgeRepository(session),
-                message_repo=MessageRepository(session),
-            )
-            results: list[SearchResult] = []
-            for source_scope in scopes:
-                results.extend(
-                    await retriever.search(
-                        query_vector,
-                        source_scope,
-                        top_k,
-                        candidate_limit=int(self.runtime_setting("retrieval_candidate_limit")),
-                    )
-                )
-            results.sort(key=search_result_rank)
-            return results[:top_k]
 
     async def compact_memory(
         self, dirty_scopes: set[Scope] | None = None, *, force: bool = False
     ) -> Path:
-        await self.rebuild_daily_projection()
-        async with session_scope(self.session_factory) as session:
-            current_scopes = {
-                row.scope for row in await KnowledgeRepository(session).scope_counts()
-            }
-            valid_snapshots = await CanonicalScopeSnapshotRepository(session).list()
-        if force or dirty_scopes is None:
-            target_scopes = set(current_scopes)
-        else:
-            target_scopes = (set(dirty_scopes) & current_scopes) | (
-                current_scopes - set(valid_snapshots)
-            )
-        refreshes: dict[Scope, CanonicalScopeRefresh] = {}
-        for scope in sorted(target_scopes, key=lambda value: value.key):
-            refreshes[scope] = await self._refresh_canonical_scope(scope, force=force)
-        for _ in range(3):
-            async with session_scope(self.session_factory) as session:
-                latest_scopes = {
-                    row.scope for row in await KnowledgeRepository(session).scope_counts()
-                }
-                latest_snapshots = await CanonicalScopeSnapshotRepository(session).list()
-            missing_scopes = latest_scopes - set(latest_snapshots) - set(refreshes)
-            if not missing_scopes:
-                break
-            for scope in sorted(missing_scopes, key=lambda value: value.key):
-                refreshes[scope] = await self._refresh_canonical_scope(scope, force=False)
-        async with session_scope(self.session_factory) as session:
-            knowledge_repo = KnowledgeRepository(session)
-            snapshot_repo = CanonicalScopeSnapshotRepository(session)
-            metadata_repo = ScopeMetadataRepository(session)
-            message_repo = MessageRepository(session)
-            current_scopes = {row.scope for row in await knowledge_repo.scope_counts()}
-            await snapshot_repo.delete_missing({scope.key for scope in current_scopes})
-            snapshots = await snapshot_repo.list()
-            entries_by_scope: dict[Scope, list[CanonicalMemoryEntry]] = {}
-            metadata_by_scope = await metadata_repo.list_all()
-            sources_by_scope = {}
-            for scope in sorted(current_scopes, key=lambda value: value.key):
-                refresh = refreshes.get(scope)
-                snapshot = snapshots.get(scope)
-                if refresh is not None and not refresh.snapshot_persisted:
-                    entries = list(refresh.entries)
-                elif snapshot is not None:
-                    entries = list(snapshot.entries)
-                else:
-                    entries = fallback_entries(await knowledge_repo.list_exact_scope(scope))
-                entries_by_scope[scope] = entries
-                metadata = await metadata_repo.get_effective(scope)
-                if metadata is not None:
-                    metadata_by_scope[scope.key] = metadata
-                source_ids = sorted(
-                    {source for entry in entries for source in entry.source_message_ids}
-                )
-                sources_by_scope[scope.key] = await message_repo.source_references(
-                    scope, source_ids, metadata
-                )
-        path = self.markdown.write_canonical(entries_by_scope, metadata_by_scope, sources_by_scope)
-        async with session_scope(self.session_factory) as session:
-            await EventRepository(session).add(
-                event_type="compact_memory",
-                payload={
-                    "path": str(path),
-                    "dirty_scopes": (
-                        None
-                        if dirty_scopes is None
-                        else sorted(scope.key for scope in dirty_scopes)
-                    ),
-                    "force": force,
-                    "provider_calls": sum(refresh.provider_calls for refresh in refreshes.values()),
-                    "recomputed_scopes": sorted(
-                        scope.key
-                        for scope, refresh in refreshes.items()
-                        if refresh.snapshot_persisted
-                    ),
-                },
-            )
-        return path
+        return await self._summary_service.compact_memory(dirty_scopes=dirty_scopes, force=force)
 
     async def rebuild_daily_projection(self) -> list[Path]:
-        async with session_scope(self.session_factory) as session:
-            items = await KnowledgeRepository(session).list_scope()
-        try:
-            return self.markdown.rebuild_daily(items)
-        except Exception as exc:
-            async with session_scope(self.session_factory) as session:
-                await EventRepository(session).add(
-                    event_type="markdown_projection_failed",
-                    payload={"error_type": type(exc).__name__},
-                )
-            raise
+        return await self._summary_service.rebuild_daily_projection()
 
     async def export_memory(
         self, scope: Scope | None = None, fmt: MemoryExportFormat = "md"
@@ -1130,202 +611,28 @@ class MemoryService:
     async def browse_items(
         self, scope: Scope | None = None, *, kind: str | None = None, limit: int = 20
     ) -> list[MemoryItemPreview]:
-        async with session_scope(self.session_factory) as session:
-            rows = await KnowledgeRepository(session).list_recent(scope, kind=kind, limit=limit)
-            return [memory_item_preview(row) for row in rows]
+        return await self._mutation_service.browse_items(scope, kind=kind, limit=limit)
 
     async def delete_memory_item(
         self, scope: Scope, item_id: int, *, deleted_by: int | None = None
     ) -> MemoryItemPreview:
-        async with session_scope(self.session_factory) as session:
-            repo = KnowledgeRepository(session)
-            item = await repo.get(item_id)
-            if item is None:
-                raise ValueError(f"memory item #{item_id} was not found")
-            item_scope = Scope(item.chat_id, item.message_thread_id)
-            if not scope.contains(item_scope):
-                raise ValueError(f"memory item #{item_id} was not found in scope {scope.key}")
-            preview = memory_item_preview(item)
-            await repo.delete_item(item_id, scope=item_scope)
-            embeddings = await EmbeddingRepository(session).delete_targets(
-                target_type="knowledge_item", target_ids=[item_id]
-            )
-            await EventRepository(session).add(
-                event_type="memory_item_deleted",
-                scope=item_scope,
-                user_id=deleted_by,
-                payload={
-                    "knowledge_item_id": item_id,
-                    "embeddings": embeddings,
-                    "kind": preview.kind,
-                },
-            )
-        await self.compact_memory(dirty_scopes={item_scope})
-        return preview
+        return await self._mutation_service.delete_memory_item(
+            scope, item_id, deleted_by=deleted_by
+        )
 
     async def refresh_memory_item(
         self, scope: Scope, item_id: int, *, mode: str = "embed", updated_by: int | None = None
     ) -> MemoryItemRefreshResult:
-        clean_mode = mode.strip().lower()
-        if clean_mode not in {"embed", "summarize", "both"}:
-            raise ValueError("mode must be embed, summarize or both")
-        async with session_scope(self.session_factory) as session:
-            repo = KnowledgeRepository(session)
-            item = await repo.get(item_id)
-            if item is None:
-                raise ValueError(f"memory item #{item_id} was not found")
-            item_scope = Scope(item.chat_id, item.message_thread_id)
-            if not scope.contains(item_scope):
-                raise ValueError(f"memory item #{item_id} was not found in scope {scope.key}")
-            scope_settings = await ScopeSettingsRepository(session).effective(
-                item_scope, self._default_scope_settings()
-            )
-            item_kind = item.kind
-            refreshed_content = item.content
-            summary_source_ids: tuple[int, ...] = ()
-            summary_texts: tuple[str, ...] = ()
-            template_name = str((item.metadata_json or {}).get("template") or "general")
-            template_instruction = ""
-            template_version = SUMMARY_BASE_PROMPT.version
-            if clean_mode in {"summarize", "both"}:
-                source_ids = list(item.source_message_ids)
-                if not source_ids:
-                    raise ValueError("memory item has no source messages to summarize")
-                messages = await MessageRepository(session).by_telegram_ids(item_scope, source_ids)
-                if not messages:
-                    raise ValueError("memory item source messages were not found")
-                template_instruction = await self._summary_template_prompt_in_session(
-                    session, template_name
-                )
-                summary_source_ids = tuple(message.telegram_message_id for message in messages)
-                summary_texts = tuple(message.normalized_text for message in messages)
-        generation: SummaryGenerationResult | None = None
-        if clean_mode in {"summarize", "both"}:
-            generation = await self._generate_summary(
-                scope=item_scope,
-                source_telegram_ids=summary_source_ids,
-                normalized_texts=summary_texts,
-                scope_settings=scope_settings,
-                template_name=template_name,
-                template_instruction=template_instruction,
-                template_version=template_version,
-                context_line=f"Refresh memory item #{item_id} from its source messages.",
-                operation="memory_item_refresh_summary",
-                usage_metadata={"knowledge_item_id": item_id},
-            )
-            if generation.content is None:
-                async with session_scope(self.session_factory) as session:
-                    await self._add_refresh_summary_usage_in_session(
-                        session, item_scope, item_id, generation
-                    )
-                raise RuntimeError(f"summary generation failed: {generation.error_type}")
-            refreshed_content = generation.content
-        embedding_selection = self._select_provider(scope_settings)
-        embedding_generation = await self._generate_embeddings(
-            embedding_selection,
-            [refreshed_content],
-            operation="embed_knowledge",
-            metadata={
-                "scope": item_scope.key,
-                "target_type": "knowledge_item",
-                "kind": item_kind,
-                "refresh": clean_mode,
-            },
+        return await self._summary_service.refresh_memory_item(
+            scope, item_id, mode=mode, updated_by=updated_by
         )
-        if embedding_generation.error is not None:
-            async with session_scope(self.session_factory) as session:
-                if generation is not None:
-                    await self._add_refresh_summary_usage_in_session(
-                        session, item_scope, item_id, generation
-                    )
-                await self._add_embedding_usage_in_session(
-                    session,
-                    selection=embedding_selection,
-                    generation=embedding_generation,
-                    texts_count=1,
-                    operation="embed_knowledge",
-                    metadata={
-                        "scope": item_scope.key,
-                        "target_type": "knowledge_item",
-                        "kind": item_kind,
-                        "refresh": clean_mode,
-                    },
-                )
-            raise embedding_generation.error
-        async with session_scope(self.session_factory) as session:
-            repo = KnowledgeRepository(session)
-            item = await repo.get(item_id)
-            if item is None or not scope.contains(Scope(item.chat_id, item.message_thread_id)):
-                raise ValueError(f"memory item #{item_id} was not found in scope {scope.key}")
-            if generation is not None:
-                await self._add_refresh_summary_usage_in_session(
-                    session, item_scope, item_id, generation
-                )
-                await repo.update_item(
-                    item_id,
-                    scope=item_scope,
-                    content=refreshed_content,
-                    metadata_updates={
-                        "refreshed_at": utc_now().isoformat(),
-                        "refresh_mode": clean_mode,
-                    },
-                )
-            embeddings_deleted = await EmbeddingRepository(session).delete_targets(
-                target_type="knowledge_item", target_ids=[item_id]
-            )
-            await self._add_embedding_usage_in_session(
-                session,
-                selection=embedding_selection,
-                generation=embedding_generation,
-                texts_count=1,
-                operation="embed_knowledge",
-                metadata={
-                    "scope": item_scope.key,
-                    "target_type": "knowledge_item",
-                    "kind": item_kind,
-                    "refresh": clean_mode,
-                },
-            )
-            await EmbeddingRepository(session).add(
-                target_type="knowledge_item",
-                target_id=item_id,
-                scope=item_scope,
-                provider=embedding_selection.embedding_provider.name,
-                model=embedding_selection.embedding_model,
-                vector=embedding_generation.vectors[0],
-            )
-            await EventRepository(session).add(
-                event_type="memory_item_refreshed",
-                scope=item_scope,
-                user_id=updated_by,
-                payload={
-                    "knowledge_item_id": item.id,
-                    "mode": clean_mode,
-                    "embeddings_deleted": embeddings_deleted,
-                },
-            )
-            result = MemoryItemRefreshResult(
-                id=item_id,
-                scope=item_scope,
-                kind=item_kind,
-                mode=clean_mode,
-                summarized=generation is not None,
-                embeddings_refreshed=1,
-            )
-        await self.compact_memory(dirty_scopes={item_scope})
-        return result
 
     async def _add_refresh_summary_usage_in_session(
         self, session: AsyncSession, scope: Scope, item_id: int, generation: SummaryGenerationResult
     ) -> None:
-        metadata = dict(generation.telemetry.metadata)
-        if (
-            generation.telemetry.operation != "memory_item_refresh_summary"
-            or metadata.get("scope") != scope.key
-            or metadata.get("knowledge_item_id") != item_id
-        ):
-            raise RuntimeError("refresh summary telemetry does not match its persistence boundary")
-        await self._add_provider_usage_in_session(session, generation.telemetry)
+        await self._summary_service.add_refresh_summary_usage_in_session(
+            session, scope, item_id, generation
+        )
 
     async def stats(self) -> dict[str, int]:
         async with session_scope(self.session_factory) as session:
@@ -1343,48 +650,7 @@ class MemoryService:
             }
 
     async def prune_retention(self, scope: Scope, *, now: datetime | None = None) -> dict[str, int]:
-        current = now or utc_now()
-        needs_compact = False
-        dirty_scopes: set[Scope] = set()
-        async with session_scope(self.session_factory) as session:
-            scope_settings = await ScopeSettingsRepository(session).effective(
-                scope, self._default_scope_settings()
-            )
-            message_repo = MessageRepository(session)
-            knowledge_repo = KnowledgeRepository(session)
-            embedding_repo = EmbeddingRepository(session)
-            raw_ids: list[int] = []
-            knowledge_ids: list[int] = []
-            if scope_settings.raw_message_retention_days is not None:
-                raw_cutoff = current - timedelta(days=scope_settings.raw_message_retention_days)
-                raw_ids = await message_repo.ids_older_than(scope, raw_cutoff)
-            if scope_settings.knowledge_retention_days is not None:
-                knowledge_cutoff = current - timedelta(days=scope_settings.knowledge_retention_days)
-                knowledge_ids = await knowledge_repo.ids_older_than(scope, knowledge_cutoff)
-                dirty_scopes = {
-                    Scope(item.chat_id, item.message_thread_id)
-                    for item in (await knowledge_repo.get_many(knowledge_ids)).values()
-                }
-            message_embeddings = await embedding_repo.delete_targets(
-                target_type="message", target_ids=raw_ids
-            )
-            raw_messages = await message_repo.delete_ids(raw_ids)
-            knowledge_embeddings = await embedding_repo.delete_targets(
-                target_type="knowledge_item", target_ids=knowledge_ids
-            )
-            knowledge_items = await knowledge_repo.delete_ids(knowledge_ids)
-            needs_compact = knowledge_items > 0
-            result = {
-                "raw_messages": raw_messages,
-                "knowledge_items": knowledge_items,
-                "embeddings": message_embeddings + knowledge_embeddings,
-            }
-            await EventRepository(session).add(
-                event_type="retention_prune", scope=scope, payload=result
-            )
-        if needs_compact:
-            await self.compact_memory(dirty_scopes=dirty_scopes)
-        return result
+        return await self._mutation_service.prune_retention(scope, now=now)
 
     async def set_memory_profile(
         self,
@@ -1394,28 +660,12 @@ class MemoryService:
         description: str | None = None,
         updated_by: int | None = None,
     ) -> MemoryProfileView:
-        if not source_scopes:
-            raise ValueError("profile must include at least one source scope")
-        async with session_scope(self.session_factory) as session:
-            profile = await MemoryProfileRepository(session).upsert_profile(
-                name=name,
-                source_scopes=source_scopes,
-                description=description,
-                updated_by=updated_by,
-            )
-            await EventRepository(session).add(
-                event_type="memory_profile_set",
-                user_id=updated_by,
-                payload={
-                    "profile": profile.name,
-                    "source_scopes": [scope.key for scope in profile.source_scopes],
-                },
-            )
-            return profile
+        return await self._settings_profiles.set_memory_profile(
+            name, source_scopes, description=description, updated_by=updated_by
+        )
 
     async def list_memory_profiles(self) -> list[MemoryProfileView]:
-        async with session_scope(self.session_factory) as session:
-            return await MemoryProfileRepository(session).list_profiles()
+        return await self._settings_profiles.list_memory_profiles()
 
     async def allow_memory_profile(
         self,
@@ -1425,75 +675,32 @@ class MemoryService:
         can_query: bool,
         updated_by: int | None = None,
     ) -> MemoryProfileView:
-        async with session_scope(self.session_factory) as session:
-            repo = MemoryProfileRepository(session)
-            profile = await repo.get_profile(profile_name)
-            if profile is None:
-                raise ValueError(f"profile {profile_name!r} was not found")
-            for source in profile.source_scopes:
-                await repo.set_permission(
-                    destination=destination,
-                    source=source,
-                    can_query=can_query,
-                    updated_by=updated_by,
-                )
-            await EventRepository(session).add(
-                event_type="memory_profile_permission",
-                scope=destination,
-                user_id=updated_by,
-                payload={"profile": profile.name, "can_query": can_query},
-            )
-            return profile
+        return await self._settings_profiles.allow_memory_profile(
+            destination=destination,
+            profile_name=profile_name,
+            can_query=can_query,
+            updated_by=updated_by,
+        )
 
     async def set_summary_template(
         self, name: str, prompt: str, *, updated_by: int | None = None
     ) -> SummaryTemplatePreview:
-        async with session_scope(self.session_factory) as session:
-            row = await SummaryTemplateRepository(session).upsert(
-                name=name, prompt=prompt, updated_by=updated_by
-            )
-            await EventRepository(session).add(
-                event_type="summary_template_set",
-                user_id=updated_by,
-                payload={"template": row.name},
-            )
-            return SummaryTemplatePreview(row.name, row.prompt, False)
+        return await self._settings_profiles.set_summary_template(
+            name, prompt, updated_by=updated_by
+        )
 
     async def list_summary_templates(self) -> list[SummaryTemplatePreview]:
-        previews = [
-            SummaryTemplatePreview(name, prompt, True)
-            for name, prompt in sorted(BUILTIN_SUMMARY_TEMPLATES.items())
-        ]
-        async with session_scope(self.session_factory) as session:
-            for row in await SummaryTemplateRepository(session).list_templates():
-                previews.append(SummaryTemplatePreview(row.name, row.prompt, False))
-        return previews
+        return await self._settings_profiles.list_summary_templates()
 
     async def set_system_prompt_template(
         self, name: str, prompt: str, *, updated_by: int | None = None
     ) -> SystemPromptTemplatePreview:
-        async with session_scope(self.session_factory) as session:
-            row = await SystemPromptTemplateRepository(session).upsert(
-                name=name, prompt=prompt, version=PROMPT_VERSION, updated_by=updated_by
-            )
-            await EventRepository(session).add(
-                event_type="system_prompt_template_set",
-                user_id=updated_by,
-                payload={"template": row.name, "version": row.version},
-            )
-            return SystemPromptTemplatePreview(row.name, row.version, row.prompt, False)
+        return await self._settings_profiles.set_system_prompt_template(
+            name, prompt, updated_by=updated_by
+        )
 
     async def list_system_prompt_templates(self) -> list[SystemPromptTemplatePreview]:
-        previews = [
-            SystemPromptTemplatePreview(template.name, template.version, template.prompt, True)
-            for template in sorted(BUILTIN_SYSTEM_PROMPTS.values(), key=lambda item: item.name)
-        ]
-        async with session_scope(self.session_factory) as session:
-            for row in await SystemPromptTemplateRepository(session).list_templates():
-                previews.append(
-                    SystemPromptTemplatePreview(row.name, row.version, row.prompt, False)
-                )
-        return previews
+        return await self._settings_profiles.list_system_prompt_templates()
 
     async def summarize_range(
         self,
@@ -1504,137 +711,13 @@ class MemoryService:
         template_name: str = "general",
         ai_options: AIRequestOptions | None = None,
     ) -> RangeSummaryResult:
-        if scope.chat_id is None:
-            raise ValueError("range summaries require a concrete scope")
-        request = ai_options or AIRequestOptions()
-        async with session_scope(self.session_factory) as session:
-            message_repo = MessageRepository(session)
-            start = await message_repo.get_by_telegram_id(scope, start_message_id)
-            end = await message_repo.get_by_telegram_id(scope, end_message_id)
-            if start is None or end is None:
-                raise ValueError("both range boundary messages must exist in the same scope")
-            if start.created_at > end.created_at:
-                raise ValueError("range start message must not be newer than range end message")
-            pending = await message_repo.learned_between_dates(
-                scope, start.created_at, end.created_at
-            )
-            if not pending:
-                raise ValueError("range contains no learned messages")
-            scope_settings = await ScopeSettingsRepository(session).effective(
-                scope, self._default_scope_settings()
-            )
-            template_instruction = (
-                request.summary_template_override
-                or await self._summary_template_prompt_in_session(session, template_name)
-            )
-            template_version = (
-                PROMPT_VERSION if request.summary_template_override else SUMMARY_BASE_PROMPT.version
-            )
-            source_ids = tuple(message.telegram_message_id for message in pending)
-            message_ids = [message.id for message in pending]
-            normalized_texts = tuple(message.normalized_text for message in pending)
-            started_at = start.created_at
-            ended_at = end.created_at
-        generation = await self._generate_summary(
-            scope=scope,
-            source_telegram_ids=source_ids,
-            normalized_texts=normalized_texts,
-            scope_settings=scope_settings,
+        return await self._summary_service.summarize_range(
+            scope,
+            start_message_id=start_message_id,
+            end_message_id=end_message_id,
             template_name=template_name,
-            template_instruction=template_instruction,
-            template_version=template_version,
-            context_line=(
-                f"Range: Telegram messages {start_message_id}..{end_message_id}, "
-                f"dates {started_at.isoformat()}..{ended_at.isoformat()}."
-            ),
-            operation="range_summary",
-            usage_metadata={"start_message_id": start_message_id, "end_message_id": end_message_id},
             ai_options=ai_options,
         )
-        if generation.content is None:
-            async with session_scope(self.session_factory) as session:
-                await self._add_range_summary_usage_in_session(
-                    session, scope, template_name, generation
-                )
-            raise RuntimeError(f"summary generation failed: {generation.error_type}")
-        embedding_selection = self._select_provider(scope_settings)
-        embedding_generation = await self._generate_embeddings(
-            embedding_selection,
-            [generation.content],
-            operation="embed_knowledge",
-            metadata={"scope": scope.key, "target_type": "knowledge_item", "kind": "range_summary"},
-        )
-        if embedding_generation.error is not None:
-            async with session_scope(self.session_factory) as session:
-                await self._add_range_summary_usage_in_session(
-                    session, scope, template_name, generation
-                )
-                await self._add_embedding_usage_in_session(
-                    session,
-                    selection=embedding_selection,
-                    generation=embedding_generation,
-                    texts_count=1,
-                    operation="embed_knowledge",
-                    metadata={
-                        "scope": scope.key,
-                        "target_type": "knowledge_item",
-                        "kind": "range_summary",
-                    },
-                )
-            raise embedding_generation.error
-        source_id_list = list(source_ids)
-        async with session_scope(self.session_factory) as session:
-            await self._add_range_summary_usage_in_session(
-                session, scope, template_name, generation
-            )
-            await self._add_embedding_usage_in_session(
-                session,
-                selection=embedding_selection,
-                generation=embedding_generation,
-                texts_count=1,
-                operation="embed_knowledge",
-                metadata={
-                    "scope": scope.key,
-                    "target_type": "knowledge_item",
-                    "kind": "range_summary",
-                },
-            )
-            item = await KnowledgeRepository(session).add(
-                scope=scope,
-                kind="range_summary",
-                content=generation.content,
-                source_message_ids=source_id_list,
-                metadata_json={
-                    "template": template_name,
-                    "start_message_id": start_message_id,
-                    "end_message_id": end_message_id,
-                    "started_at": started_at.isoformat(),
-                    "ended_at": ended_at.isoformat(),
-                },
-            )
-            await EmbeddingRepository(session).add(
-                target_type="knowledge_item",
-                target_id=item.id,
-                scope=scope,
-                provider=embedding_selection.embedding_provider.name,
-                model=embedding_selection.embedding_model,
-                vector=embedding_generation.vectors[0],
-            )
-            await MessageRepository(session).mark_summarized(message_ids)
-            await EventRepository(session).add(
-                event_type="range_summary",
-                scope=scope,
-                payload={
-                    "knowledge_item_id": item.id,
-                    "template": template_name,
-                    "source_message_ids": source_id_list,
-                },
-            )
-            summary = RangeSummaryResult(
-                item.id, source_id_list, started_at, ended_at, template_name
-            )
-        await self.compact_memory(dirty_scopes={scope})
-        return summary
 
     async def _add_range_summary_usage_in_session(
         self,
@@ -1643,177 +726,27 @@ class MemoryService:
         template_name: str,
         generation: SummaryGenerationResult,
     ) -> None:
-        metadata = dict(generation.telemetry.metadata)
-        if (
-            generation.telemetry.operation != "range_summary"
-            or metadata.get("scope") != scope.key
-            or metadata.get("summary_template") != template_name
-        ):
-            raise RuntimeError("range summary telemetry does not match its persistence boundary")
-        await self._add_provider_usage_in_session(session, generation.telemetry)
+        await self._summary_service.add_range_summary_usage_in_session(
+            session, scope, template_name, generation
+        )
 
     async def pending_reviews(self, scope: Scope | None = None) -> list[MemoryReviewPreview]:
-        async with session_scope(self.session_factory) as session:
-            items = await MemoryReviewRepository(session).pending(scope)
-            return [
-                MemoryReviewPreview(
-                    id=item.id,
-                    scope=Scope(item.chat_id, item.message_thread_id),
-                    kind=item.kind,
-                    content=item.content,
-                    source_message_ids=list(item.source_message_ids),
-                )
-                for item in items
-            ]
+        return await self._mutation_service.pending_reviews(scope)
 
     async def pending_review_scope(self, review_id: int) -> Scope:
-        async with session_scope(self.session_factory) as session:
-            review = await MemoryReviewRepository(session).get_pending(review_id)
-            if review is None:
-                raise ValueError(f"pending review #{review_id} was not found")
-            return Scope(review.chat_id, review.message_thread_id)
+        return await self._mutation_service.pending_review_scope(review_id)
 
     async def approve_review(self, review_id: int, *, reviewed_by: int | None = None) -> int:
-        async with session_scope(self.session_factory) as session:
-            repo = MemoryReviewRepository(session)
-            review = await repo.get_pending(review_id)
-            if review is None:
-                raise ValueError(f"pending review #{review_id} was not found")
-            scope = Scope(review.chat_id, review.message_thread_id)
-            scope_settings = await ScopeSettingsRepository(session).effective(
-                scope, self._default_scope_settings()
-            )
-            review_kind = review.kind
-            review_content = review.content
-            source_message_ids = list(review.source_message_ids)
-        selection = self._select_provider(scope_settings)
-        embedding_generation = await self._generate_embeddings(
-            selection,
-            [review_content],
-            operation="embed_knowledge",
-            metadata={"scope": scope.key, "target_type": "knowledge_item", "kind": review_kind},
-        )
-        if embedding_generation.error is not None:
-            async with session_scope(self.session_factory) as session:
-                await self._add_embedding_usage_in_session(
-                    session,
-                    selection=selection,
-                    generation=embedding_generation,
-                    texts_count=1,
-                    operation="embed_knowledge",
-                    metadata={
-                        "scope": scope.key,
-                        "target_type": "knowledge_item",
-                        "kind": review_kind,
-                    },
-                )
-            raise embedding_generation.error
-        async with session_scope(self.session_factory) as session:
-            repo = MemoryReviewRepository(session)
-            review = await repo.get_pending(review_id)
-            if review is None:
-                raise ValueError(f"pending review #{review_id} was not found")
-            await self._add_embedding_usage_in_session(
-                session,
-                selection=selection,
-                generation=embedding_generation,
-                texts_count=1,
-                operation="embed_knowledge",
-                metadata={"scope": scope.key, "target_type": "knowledge_item", "kind": review_kind},
-            )
-            item = await KnowledgeRepository(session).add(
-                scope=scope,
-                kind=review_kind,
-                content=review_content,
-                source_message_ids=source_message_ids,
-            )
-            await EmbeddingRepository(session).add(
-                target_type="knowledge_item",
-                target_id=item.id,
-                scope=scope,
-                provider=selection.embedding_provider.name,
-                model=selection.embedding_model,
-                vector=embedding_generation.vectors[0],
-            )
-            await repo.set_status(review, status="approved", reviewed_by=reviewed_by)
-            await EventRepository(session).add(
-                event_type="memory_review_approved",
-                scope=scope,
-                user_id=reviewed_by,
-                payload={"review_id": review_id, "knowledge_item_id": item.id},
-            )
-            item_id = item.id
-        await self.compact_memory(dirty_scopes={scope})
-        return item_id
+        return await self._mutation_service.approve_review(review_id, reviewed_by=reviewed_by)
 
     async def reject_review(self, review_id: int, *, reviewed_by: int | None = None) -> None:
-        async with session_scope(self.session_factory) as session:
-            repo = MemoryReviewRepository(session)
-            review = await repo.get_pending(review_id)
-            if review is None:
-                raise ValueError(f"pending review #{review_id} was not found")
-            scope = Scope(review.chat_id, review.message_thread_id)
-            await repo.set_status(review, status="rejected", reviewed_by=reviewed_by)
-            await EventRepository(session).add(
-                event_type="memory_review_rejected",
-                scope=scope,
-                user_id=reviewed_by,
-                payload={"review_id": review_id},
-            )
-        await self.rebuild_daily_projection()
+        await self._mutation_service.reject_review(review_id, reviewed_by=reviewed_by)
 
     def forget_token_hash(self, scope: Scope, user_id: int, token: str) -> str:
-        payload = f"{scope.key}:{user_id}:{token}".encode()
-        return hashlib.sha256(payload).hexdigest()
+        return self._mutation_service.forget_token_hash(scope, user_id, token)
 
     async def forget(self, scope: Scope, user_id: int, confirm: str | None) -> tuple[bool, str]:
-        async with session_scope(self.session_factory) as session:
-            challenge_repo = ForgetChallengeRepository(session)
-            challenge = await challenge_repo.latest_active(scope=scope, user_id=user_id)
-            if (
-                challenge is None
-                or not confirm
-                or challenge.token_hash != self.forget_token_hash(scope, user_id, confirm)
-            ):
-                token = token_urlsafe(8)
-                expires_at = utc_now() + timedelta(
-                    seconds=int(self.runtime_setting("forget_confirm_ttl_seconds"))
-                )
-                await challenge_repo.create(
-                    scope=scope,
-                    user_id=user_id,
-                    token_hash=self.forget_token_hash(scope, user_id, token),
-                    expires_at=expires_at,
-                )
-                await EventRepository(session).add(
-                    event_type="forget_confirmation_created",
-                    scope=scope,
-                    user_id=user_id,
-                    payload={"expires_at": expires_at.isoformat()},
-                )
-                message = (
-                    "Confirmation required. "
-                    f"Re-run with confirm={token} before {expires_at.isoformat()}"
-                )
-                return (False, message)
-            await challenge_repo.consume(challenge.id)
-            dirty_scopes = {
-                row.scope
-                for row in await KnowledgeRepository(session).scope_counts()
-                if scope.contains(row.scope)
-            }
-            messages = await MessageRepository(session).delete_scope(scope)
-            items = await KnowledgeRepository(session).delete_scope(scope)
-            embeddings = await EmbeddingRepository(session).delete_scope(scope)
-            await EventRepository(session).add(
-                event_type="forget",
-                scope=scope,
-                user_id=user_id,
-                payload={"messages": messages, "knowledge_items": items, "embeddings": embeddings},
-            )
-        await self.compact_memory(dirty_scopes=dirty_scopes)
-        detail = f"{messages} messages, {items} knowledge items, {embeddings} embeddings."
-        return (True, f"Forgot scope {scope.key}: {detail}")
+        return await self._mutation_service.forget(scope, user_id, confirm)
 
     async def _claim_summary_batch(
         self,
@@ -1824,58 +757,13 @@ class MemoryService:
         now: datetime | None = None,
         created_before: datetime | None = None,
     ) -> SummaryClaim | None:
-        claim_now = now or utc_now()
-        stale_before = claim_now - timedelta(seconds=SUMMARY_CLAIM_TIMEOUT_SECONDS)
-        clean_template_name = template_name or "general"
-        request = ai_options or AIRequestOptions()
-        token = token_urlsafe(24)
-        async with session_scope(self.session_factory) as session:
-            scope_settings = await ScopeSettingsRepository(session).effective(
-                scope, self._default_scope_settings()
-            )
-            template_instruction = (
-                request.summary_template_override
-                or await self._summary_template_prompt_in_session(session, clean_template_name)
-            )
-            template_version = (
-                PROMPT_VERSION if request.summary_template_override else SUMMARY_BASE_PROMPT.version
-            )
-            message_repo = MessageRepository(session)
-            stale_ids = await message_repo.stale_summary_claim_ids(
-                scope, stale_before=stale_before, created_before=created_before
-            )
-            pending = await message_repo.claim_for_summary(
-                scope,
-                limit=scope_settings.summary_batch_size,
-                token=token,
-                now=claim_now,
-                stale_before=stale_before,
-                created_before=created_before,
-            )
-            if not pending:
-                return None
-            recovered_stale_claims = sum(message.id in stale_ids for message in pending)
-            if recovered_stale_claims:
-                await EventRepository(session).add(
-                    event_type="summary_stale_claims_recovered",
-                    scope=scope,
-                    payload={
-                        "recovered_claims": recovered_stale_claims,
-                        "claim_timeout_seconds": SUMMARY_CLAIM_TIMEOUT_SECONDS,
-                    },
-                )
-            return SummaryClaim(
-                token=token,
-                scope=scope,
-                message_ids=tuple(message.id for message in pending),
-                source_telegram_ids=tuple(message.telegram_message_id for message in pending),
-                normalized_texts=tuple(message.normalized_text for message in pending),
-                scope_settings=scope_settings,
-                template_name=clean_template_name,
-                template_instruction=template_instruction,
-                template_version=template_version,
-                recovered_stale_claims=recovered_stale_claims,
-            )
+        return await self._summary_service.claim_summary_batch(
+            scope,
+            template_name=template_name,
+            ai_options=ai_options,
+            now=now,
+            created_before=created_before,
+        )
 
     async def _process_summary_batch(
         self,
@@ -1886,35 +774,12 @@ class MemoryService:
         now: datetime | None = None,
         created_before: datetime | None = None,
     ) -> SummaryBatchOutcome:
-        claim = await self._claim_summary_batch(
+        return await self._summary_service.process_summary_batch(
             scope,
             template_name=template_name,
             ai_options=ai_options,
             now=now,
             created_before=created_before,
-        )
-        if claim is None:
-            return SummaryBatchOutcome(0, 0, False)
-        generation = await self._summarize_claim(claim, ai_options=ai_options)
-        embedding_generation: EmbeddingGenerationResult | None = None
-        if generation.content is not None and not claim.scope_settings.review_before_compact:
-            embedding_generation = await self._generate_embeddings(
-                generation.selection,
-                [generation.content],
-                operation="embed_knowledge",
-                metadata={
-                    "scope": claim.scope.key,
-                    "target_type": "knowledge_item",
-                    "kind": "daily_summary",
-                },
-            )
-        outcome = await self._finalize_summary_claim(
-            claim, generation, embedding_generation=embedding_generation
-        )
-        return SummaryBatchOutcome(
-            claimed_messages=len(claim.message_ids),
-            completed_messages=outcome.completed_messages,
-            needs_compact=outcome.needs_compact,
         )
 
     async def _finalize_summary_claim(
@@ -1924,137 +789,19 @@ class MemoryService:
         *,
         embedding_generation: EmbeddingGenerationResult | None,
     ) -> PendingSummaryOutcome:
-        embedding_failure = (
-            embedding_generation.failure if embedding_generation is not None else None
+        return await self._summary_service.finalize_summary_claim(
+            claim, generation, embedding_generation=embedding_generation
         )
-        if generation.content is None or embedding_failure is not None:
-            if generation.content is None:
-                error_type = generation.error_type
-            else:
-                assert embedding_failure is not None
-                error_type = embedding_failure.error_type
-            async with session_scope(self.session_factory) as session:
-                await MessageRepository(session).release_summary_claim(claim.token)
-                await EventRepository(session).add(
-                    event_type="summary_failed",
-                    scope=claim.scope,
-                    payload={
-                        "source_message_ids": list(claim.source_telegram_ids),
-                        "provider": generation.selection.chat_provider.name,
-                        "model": generation.selection.chat_model,
-                        "operation": "summarize",
-                        "exception_type": error_type,
-                    },
-                )
-            async with session_scope(self.session_factory) as session:
-                await self._add_summary_usage_in_session(session, claim, generation)
-                if embedding_generation is not None:
-                    await self._add_embedding_usage_in_session(
-                        session,
-                        selection=generation.selection,
-                        generation=embedding_generation,
-                        texts_count=1,
-                        operation="embed_knowledge",
-                        metadata={
-                            "scope": claim.scope.key,
-                            "target_type": "knowledge_item",
-                            "kind": "daily_summary",
-                        },
-                    )
-            return PendingSummaryOutcome(0, False)
-        async with session_scope(self.session_factory) as session:
-            message_repo = MessageRepository(session)
-            await self._add_summary_usage_in_session(session, claim, generation)
-            if embedding_generation is not None:
-                await self._add_embedding_usage_in_session(
-                    session,
-                    selection=generation.selection,
-                    generation=embedding_generation,
-                    texts_count=1,
-                    operation="embed_knowledge",
-                    metadata={
-                        "scope": claim.scope.key,
-                        "target_type": "knowledge_item",
-                        "kind": "daily_summary",
-                    },
-                )
-            owned = await message_repo.claimed_by_token(claim.token)
-            if tuple(message.id for message in owned) != claim.message_ids:
-                await message_repo.release_summary_claim(claim.token)
-                await EventRepository(session).add(
-                    event_type="summary_stale_result",
-                    scope=claim.scope,
-                    payload={
-                        "expected_messages": len(claim.message_ids),
-                        "owned_messages": len(owned),
-                    },
-                )
-                return PendingSummaryOutcome(0, False)
-            finalized = await message_repo.finalize_summary_claim(
-                claim.token, list(claim.message_ids), summarized_at=utc_now()
-            )
-            if finalized != len(claim.message_ids):
-                raise RuntimeError("summary claim ownership changed during finalization")
-            source_ids = list(claim.source_telegram_ids)
-            if claim.scope_settings.review_before_compact:
-                review = await MemoryReviewRepository(session).add(
-                    scope=claim.scope,
-                    kind="daily_summary",
-                    content=generation.content,
-                    source_message_ids=source_ids,
-                )
-                await EventRepository(session).add(
-                    event_type="memory_review_created",
-                    scope=claim.scope,
-                    payload={"review_id": review.id, "source_message_ids": source_ids},
-                )
-                return PendingSummaryOutcome(finalized, False)
-            item = await KnowledgeRepository(session).add(
-                scope=claim.scope,
-                kind="daily_summary",
-                content=generation.content,
-                source_message_ids=source_ids,
-                metadata_json={"template": claim.template_name},
-            )
-            assert embedding_generation is not None
-            await EmbeddingRepository(session).add(
-                target_type="knowledge_item",
-                target_id=item.id,
-                scope=claim.scope,
-                provider=generation.selection.embedding_provider.name,
-                model=generation.selection.embedding_model,
-                vector=embedding_generation.vectors[0],
-            )
-            return PendingSummaryOutcome(finalized, True)
 
     async def _add_summary_usage_in_session(
         self, session: AsyncSession, claim: SummaryClaim, generation: SummaryGenerationResult
     ) -> None:
-        metadata = dict(generation.telemetry.metadata)
-        if (
-            generation.telemetry.operation != "summarize"
-            or metadata.get("scope") != claim.scope.key
-            or metadata.get("summary_template") != claim.template_name
-        ):
-            raise RuntimeError("summary telemetry does not match its persistence boundary")
-        await self._add_provider_usage_in_session(session, generation.telemetry)
+        await self._summary_service.add_summary_usage_in_session(session, claim, generation)
 
     async def _summarize_claim(
         self, claim: SummaryClaim, *, ai_options: AIRequestOptions | None = None
     ) -> SummaryGenerationResult:
-        return await self._generate_summary(
-            scope=claim.scope,
-            source_telegram_ids=claim.source_telegram_ids,
-            normalized_texts=claim.normalized_texts,
-            scope_settings=claim.scope_settings,
-            template_name=claim.template_name,
-            template_instruction=claim.template_instruction,
-            template_version=claim.template_version,
-            context_line="Scope summary from pending learned messages.",
-            operation="summarize",
-            usage_metadata={},
-            ai_options=ai_options,
-        )
+        return await self._summary_service.summarize_claim(claim, ai_options=ai_options)
 
     async def _generate_summary(
         self,
@@ -2071,283 +818,46 @@ class MemoryService:
         usage_metadata: dict[str, Any],
         ai_options: AIRequestOptions | None = None,
     ) -> SummaryGenerationResult:
-        selection = self._select_provider(scope_settings, ai_options, summary=True)
-        reasoning_level = self._reasoning_level(scope_settings, ai_options)
-        prompt_lines = [
-            SUMMARY_BASE_PROMPT.prompt,
-            f"Prompt version: {SUMMARY_BASE_PROMPT.version}.",
-            template_instruction,
-            "Do not dump raw chat. Preserve source references.",
-            f"Preferred summary model setting: {scope_settings.summary_model}.",
-            f"Selected chat model: {selection.chat_model}.",
-            f"Reasoning level setting: {reasoning_level}.",
-            f"Template: {template_name}.",
-            f"Scope: {scope.key}.",
-            context_line,
-            "",
-        ]
-        for normalized_text, telegram_message_id in zip(
-            normalized_texts, source_telegram_ids, strict=True
-        ):
-            prompt_lines.append(f"- {normalized_text} [source:{telegram_message_id}]")
-        execution = await self._execute_chat_provider(
-            selection,
-            [ChatMessage(role="user", content="\n".join(prompt_lines))],
-            operation=operation,
-            metadata={
-                "prompt_version": PROMPT_VERSION,
-                "summary_template": template_name,
-                "summary_template_version": template_version,
-                "provider_profile": selection.profile.name,
-                "chat_model": selection.chat_model,
-                "embedding_model": selection.embedding_model,
-                "reasoning_level": reasoning_level,
-                "scope": scope.key,
-                **usage_metadata,
-            },
-            temperature=0.1,
-            max_tokens=900,
-            reasoning_effort=reasoning_level,
-        )
-        failure = execution.failure
-        telemetry = execution.telemetry
-        if execution.result is None:
-            content = None
-        else:
-            content = execution.result.content.strip() or None
-            if content is None:
-                failure = ProviderOperationError(
-                    error_type="EmptySummaryResponse",
-                    safe_summary="EmptySummaryResponse: provider returned empty content",
-                )
-                telemetry = provider_call_telemetry(
-                    provider=telemetry.provider,
-                    model=telemetry.model,
-                    operation=telemetry.operation,
-                    latency_ms=telemetry.latency_ms,
-                    prompt_tokens=telemetry.prompt_tokens,
-                    completion_tokens=telemetry.completion_tokens,
-                    failure=failure,
-                    metadata=dict(telemetry.metadata),
-                )
-        return SummaryGenerationResult(
-            content=content,
-            chat_result=execution.result,
-            failure=failure,
-            telemetry=telemetry,
-            selection=selection,
-            reasoning_level=reasoning_level,
+        return await self._summary_service.generate_summary(
+            scope=scope,
+            source_telegram_ids=source_telegram_ids,
+            normalized_texts=normalized_texts,
+            scope_settings=scope_settings,
+            template_name=template_name,
+            template_instruction=template_instruction,
             template_version=template_version,
+            context_line=context_line,
+            operation=operation,
+            usage_metadata=usage_metadata,
+            ai_options=ai_options,
         )
 
     async def _summary_template_prompt_in_session(
         self, session: AsyncSession, template_name: str
     ) -> str:
-        clean_name = template_name.strip().lower()
-        builtin = BUILTIN_SUMMARY_TEMPLATES.get(clean_name)
-        if builtin is not None:
-            return builtin
-        prompt = await SummaryTemplateRepository(session).get_prompt(clean_name)
-        if prompt is None:
-            raise ValueError(f"summary template {template_name!r} was not found")
-        return prompt
+        return await self._summary_service.summary_template_prompt_in_session(
+            session, template_name
+        )
 
     async def _retrieval_scopes_in_session(
         self, session: AsyncSession, destination: Scope, profile_name: str | None
     ) -> list[Scope]:
-        if profile_name is None:
-            return [destination]
-        profile_repo = MemoryProfileRepository(session)
-        profile = await profile_repo.get_profile(profile_name)
-        if profile is None:
-            raise ValueError(f"profile {profile_name!r} was not found")
-        policy = PolicyService(
-            self.settings,
-            PolicyRepository(session),
-            learning_default_enabled=self.runtime_setting("learning_default_enabled"),
+        return await self._retrieval_service.retrieval_scopes_in_session(
+            session, destination, profile_name
         )
-        scopes = [destination]
-        for source in profile.source_scopes:
-            if source == destination:
-                continue
-            if not await profile_repo.can_query(destination=destination, source=source):
-                continue
-            if (await policy.status(source)).get("learning_enabled") is not True:
-                continue
-            scopes.append(source)
-        if len(scopes) == 1:
-            raise ValueError(
-                f"profile {profile.name!r} has no permitted learning-enabled source scopes "
-                f"for {destination.key}"
-            )
-        return dedupe_scope_list(scopes)
 
     async def _load_canonical_scope_input(
         self, session: AsyncSession, scope: Scope
     ) -> CanonicalScopeInput | None:
-        items = await KnowledgeRepository(session).list_exact_scope(scope)
-        if not items:
-            return None
-        scope_settings = await ScopeSettingsRepository(session).effective(
-            scope, self._default_scope_settings()
-        )
-        selection = self._select_provider(scope_settings, summary=True)
-        reasoning_level = self._reasoning_level(scope_settings)
-        profile = selection.profile
-        item_fingerprint = canonical_scope_fingerprint(
-            scope.key,
-            items,
-            {
-                "prompt_version": CANONICAL_PROMPT_VERSION,
-                "provider": profile.provider,
-                "provider_profile": profile.name,
-                "chat_model": selection.chat_model,
-                "reasoning_level": reasoning_level,
-                "openai_base_url": profile.openai_base_url,
-                "redact_before_ai": profile.redact_before_ai,
-                "redaction_custom_patterns": list(profile.redaction_custom_patterns),
-                "temperature": 0.1,
-                "max_tokens": 1200,
-            },
-        )
-        return CanonicalScopeInput(
-            scope=scope,
-            items=tuple(items),
-            scope_settings=scope_settings,
-            selection=selection,
-            reasoning_level=reasoning_level,
-            item_fingerprint=item_fingerprint,
-        )
+        return await self._summary_service.load_canonical_scope_input(session, scope)
 
     async def _refresh_canonical_scope(self, scope: Scope, *, force: bool) -> CanonicalScopeRefresh:
-        provider_calls = 0
-        for _ in range(3):
-            async with session_scope(self.session_factory) as session:
-                snapshot_repo = CanonicalScopeSnapshotRepository(session)
-                canonical_input = await self._load_canonical_scope_input(session, scope)
-                existing = await snapshot_repo.get(scope)
-                if canonical_input is None:
-                    await snapshot_repo.delete_scope(scope)
-                    return CanonicalScopeRefresh((), provider_calls, True)
-                if (
-                    not force
-                    and existing is not None
-                    and existing.item_fingerprint == canonical_input.item_fingerprint
-                ):
-                    return CanonicalScopeRefresh(existing.entries, provider_calls, True)
-            entries, telemetry = await self._canonical_entries_for_scope(canonical_input)
-            provider_calls += 1
-            async with session_scope(self.session_factory) as session:
-                await self._add_provider_usage_in_session(session, telemetry)
-                if telemetry.error_type is not None:
-                    await EventRepository(session).add(
-                        event_type="canonical_snapshot_refresh_failed",
-                        scope=scope,
-                        payload={
-                            "error_type": telemetry.error_type,
-                            "item_fingerprint": canonical_input.item_fingerprint,
-                        },
-                    )
-                    retained = await CanonicalScopeSnapshotRepository(session).get(scope)
-                    if retained is not None:
-                        return CanonicalScopeRefresh(retained.entries, provider_calls, False)
-                    return CanonicalScopeRefresh(
-                        tuple(fallback_entries(list(canonical_input.items))), provider_calls, False
-                    )
-                current_input = await self._load_canonical_scope_input(session, scope)
-                snapshot_repo = CanonicalScopeSnapshotRepository(session)
-                if current_input is None:
-                    await snapshot_repo.delete_scope(scope)
-                    return CanonicalScopeRefresh((), provider_calls, True)
-                if current_input.item_fingerprint != canonical_input.item_fingerprint:
-                    await EventRepository(session).add(
-                        event_type="canonical_snapshot_stale_result",
-                        scope=scope,
-                        payload={
-                            "discarded_fingerprint": canonical_input.item_fingerprint,
-                            "current_fingerprint": current_input.item_fingerprint,
-                        },
-                    )
-                    continue
-                await snapshot_repo.upsert(
-                    scope=scope,
-                    item_fingerprint=canonical_input.item_fingerprint,
-                    entries=entries,
-                    provider=telemetry.provider,
-                    provider_profile=canonical_input.selection.profile.name,
-                    model=canonical_input.selection.chat_model,
-                    reasoning_level=canonical_input.reasoning_level,
-                    prompt_version=CANONICAL_PROMPT_VERSION,
-                )
-                return CanonicalScopeRefresh(tuple(entries), provider_calls, True)
-        async with session_scope(self.session_factory) as session:
-            current_input = await self._load_canonical_scope_input(session, scope)
-            existing = await CanonicalScopeSnapshotRepository(session).get(scope)
-            await EventRepository(session).add(
-                event_type="canonical_snapshot_retry_exhausted",
-                scope=scope,
-                payload={"attempts": provider_calls},
-            )
-        if existing is not None:
-            return CanonicalScopeRefresh(existing.entries, provider_calls, False)
-        if current_input is None:
-            return CanonicalScopeRefresh((), provider_calls, False)
-        return CanonicalScopeRefresh(
-            tuple(fallback_entries(list(current_input.items))), provider_calls, False
-        )
+        return await self._summary_service.refresh_canonical_scope(scope, force=force)
 
     async def _canonical_entries_for_scope(
         self, canonical_input: CanonicalScopeInput
     ) -> tuple[list[CanonicalMemoryEntry], ProviderCallTelemetry]:
-        scope = canonical_input.scope
-        items = list(canonical_input.items)
-        selection = canonical_input.selection
-        reasoning_level = canonical_input.reasoning_level
-        prompt = canonical_prompt(scope.key, items)
-        prompt = (
-            f"Reasoning level setting: {reasoning_level}.\n"
-            f"Selected chat model: {selection.chat_model}.\n{prompt}"
-        )
-        execution = await self._execute_chat_provider(
-            selection,
-            [ChatMessage(role="user", content=prompt)],
-            operation="canonical_compact",
-            metadata={
-                "prompt_version": PROMPT_VERSION,
-                "provider_profile": selection.profile.name,
-                "chat_model": selection.chat_model,
-                "embedding_model": selection.embedding_model,
-                "reasoning_level": reasoning_level,
-                "scope": scope.key,
-            },
-            temperature=0.1,
-            max_tokens=1200,
-            reasoning_effort=reasoning_level,
-        )
-        telemetry = execution.telemetry
-        if execution.result is None:
-            entries = fallback_entries(items)
-        else:
-            try:
-                parsed = parse_canonical_response(
-                    execution.result.content, {int(item.id): item for item in items}
-                )
-            except Exception as error:
-                failure = ProviderOperationError.from_exception(error)
-                telemetry = provider_call_telemetry(
-                    provider=telemetry.provider,
-                    model=telemetry.model,
-                    operation=telemetry.operation,
-                    latency_ms=telemetry.latency_ms,
-                    prompt_tokens=telemetry.prompt_tokens,
-                    completion_tokens=telemetry.completion_tokens,
-                    failure=failure,
-                    metadata=dict(telemetry.metadata),
-                )
-                entries = fallback_entries(items)
-            else:
-                entries = parsed or fallback_entries(items)
-        return entries, telemetry
+        return await self._summary_service.canonical_entries_for_scope(canonical_input)
 
     def _select_provider(
         self,
@@ -2445,14 +955,7 @@ class MemoryService:
     async def _system_prompt_template_in_session(
         self, session: AsyncSession, name: str
     ) -> PromptTemplate:
-        clean_name = name.strip().lower()
-        builtin = BUILTIN_SYSTEM_PROMPTS.get(clean_name)
-        if builtin is not None:
-            return builtin
-        row = await SystemPromptTemplateRepository(session).get(clean_name)
-        if row is None:
-            raise ValueError(f"system prompt template {name!r} was not found")
-        return PromptTemplate(name=row.name, version=row.version, prompt=row.prompt)
+        return await self._settings_profiles.system_prompt_template_in_session(session, name)
 
     async def _answer_system_prompt_in_session(
         self,
@@ -2460,138 +963,15 @@ class MemoryService:
         scope_settings: EffectiveScopeSettings,
         options: AIRequestOptions | None,
     ) -> PromptTemplate:
-        request = options or AIRequestOptions()
-        if request.system_prompt_override:
-            return PromptTemplate(
-                name="one_shot_override",
-                version=PROMPT_VERSION,
-                prompt=request.system_prompt_override.strip(),
-            )
-        template_name = request.system_prompt_template or scope_settings.system_prompt_template
-        return await self._system_prompt_template_in_session(session, template_name)
+        return await self._settings_profiles.answer_system_prompt_in_session(
+            session, scope_settings, options
+        )
 
     def _default_scope_settings(self) -> EffectiveScopeSettings:
-        provider_profile = str(self.runtime_setting("provider_profile"))
-        default_profile = self.settings.provider_profile_by_name(provider_profile)
-        return EffectiveScopeSettings(
-            retrieval_top_k=int(self.runtime_setting("retrieval_top_k")),
-            summary_batch_size=int(self.runtime_setting("summary_batch_size")),
-            summary_model=str(self.runtime_setting("summary_model")),
-            system_prompt_template=str(self.runtime_setting("system_prompt_template")),
-            provider_profile=default_profile.name,
-            chat_model=str(self.runtime_setting("chat_model")),
-            embedding_model=str(self.runtime_setting("embedding_model")),
-            reasoning_level=str(self.runtime_setting("reasoning_level")),
-            raw_message_retention_days=self.runtime_setting("raw_message_retention_days"),
-            knowledge_retention_days=self.runtime_setting("knowledge_retention_days"),
-            review_before_compact=bool(self.runtime_setting("review_before_compact")),
-        )
+        return self._settings_profiles.default_scope_settings()
 
     def _embedding_model_name(self) -> str:
         return getattr(self.embedding_provider, "embedding_model", self.embedding_provider.model)
-
-
-def validate_scope_settings(
-    updates: dict[str, int | str | bool | None], settings: Settings | None = None
-) -> None:
-    active_settings = settings or Settings()
-    positive_int_fields = {"retrieval_top_k", "summary_batch_size"}
-    optional_positive_int_fields = {"raw_message_retention_days", "knowledge_retention_days"}
-    for field in positive_int_fields:
-        value = updates.get(field)
-        if field in updates and (not isinstance(value, int) or value < 1):
-            raise ValueError(f"{field} must be a positive integer")
-    for field in optional_positive_int_fields:
-        value = updates.get(field)
-        if field in updates and value is not None and (not isinstance(value, int) or value < 1):
-            raise ValueError(f"{field} must be a positive integer or off")
-    model_fields = {"summary_model", "chat_model", "embedding_model"}
-    for field in model_fields:
-        if field in updates and updates[field] is not None:
-            value = str(updates[field]).strip()
-            if not value:
-                raise ValueError(f"{field} cannot be empty")
-            if field == "chat_model":
-                value = active_settings.validate_chat_model(value)
-            elif field == "embedding_model":
-                value = active_settings.validate_embedding_model(value)
-            updates[field] = value
-    short_name_fields = {"system_prompt_template", "provider_profile", "reasoning_level"}
-    for field in short_name_fields:
-        if field in updates and updates[field] is not None:
-            value = str(updates[field]).strip().lower()
-            if not value:
-                raise ValueError(f"{field} cannot be empty")
-            if field == "reasoning_level":
-                value = active_settings.validate_reasoning_level(value)
-            updates[field] = value
-    if "review_before_compact" in updates and not isinstance(
-        updates["review_before_compact"], bool
-    ):
-        raise ValueError("review_before_compact must be true or false")
-
-
-def note_metadata(
-    *, tags: list[str] | None = None, priority: int | None = None, source: str | None = None
-) -> dict[str, Any]:
-    metadata: dict[str, Any] = {}
-    normalized_tags = normalize_tags(tags or [])
-    if normalized_tags:
-        metadata["tags"] = normalized_tags
-    if priority is not None:
-        if priority < 1:
-            raise ValueError("priority must be a positive integer")
-        metadata["priority"] = priority
-    if source is not None and source.strip():
-        metadata["source"] = source.strip()
-    return metadata
-
-
-def normalize_tags(tags: list[str]) -> list[str]:
-    normalized: list[str] = []
-    seen: set[str] = set()
-    for raw in tags:
-        tag = raw.strip().lower().removeprefix("#")
-        if not tag:
-            continue
-        if any(char.isspace() for char in tag):
-            raise ValueError("tags cannot contain whitespace")
-        if tag in seen:
-            continue
-        seen.add(tag)
-        normalized.append(tag)
-    return normalized
-
-
-def memory_note_preview(item: KnowledgeItem) -> MemoryNotePreview:
-    metadata = item.metadata_json or {}
-    raw_tags = metadata.get("tags", [])
-    tags = [str(tag) for tag in raw_tags] if isinstance(raw_tags, list) else []
-    raw_priority = metadata.get("priority")
-    priority = int(raw_priority) if raw_priority is not None else None
-    raw_source = metadata.get("source")
-    return MemoryNotePreview(
-        id=item.id,
-        scope=Scope(item.chat_id, item.message_thread_id),
-        content=item.content,
-        tags=tags,
-        priority=priority,
-        source=str(raw_source) if raw_source else None,
-        source_message_ids=list(item.source_message_ids),
-    )
-
-
-def memory_item_preview(item: KnowledgeItem) -> MemoryItemPreview:
-    return MemoryItemPreview(
-        id=item.id,
-        scope=Scope(item.chat_id, item.message_thread_id),
-        kind=item.kind,
-        content=item.content,
-        source_message_ids=list(item.source_message_ids),
-        metadata=dict(item.metadata_json or {}),
-        created_at=item.created_at,
-        updated_at=item.updated_at,
-    )
 
 
 def skip_reason_explanation(reason: str | None) -> str:
@@ -2702,64 +1082,6 @@ def parse_profile_sources(raw: str, *, current: Scope) -> list[Scope]:
     if not scopes:
         raise ValueError("sources must include at least one scope")
     return dedupe_scope_list(scopes)
-
-
-def dedupe_scope_list(scopes: list[Scope]) -> list[Scope]:
-    seen: set[str] = set()
-    out: list[Scope] = []
-    for scope in scopes:
-        if scope.key in seen:
-            continue
-        seen.add(scope.key)
-        out.append(scope)
-    return out
-
-
-def search_result_rank(result: SearchResult) -> tuple[int, float]:
-    tier = 0 if result.source.startswith("knowledge_item:") else 1
-    return tier, -result.score
-
-
-def format_results(results: list[SearchResult]) -> str:
-    if not results:
-        return "No scoped memory found."
-    lines = []
-    for result in results:
-        sources = ", ".join(str(source) for source in result.source_message_ids) or result.source
-        lines.append(
-            f"[source:{sources} score:{result.score:.3f} scope:{result.scope.key}] {result.content}"
-        )
-    return "\n".join(lines)
-
-
-def compact_answer_sources(results: list[SearchResult], *, limit: int = 8) -> str:
-    refs: list[str] = []
-    seen: set[str] = set()
-    total_refs = sum(
-        len(item.source_message_ids) if item.source_message_ids else 1 for item in results
-    )
-    for result in results:
-        source_refs = [str(source_id) for source_id in result.source_message_ids] or [result.source]
-        for source_ref in source_refs:
-            ref = f"{result.scope.key}#{source_ref}"
-            if ref in seen:
-                continue
-            seen.add(ref)
-            refs.append(ref)
-            if len(refs) >= limit:
-                suffix = " + more" if len(seen) < total_refs else ""
-                return ", ".join(refs) + suffix
-    return ", ".join(refs)
-
-
-def append_answer_sources(answer: str, results: list[SearchResult]) -> str:
-    sources = compact_answer_sources(results)
-    if not sources:
-        return answer
-    lower = answer.lower()
-    if "sources:" in lower or "[source:" in lower:
-        return answer
-    return f"{answer.rstrip()}\n\nSources: {sources}"
 
 
 def format_memory_status(status: MemoryStatusPreview) -> str:
@@ -3011,52 +1333,6 @@ def parse_runtime_settings_args(raw: dict[str, str]) -> dict[str, Any]:
     return updates
 
 
-def validate_runtime_settings_values(values: dict[str, Any], settings: Settings) -> dict[str, Any]:
-    out: dict[str, Any] = {}
-    for key, value in values.items():
-        if key not in SAFE_RUNTIME_SETTING_TYPES:
-            raise ValueError(f"unknown runtime setting: {key}")
-        kind = SAFE_RUNTIME_SETTING_TYPES[key]
-        if kind == "bool":
-            if not isinstance(value, bool):
-                raise ValueError(f"{key} must be true or false")
-            out[key] = value
-        elif kind == "positive_int":
-            clean = int(value)
-            if clean < 1:
-                raise ValueError(f"{key} must be >= 1")
-            out[key] = clean
-        elif kind == "optional_positive_int":
-            if value is None:
-                out[key] = None
-            else:
-                clean = int(value)
-                if clean < 1:
-                    raise ValueError(f"{key} must be >= 1 or off")
-                out[key] = clean
-        elif kind == "non_negative_float":
-            clean_float = float(value)
-            if clean_float < 0:
-                raise ValueError(f"{key} must be >= 0")
-            out[key] = clean_float
-        else:
-            clean_str = str(value).strip()
-            if not clean_str:
-                raise ValueError(f"{key} cannot be empty")
-            out[key] = clean_str
-    if "provider_profile" in out:
-        settings.provider_profile_by_name(str(out["provider_profile"]))
-    if "chat_model" in out:
-        settings.validate_chat_model(str(out["chat_model"]))
-    if "summary_model" in out:
-        settings.validate_chat_model(str(out["summary_model"]))
-    if "embedding_model" in out:
-        settings.validate_embedding_model(str(out["embedding_model"]))
-    if "reasoning_level" in out:
-        settings.validate_reasoning_level(str(out["reasoning_level"]))
-    return out
-
-
 def format_runtime_settings(settings: list[RuntimeSettingPreview]) -> str:
     if not settings:
         return "No runtime settings are editable."
@@ -3101,12 +1377,6 @@ def audit_events_jsonl(events: list[AuditEventPreview]) -> str:
             )
         )
     return "\n".join(lines) + ("\n" if lines else "")
-
-
-def fallback_answer(results: list[SearchResult]) -> str:
-    if not results:
-        return "I do not have scoped memory for that yet."
-    return "From scoped memory:\n" + format_results(results)
 
 
 def scope_label(scope: Scope, metadata: Any) -> str:

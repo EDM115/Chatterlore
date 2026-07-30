@@ -3,7 +3,7 @@
 > **Drift check (run first)**: <code>git diff --stat beda837..HEAD -- src/pzp_ai_bot/memory/service.py src/pzp_ai_bot/db/repositories.py src/pzp_ai_bot/telegram/router.py tests docs/architecture.md PLAN.md</code>. Extensive expected drift from prerequisite plans requires refreshing excerpts and inventories before implementation.
 ## Status
 - **Audit finding**: lower-priority architecture hotspot opportunity
-- **Execution status**: PARTIAL as of 2026-07-29
+- **Execution status**: DONE as of 2026-07-30
 - **Priority**: P3
 - **Effort**: L
 - **Risk**: MED
@@ -20,10 +20,10 @@ memory/service.py combines policy, ingestion, retrieval, providers, compaction, 
 ## Commands you will need
 | Purpose | Command | Expected on success |
 |---|---|---|
-| Full tests after every extraction phase | <code>.\.venv\Scripts\python.exe -m pytest -q</code> | all offline tests pass |
-| Format | <code>.\.venv\Scripts\ruff.exe format --check .</code> | exit 0 |
-| Lint | <code>.\.venv\Scripts\ruff.exe check .</code> | exit 0 |
-| Types | <code>.\.venv\Scripts\ty.exe check</code> | exit 0 |
+| Full tests after every extraction phase | <code>uv run pytest -q</code> | all offline tests pass |
+| Format | <code>uv run ruff format --check .</code> | exit 0 |
+| Lint | <code>uv run ruff check .</code> | exit 0 |
+| Types | <code>uv run ty check</code> | exit 0 |
 | Import inventory | <code>rg -n "from pzp_ai_bot\.(memory\.service|db\.repositories|telegram\.router) import" src tests</code> | every compatibility import is understood |
 ## Scope
 **In scope**:
@@ -77,12 +77,12 @@ Run format, lint, ty, full tests, and read-only git diff/status.
 - Preserve exact authorization, audit event types, parser errors, formatter semantics, transaction boundaries, and provider call counts established by prerequisite plans.
 - Run full suite after every phase, not only at the end.
 ## Done criteria
-- [ ] MemoryService remains the build_context-facing facade with unchanged public behavior.
-- [ ] Repository compatibility imports remain valid.
-- [ ] Router command/help/authorization behavior is unchanged.
-- [ ] Dependency direction has no lower-layer Telegram imports or new cycles.
-- [ ] No schema or public behavior change is hidden in the refactor.
-- [ ] Architecture docs, PLAN, and all gates pass.
+- [x] MemoryService remains the build_context-facing facade with unchanged public behavior.
+- [x] Repository compatibility imports remain valid.
+- [x] Router command/help/authorization behavior is unchanged.
+- [x] Dependency direction has no lower-layer Telegram imports or new cycles.
+- [x] No schema or public behavior change is hidden in the refactor.
+- [x] Architecture docs, PLAN, and all gates pass.
 ## STOP conditions
 - Any prerequisite touching the three hotspot files is still IN PROGRESS.
 - A public import/caller outside the inventoried repo cannot be assessed.
@@ -103,3 +103,12 @@ Run format, lint, ty, full tests, and read-only git diff/status.
 - **NEXT**: Finish Plan 020 dependency-direction/import-graph checks, prove no lower-layer Telegram imports or new cycles, run Ruff/ty/full branch coverage and mark the checklist DONE only when the router and remaining service slices are complete.
 - **NEXT**: Reconcile Plan 014 and the complete roadmap only after Plan 020 is fully gated; then run Docker build/run/health/doctor/migration acceptance, live OpenAI acceptance with `gpt-5.6-terra` and reasoning `medium`, and local-provider/Telegram checks where installed models and credentials permit.
 - **NEXT**: Produce the final source-backed implemented/partial/not-implemented audit only after those acceptance results are recorded, distinguishing unavailable credentials/models from application failures.
+
+## 2026-07-30 completion
+- **DONE**: Split the remaining `MemoryService` orchestration into `settings_profiles.py`, `retrieval_service.py`, `mutation_service.py` and `summary_service.py`; the facade still exposes the characterized 52-method public surface and delegates to all six cohesive collaborators without collaborator back-imports.
+- **DONE**: Split the root Telegram handler closure into `telegram/routers/learning.py`, `operations.py`, `settings.py`, `retrieval.py` and `memory.py`, with common guards and safe replies in `shared.py`; root composition preserves the characterized command registration order and compatibility exports.
+- **DONE**: Extended `tests/test_architecture_facades.py` to enforce collaborator ownership, repository facade identity, exact router composition order, no lower-layer Telegram imports and no collaborator back-import of `memory.service`.
+- **DONE**: Focused verification passed with 54 settings/profile tests, 56 retrieval tests, 70 mutation tests, 90 summary/canonical tests and 100 Telegram tests.
+- **DONE**: Whole-project `ruff format --check .`, `ruff check .` and `ty check` passed; the final external-base-temp branch-coverage run passed with 228 tests, 1 skipped and 82.43% total coverage.
+- **DONE**: A disposable SQLite database upgraded from an empty schema through revision `0012_telemetry_scope_indexes`, and `alembic check` reported no new upgrade operations.
+- **DONE**: `docs/architecture.md`, `PLAN.md` and `plans/README.md` now record the completed facade boundaries, ownership and verification evidence.
