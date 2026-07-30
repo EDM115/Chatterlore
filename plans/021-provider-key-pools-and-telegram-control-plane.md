@@ -1,0 +1,564 @@
+---
+goal: Secure Telegram-authenticated control plane and resilient provider API-key pools
+version: 1.0
+date_created: 2026-07-30
+last_updated: 2026-07-30
+owner: PZP-AI
+status: Planned
+tags:
+  - feature
+  - security
+  - telegram
+  - mini-app
+  - oidc
+  - nuxt
+  - providers
+  - secrets
+  - operations
+---
+
+# Introduction
+
+![Status: Planned](https://img.shields.io/badge/status-Planned-blue)
+
+This plan adds two related product capabilities without weakening PZP AI's existing scope, privacy or service boundaries: a reloadless multi-key credential pool for each AI provider profile, and a responsive Telegram-authenticated control plane that works both as a Telegram Mini App and as a normal website.
+
+This is a design and execution plan only. Do not begin implementation until the user has reviewed and approved this file. Option A is the accepted secret-visibility policy: database-managed provider keys are masked by default but can be fully revealed by a bot admin after a fresh Telegram step-up authentication, through an audited, short-lived, non-cacheable response.
+
+The selected frontend is Nuxt 4 with Vue 3, TypeScript and Nuxt UI 4. The frontend is a client-rendered static application generated at build time and served by the existing FastAPI origin. Node.js is required for development, CI and the Docker build stage only; the production runtime remains the existing Python/FastAPI process. Both browser OIDC and Mini App signed launch data resolve to the same server-side user, session and authorization model.
+
+The supplied reference project informed the environment detection, same-origin API and Mini App-to-cookie-session exchange. Its browser popup flow is not copied because its own documentation flags that shortcut as potentially stale. PZP AI must use Telegram's current OpenID Connect Authorization Code flow with PKCE, an explicit BotFather client ID and secret, registered callback URLs, discovery metadata and JWKS validation.
+
+## 1. Requirements & Constraints
+
+### Product requirements
+
+- **REQ-001**: Expose one responsive Nuxt control plane at the same public HTTPS origin as the FastAPI API, usable inside Telegram as a Mini App and in a regular desktop or mobile browser.
+- **REQ-002**: Authenticate Mini App launches from server-validated `Telegram.WebApp.initData` and normal browsers through Telegram OpenID Connect Authorization Code flow with PKCE; do not add local passwords, password reset, email login or guessable admin credentials.
+- **REQ-003**: Map both authentication paths to the same Telegram user identity, opaque server-side session and authorization rules.
+- **REQ-004**: Preserve the existing authorization hierarchy: bootstrap and managed bot admins can operate globally; Telegram-native chat admins and explicitly delegated chat admins can operate only on authorized chats and topics.
+- **REQ-005**: Allow bot admins to view and edit bot-wide non-secret runtime defaults, model allowlists, provider profiles, managed bot admins and operational settings without restarting the bot when the changed surface is designed for live refresh.
+- **REQ-006**: Allow authorized chat admins to view and edit learning policy and scope settings for only their chats/topics, with the existing runtime → global → chat → topic precedence visible in the UI.
+- **REQ-007**: Allow bot admins to add, reorder, test, disable, re-enable, replace, delete and reveal multiple database-managed API keys per AI provider profile without editing environment variables or restarting the process.
+- **REQ-008**: Keep environment-backed provider credentials available as immutable bootstrap/recovery sources, visibly labeled as environment-managed and non-revealable in the control plane; a bot admin may add an equivalent database-managed key when UI reveal and rotation are required.
+- **REQ-009**: Use sticky healthy-key selection per provider profile, retry the selected key only when the classified failure is retryable, rotate through each eligible key at most once per logical provider call, persist key health across restarts and return one controlled pool-exhausted error after the bounded traversal.
+- **REQ-010**: Notify configured bot admins by sanitized best-effort Telegram DM when a credential enters cooldown, becomes hard-disabled, recovers, or leaves a pool exhausted, while ensuring notification failure never changes provider-call success or failure.
+- **REQ-011**: Allow bot admins to enroll known Telegram groups, use Telegram Mini App `requestChat` where supported, pause ingestion, resume a group, detach while preserving memory, optionally make the bot leave the Telegram chat and separately run the existing destructive forget workflow.
+- **REQ-012**: Allow bot admins to add or remove managed bot admins and delegated chat admins; delegated chat-admin grants must be bound to numeric Telegram identities and verified chat membership where Telegram permits.
+- **REQ-013**: Provide a query workspace for a selected chat/topic with separate Search and Ask modes, cross-chat memory-profile selection, provider/model selection, reasoning-effort selection for supported GPT-5 models and clear provider capability labels.
+- **REQ-014**: Permit local MiniLM retrieval in Search mode and as an explicitly selected retrieval provider, but never pretend the existing local sentence-transformer provider can generate chat responses; Ask must require a chat-capable provider and the UI must explain unavailable combinations.
+- **REQ-015**: Provide bot and scope dashboards showing uptime, background-task health, database and memory-file sizes, schema revision, local-model availability/load state, provider/key-pool health, configured and managed chats/admins, ingested/skipped/summarized message counts, knowledge/embedding/review counts, AI call/error/latency totals and alert backlog.
+- **REQ-016**: Provide a paginated memory explorer for durable knowledge, notes, summaries and pending reviews, with scoped search/filtering, item detail, source references, existing item maintenance actions and streamed Markdown/JSONL export.
+- **REQ-017**: Keep raw learned-message bodies out of default list views; retrieving raw source text for an individual memory item must be an explicit authorized action, be audited and return only the bounded source rows associated with that item.
+- **REQ-018**: Replace Telegram confirmation tokens in the web UI with authenticated direct mutations, visible before/after diffs and ordinary confirmation modals; destructive or privilege-changing actions still require deliberate confirmation and, where specified, fresh step-up authentication.
+- **REQ-019**: Expose audit events, provider usage and credential health history without exposing provider prompts, raw provider errors, tokens, decrypted secrets or credential-bearing URLs.
+- **REQ-020**: Keep the Telegram command and CLI surfaces functional; the control plane is an additional interface over shared application services rather than a replacement or parallel business-logic implementation.
+
+### Security requirements
+
+- **SEC-001**: Validate Mini App `initData` with the documented HMAC-SHA-256 construction using the bot token, compare hashes in constant time, require a numeric Telegram user, reject future timestamps and reject payloads older than `CONTROL_PLANE_AUTH_MAX_AGE_SECONDS`, default 300 seconds.
+- **SEC-002**: Use Telegram's OIDC discovery document at `https://oauth.telegram.org/.well-known/openid-configuration`, Authorization Code flow, S256 PKCE, random state, random nonce, an exact registered redirect URI and server-side token exchange authenticated with the BotFather client ID and client secret.
+- **SEC-003**: Validate OIDC ID-token signature against Telegram JWKS with the deployment-fixed `RS256` algorithm, refresh cached JWKS once on an unknown key ID and require exact issuer, exact audience, `exp`, `iat`, nonce and numeric Telegram `id` claims; never derive the OIDC client ID or client secret from `getMe`.
+- **SEC-004**: Store control-plane sessions server-side and put only a 256-bit random opaque token in a `Secure`, `HttpOnly`, `SameSite=Lax`, path-scoped cookie; persist only a SHA-256 token hash, enforce idle and absolute expiry and support immediate revocation.
+- **SEC-005**: Require an in-memory CSRF token bound to each session plus strict same-origin `Origin`/`Referer` validation for every mutating API request; do not put bearer tokens, sessions, CSRF tokens, PKCE verifiers or secrets in local storage, session storage, URLs or Nuxt public runtime configuration.
+- **SEC-006**: Keep `TELEGRAM_BOT_TOKEN`, `WEBHOOK_SECRET`, Telegram OIDC client secret, active master-key material and previous master-key material as bootstrap deployment secrets that the control plane can diagnose only as present/missing and can never display, replace or export.
+- **SEC-007**: Encrypt every database-managed provider credential with a random 256-bit data-encryption key using AES-256-GCM and credential-specific authenticated additional data; wrap each data-encryption key with a master-key-derived key so rotating the active master key requires rewrapping data keys rather than decrypting and rewriting every provider secret.
+- **SEC-008**: Read master keys from `CONTROL_PLANE_MASTER_KEYS`, a JSON object mapping stable key IDs to base64-encoded 32-byte values, and select the write key through `CONTROL_PLANE_ACTIVE_MASTER_KEY_ID`; fail closed when a referenced master key is absent or malformed.
+- **SEC-009**: Derive independent key-wrap and fingerprint subkeys through HKDF-SHA-256 with fixed domain-separation labels; store only encrypted secret fields, master key ID, a keyed non-reversible fingerprint and the last four display characters.
+- **SEC-010**: Permit full reveal only for database-managed provider credentials, only to a current bot admin, only after a step-up authentication no older than 300 seconds and only through `POST`; emit `Cache-Control: no-store, private`, `Pragma: no-cache`, `Referrer-Policy: no-referrer` and an audit event before returning the value.
+- **SEC-011**: Hold a revealed key only in component memory, mask it automatically after 30 seconds and immediately clear it on route change, component unmount, page hide, logout or session invalidation; never put the value into global Nuxt state, telemetry, error messages, HTML hydration payloads or clipboard without a separate explicit Copy action.
+- **SEC-012**: Exclude auth payloads, OIDC codes/tokens, CSRF values, provider-key request/response bodies and decrypted provider keys from structured request logs, exception text, audit payloads, traces, snapshots, generated OpenAPI examples and test fixtures.
+- **SEC-013**: Classify provider failures from safe exception type, HTTP status and allowlisted provider error code only; never persist or DM the raw provider response body or exception message.
+- **SEC-014**: Rate-limit authentication initiation/callback, Mini App exchange, step-up, secret mutation/reveal, credential testing, Ask/Search and export endpoints independently; repeated authentication or reveal failures must produce content-free audit/security events.
+- **SEC-015**: Serve the UI and API from one origin by default, disable credentialed cross-origin access, allow Telegram web clients through a tested CSP `frame-ancestors` rule, and add `nosniff`, restrictive `Permissions-Policy`, safe referrer and non-cache headers to authenticated HTML/API responses.
+- **SEC-016**: Re-evaluate bot-admin and scoped-admin authorization on every request or against a short-lived versioned cache; removing a grant must revoke or invalidate affected sessions immediately and must not wait for a long cookie lifetime.
+- **SEC-017**: Prevent last-owner lockout by treating `BOT_ADMINS` as immutable bootstrap owners and refusing to remove them from the UI; database-managed bot-admin grants are reloadable and removable but cannot reduce the effective bot-admin set to zero.
+- **SEC-018**: Use optimistic concurrency versions for bot settings, scope settings, provider profiles, credential order/state and admin grants; a stale write returns HTTP 409 with the current safe representation instead of silently overwriting another admin's update.
+- **SEC-019**: Require typed or exact-name confirmation plus fresh step-up for provider credential deletion, bot-admin removal, group detach-and-leave and destructive memory forget; confirmation is a UI interaction and not a reusable Telegram token.
+- **SEC-020**: Keep backups containing encrypted provider secrets sensitive, document master-key recovery separately and make a database restore fail closed until every referenced master key is available.
+
+### Constraints and preserved boundaries
+
+- **CON-001**: The supported v1 topology remains one application instance with SQLite plus rebuildable Markdown; multi-process distributed key leasing, distributed rate limiting and horizontal writers are out of scope.
+- **CON-002**: Production application wiring continues through `build_context(Settings)`, service database access continues through `session_scope(...)` and repositories, and new schema requires SQLAlchemy models, Alembic revisions and focused upgrade/runtime tests.
+- **CON-003**: `MemoryService` remains the stable memory facade. Control-plane APIs must call existing service/collaborator methods or new cohesive services; they must not duplicate command parsing, scope authorization, export, query, settings or mutation logic in Nuxt.
+- **CON-004**: Existing scope grammar and hierarchy remain authoritative through `Scope`, `parse_scope`, `Scope.contains(...)` and repository `scope_filter(...)`.
+- **CON-005**: Existing model policy remains limited to the approved non-Pro GPT-5 aliases (`gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-nano`, `gpt-5.5`, `gpt-5.6-luna`, `gpt-5.6-terra`, `gpt-5.6-sol`), OpenAI-compatible embeddings and configured local embeddings unless a later reviewed plan changes the allowlists; Pro aliases stay excluded.
+- **CON-006**: The current local sentence-transformer provider supplies embeddings only and returns `local-chat-unavailable` for generation; UI capability discovery must represent this accurately.
+- **CON-007**: Telegram bots cannot initiate a DM with a user who has never opened the bot; alert delivery must surface `unreachable` safely and continue serving provider calls.
+- **CON-008**: Telegram does not provide arbitrary group discovery or historical backfill. Group enrollment requires a Telegram selection/add flow, a known chat update or an operator-entered known chat ID that is verified through Bot API access.
+- **CON-009**: Nuxt is client-rendered with `ssr: false`; no authenticated user, decrypted secret or runtime server secret may be serialized into generated frontend output.
+- **CON-010**: Use Node.js 24 LTS, pnpm with a committed frozen lockfile, Nuxt 4, Vue 3, TypeScript and Nuxt UI 4; verify and pin exact stable package versions at execution time rather than using `latest` ranges.
+- **CON-011**: Python remains 3.12 and uv-managed. Add only focused runtime dependencies for authenticated encryption and OIDC/JWT validation, pin them in `pyproject.toml` and refresh `uv.lock` deliberately.
+- **CON-012**: Keep default Python and frontend tests offline. Real Telegram Mini App, OIDC, DM and provider-key checks are explicit live acceptance gates with disposable data and dedicated credentials.
+- **CON-013**: Preserve both polling and webhook operation. The control plane must be available in either mode when enabled, without creating a second independent process that competes for SQLite ownership.
+- **CON-014**: Do not expose FastAPI Swagger UI or the complete control-plane OpenAPI schema anonymously in production; generated client types may be built from the schema during development/CI.
+
+### Implementation guidelines and patterns
+
+- **GUD-001**: Build the smallest coherent control plane first: authentication, authorization, settings, provider keys, chats, query, memory, status and audit; do not add billing, multi-tenant organizations, arbitrary plugins or a general workflow engine.
+- **GUD-002**: Keep API responses typed, paginated and bounded. Use keyset pagination for large append-only memory/audit lists and existing streaming generators for exports.
+- **GUD-003**: Reuse Nuxt UI dashboard, form, table, modal, drawer, toast and accessible navigation primitives; use lightweight local SVG charts for the first stats release instead of introducing a charting framework.
+- **GUD-004**: Use Nuxt `useState`, route middleware and typed composables for session and page state; do not add Pinia until concrete cross-page state complexity proves it necessary.
+- **GUD-005**: Generate TypeScript API types from FastAPI OpenAPI in CI and fail on an uncommitted schema/client drift; do not hand-maintain duplicate request/response interfaces.
+- **GUD-006**: Make every UI action display the effective target scope and actor capability before submission, especially when a bot admin is operating on another chat from a browser or bot DM context.
+- **GUD-007**: Keep security-sensitive services small and independently testable: Mini App validation, OIDC, sessions/CSRF, authorization, secret encryption, credential pool selection/classification and alert outbox must not be one module.
+- **GUD-008**: Update `PLAN.md`, `plans/README.md`, architecture, setup, privacy, secrets, commands, operations, deployment, testing and release docs as their behavior lands; planning labels are not implementation evidence.
+- **PAT-001**: Use a Backend-for-Frontend-shaped same-origin API boundary, but keep it in FastAPI. Nuxt owns presentation and calls `/api/control/v1/*`; FastAPI owns identity, authorization, secrets, persistence and business orchestration.
+- **PAT-002**: Use a database-backed opaque-session pattern rather than a stateless signed session so admin removal, account switch, logout and incident response can revoke sessions immediately.
+- **PAT-003**: Use an outbox pattern for bot-admin alerts so provider calls commit only safe health state and alert intent; Telegram delivery occurs asynchronously and cannot break the original call.
+- **PAT-004**: Use an environment-bootstrap plus database-overlay pattern. Environment provider profiles/credential references remain recovery inputs; database-managed provider profiles and encrypted credentials become reloadable authoritative overrides by name.
+- **PAT-005**: Use a profile-scoped pool coordinator with stable credential order, a persisted active credential and versioned compare-and-swap transitions; keep an in-process per-profile `asyncio.Lock` as a contention optimization, not as the only correctness mechanism.
+- **PAT-006**: Use capability discovery (`chat`, `embedding`, `reasoning`, `secret_required`, `local`) to drive UI choices and backend validation; never infer capability solely from a model-name string in the browser.
+- **PAT-007**: Use explicit lifecycle states for managed chats and credentials instead of overloading booleans or deleting operational history.
+
+### Chosen architecture
+
+```mermaid
+flowchart LR
+    TG["Telegram Mini App"] -->|signed initData| API["FastAPI control API"]
+    BR["Regular browser"] -->|OIDC code + PKCE| OIDC["Telegram OAuth"]
+    OIDC -->|code callback| API
+    API --> AUTH["Session, CSRF and authorization services"]
+    API --> CPS["Control-plane services"]
+    CPS --> MEM["MemoryService facade"]
+    CPS --> POOL["Provider pool coordinator"]
+    CPS --> DB["SQLite repositories"]
+    POOL --> VAULT["Envelope-encrypted credential vault"]
+    POOL --> PROV["OpenAI-compatible provider clients"]
+    POOL --> OUTBOX["Admin alert outbox"]
+    OUTBOX -->|best effort| DM["Bot-admin Telegram DMs"]
+    API --> UI["Generated Nuxt static assets"]
+```
+
+FastAPI serves the generated Nuxt application from the root path and keeps `/api/control/v1`, `/auth/telegram/*`, `/telegram/webhook` and `/health` reserved for server routes. The Nuxt development server proxies the same paths to FastAPI so local development preserves same-origin cookie semantics. Production does not run Nitro or a separate Node server.
+
+`create_http_app(context, *, telegram_bot, dispatcher, include_webhook)` becomes the shared HTTP composition root. Webhook mode mounts the Telegram webhook, control API, health and static UI in one FastAPI app. Polling mode starts the same HTTP app without the Telegram webhook as a supervised Uvicorn task alongside polling. `CONTROL_PLANE_ENABLED=false` preserves a bot-only runtime; enabling it requires the HTTPS/public URL, OIDC bootstrap settings and master-key configuration before secret management or browser login becomes healthy.
+
+### Identity and authorization matrix
+
+| Capability                        | Unauthenticated | Authenticated non-admin | Telegram/delegated chat admin      | Managed bot admin      | Bootstrap bot admin    |
+| --------------------------------- | --------------- | ----------------------- | ---------------------------------- | ---------------------- | ---------------------- |
+| View login/config/health summary  | Login only      | Own session only        | Own session plus authorized scopes | Global                 | Global                 |
+| View/edit chat or topic settings  | No              | No                      | Authorized chat/topic only         | Any scope              | Any scope              |
+| Query/browse/export memory        | No              | No                      | Authorized chat/topic only         | Any scope and `all`    | Any scope and `all`    |
+| Pause/resume managed chat         | No              | No                      | Own chat only when policy permits  | Any chat               | Any chat               |
+| Enroll/detach/leave chat          | No              | No                      | No                                 | Yes                    | Yes                    |
+| View/edit bot runtime defaults    | No              | No                      | No                                 | Yes                    | Yes                    |
+| Manage provider profiles and keys | No              | No                      | No                                 | Yes                    | Yes                    |
+| Reveal a database-managed key     | No              | No                      | No                                 | Fresh step-up required | Fresh step-up required |
+| Manage delegated chat admins      | No              | No                      | No                                 | Yes                    | Yes                    |
+| Add/remove managed bot admins     | No              | No                      | No                                 | Managed grants only    | Managed grants only    |
+| Remove bootstrap bot admin        | No              | No                      | No                                 | Never                  | Never                  |
+
+Authentication does not itself grant access. A Telegram user may establish a session and still receive an authorization-denied page until they are a bootstrap/managed bot admin, a Telegram-native admin of a known chat or a delegated admin. The API returns an explicit capability document from `GET /api/control/v1/session`, and Nuxt uses it only for presentation; every endpoint enforces authorization again server-side.
+
+### Session and step-up contract
+
+The browser starts at `GET /auth/telegram/start?return_to=<relative-path>`. FastAPI creates a 10-minute OIDC transaction containing a state hash, nonce, encrypted PKCE verifier, safe relative return path and optional `step_up_for` action, then redirects to Telegram. `GET /auth/telegram/callback` consumes the transaction exactly once, exchanges the code, validates the ID token, upserts the control-plane user, issues or upgrades the session and redirects to the saved relative path. Absolute external return URLs are rejected.
+
+The Mini App plugin loads Telegram's official Web App script client-side, waits up to five seconds for `window.Telegram.WebApp`, and sends `initData` once to `POST /api/control/v1/auth/mini-app`. FastAPI validates the signed data, upserts the same Telegram identity and issues the same session cookie. If an existing cookie belongs to another Telegram identity, the exchange revokes the old session before issuing the new one. Mini App `initDataUnsafe` may guide display before login but is never an authorization input.
+
+Normal sessions have a 12-hour idle timeout and a seven-day absolute timeout. Successful browser OIDC or fresh Mini App exchange sets `verified_at`. Secret reveal and specified privilege/destructive operations require `verified_at` within five minutes. An older browser session restarts OIDC with an action-bound transaction. An older Mini App session instructs the user to close and reopen the Mini App to obtain fresh signed launch data; optional Telegram biometric support is explicitly deferred because it is device-local and does not replace server-verified Telegram identity.
+
+### Secret-vault contract
+
+Each database-managed provider credential receives a random 32-byte data-encryption key and two random 12-byte AES-GCM nonces. The credential value is encrypted with the data key and authenticated additional data `pzp-ai|provider-credential|v1|<credential-id>|<profile-name>`. The data key is wrapped with the active master-key-derived wrap key and authenticated additional data `pzp-ai|wrapped-dek|v1|<credential-id>|<master-key-id>`. A separate HKDF-derived fingerprint key produces a stable HMAC-SHA-256 fingerprint truncated to 16 hexadecimal characters for audit correlation; the raw SHA-256 of a key is never stored.
+
+The control plane returns masked metadata by default: label, source kind, final four characters for database-managed keys, fingerprint, stable order, state, last success/failure timestamps and cooldown. Environment-backed entries return the environment variable name and health state but no last four or reveal capability. Decryption occurs only immediately before constructing a provider client or serving a successful step-up reveal, and plaintext references are discarded as soon as the operation finishes.
+
+Master-key rotation adds the new key to `CONTROL_PLANE_MASTER_KEYS`, sets `CONTROL_PLANE_ACTIVE_MASTER_KEY_ID`, runs `pzp-bot secrets rewrap --to <id>`, verifies every credential can be decrypted through the new wrapped data key, backs up the database and only then removes the old master key in a later deployment. The CLI logs counts and key IDs only.
+
+### Provider-pool state machine and failure classification
+
+Credential states are `untested`, `healthy`, `cooldown`, `disabled` and `deleted`. Manual disable uses `disabled` with reason `manual`; authentication, permission and exhausted-quota failures use `disabled` with a safe classified reason. Cooldown retains `cooldown_until`; expired cooldown entries become eligible but remain visibly degraded until a successful call returns them to `healthy`.
+
+Selection first reuses the persisted active credential if eligible. Otherwise it advances through enabled credentials in stable `(position, id)` order, wrapping once. Authentication and hard-disable classifications rotate immediately without same-key retry. Transient connection, timeout and server failures use the existing bounded exponential same-key retry and then place that key in short cooldown before rotating. A logical request attempts no credential more than once after its same-key retry budget and never traverses more than ten eligible credentials. Profile creation rejects more than ten enabled database/environment credential sources so total provider work remains bounded.
+
+| Installed OpenAI SDK 2.50.0 classification                                                | Same-key retry | State transition                                     | Rotate | Admin alert                           |
+| ----------------------------------------------------------------------------------------- | -------------- | ---------------------------------------------------- | ------ | ------------------------------------- |
+| `BadRequestError`, `NotFoundError`, `UnprocessableEntityError`, other non-408/non-409 4xx | No             | None                                                 | No     | Configuration/request audit only      |
+| `AuthenticationError`                                                                     | No             | `disabled:authentication`                            | Yes    | Immediate deduplicated DM             |
+| `PermissionDeniedError`                                                                   | No             | `disabled:permission`                                | Yes    | Immediate deduplicated DM             |
+| `RateLimitError` with allowlisted `insufficient_quota` code                               | No             | `disabled:quota`                                     | Yes    | Immediate deduplicated DM             |
+| Other `RateLimitError`                                                                    | No             | `cooldown:rate_limit`, respect bounded `Retry-After` | Yes    | One DM per credential/cooldown window |
+| `APITimeoutError`, `APIConnectionError`                                                   | Yes            | `cooldown:transport` after retry exhaustion          | Yes    | Deduplicated degraded-pool DM         |
+| `InternalServerError` or other 5xx `APIStatusError`                                       | Yes            | `cooldown:provider` after retry exhaustion           | Yes    | Deduplicated degraded-pool DM         |
+| HTTP 408 or 409 `APIStatusError`                                                          | Yes            | `cooldown:provider` after retry exhaustion           | Yes    | Deduplicated degraded-pool DM         |
+| Unknown exception or malformed response                                                   | No             | None                                                 | No     | Content-free internal error event     |
+
+The classifier may read only the exception class, numeric status, `Retry-After` and a small allowlist of provider error codes. It must not store or alert raw exception strings or response bodies. Invalid model/request payloads never damage credential health. A successful call marks the used credential healthy, resets transient counters, updates the active credential and may emit one recovery alert if the pool was previously degraded.
+
+Pool health and alert intents are written in a short transaction after a failed call has released or rolled back its business state, following the existing provider-telemetry boundary. The alert outbox deduplicates by `(event type, profile, credential, health epoch)` and the non-critical alert worker sends safe DMs asynchronously. Exhaustion raises `ProviderPoolExhaustedError(profile, attempted_count, earliest_retry_at)`; user-facing layers convert it to one controlled message without key labels unless the caller is an authorized bot admin.
+
+### Managed-chat lifecycle
+
+Managed chat states are `pending`, `active`, `paused` and `detached`. `active` permits the normal policy engine to ingest updates. `paused` records incoming updates as skipped with a safe `chat_paused` reason, stops automatic summarization and preserves existing memory for authorized query/export. `detached` ignores new business processing, hides the chat from ordinary navigation and preserves its data and audit history for bot-admin recovery/export.
+
+The add-group flow prefers Telegram Bot API 9.6 `savePreparedKeyboardButton` plus Mini App `requestChat` where the client and installed aiogram version expose it. The selected/created chat still becomes active only after the bot receives and verifies the shared chat, confirms its membership and records scope metadata. Regular browsers and older Telegram clients receive a bot-add deep link plus explicit steps, then the UI polls a bounded pending-enrollment endpoint.
+
+Detach does not imply forget. A bot admin chooses among Pause, Detach while preserving data, Detach and call `leaveChat`, or Forget memory through the existing service. The UI never combines `leaveChat` and forget in one unreviewable click.
+
+### Query, memory and status behavior
+
+The query workspace contains two modes. Search selects an embedding-capable provider profile/model, including local MiniLM, and calls the existing scoped retrieval path. Ask selects a chat-capable provider profile/model/reasoning level plus an independently selected retrieval provider/model when implemented in the shared request contract. The Telegram command-compatible `provider_profile` remains a shorthand that chooses both sides; the new `retrieval_provider_profile` and `chat_provider_profile` fields are optional and one-shot. Stored scope defaults remain backward-compatible until a separately reviewed default-splitting change is required.
+
+Every result displays the destination scope, authorized source scopes/profile, selected providers/models, reasoning level, elapsed time and compact source references. It never exposes hidden chain-of-thought. The UI may show provider-reported reasoning summaries only if the selected API explicitly returns a safe user-visible field and a later review approves that field.
+
+The memory explorer defaults to durable knowledge and pending review metadata. Item detail may load bounded source rows after a second explicit action. Exports reuse the existing streaming Markdown/JSONL implementation and set sensitive download headers. Dashboard status uses SQL aggregates and filesystem metadata, never hydrates entire memory corpora and never invokes an external provider automatically. Manual provider/local-model diagnostics are explicit actions with cost/download warnings.
+
+### API surface
+
+All JSON endpoints use `/api/control/v1`. Safe list endpoints use cursor/limit parameters with a maximum page size of 100. Mutations return the new safe representation plus an audit event ID and version. HTTP 401 means no valid session, 403 means authenticated without capability, 409 means stale version/state conflict, 422 means validated input failure and 429 means a local rate limit.
+
+| Method and path                                                                  | Purpose                                                    | Minimum capability                            |
+| -------------------------------------------------------------------------------- | ---------------------------------------------------------- | --------------------------------------------- |
+| `POST /auth/mini-app`                                                            | Validate fresh Mini App data and issue session             | Valid Telegram identity                       |
+| `GET /session`                                                                   | Return actor, expiry, CSRF token and capabilities          | Authenticated                                 |
+| `POST /auth/logout`                                                              | Revoke current session                                     | Authenticated                                 |
+| `POST /auth/step-up/mini-app`                                                    | Refresh `verified_at` from fresh initData                  | Authenticated same identity                   |
+| `GET /bot/settings` / `PATCH /bot/settings`                                      | View/update safe global runtime defaults                   | Bot admin                                     |
+| `GET /bot/admins` / `POST /bot/admins` / `DELETE /bot/admins/{telegram_id}`      | Manage database-backed bot admins                          | Bot admin plus step-up for delete             |
+| `GET /providers` / `POST /providers`                                             | List/create managed AI profiles                            | Bot admin                                     |
+| `GET /providers/{name}` / `PATCH /providers/{name}` / `DELETE /providers/{name}` | Inspect/update/delete managed profile                      | Bot admin; step-up for delete                 |
+| `GET /providers/{name}/credentials` / `POST /providers/{name}/credentials`       | List/add encrypted or environment-ref keys                 | Bot admin; step-up for add                    |
+| `PATCH /providers/{name}/credentials/{id}`                                       | Rename, reorder, disable or re-enable key                  | Bot admin                                     |
+| `POST /providers/{name}/credentials/{id}/reveal`                                 | Return a database-managed key for 30-second UI reveal      | Bot admin plus fresh step-up                  |
+| `POST /providers/{name}/credentials/{id}/test`                                   | Test selected credential with constant safe input          | Bot admin                                     |
+| `DELETE /providers/{name}/credentials/{id}`                                      | Crypto-delete credential ciphertext and tombstone metadata | Bot admin plus step-up and exact confirmation |
+| `GET /chats` / `POST /chats/enrollments`                                         | List managed chats/start enrollment                        | Scoped results or bot admin enrollment        |
+| `GET /chats/{chat_id}` / `PATCH /chats/{chat_id}`                                | View/update lifecycle and chat-level settings              | Authorized chat admin                         |
+| `POST /chats/{chat_id}/pause                                                     | resume                                                     | detach                                        | leave`                       | Explicit managed-chat lifecycle actions | Pause/resume scoped; detach/leave bot admin |
+| `GET /chats/{chat_id}/admins` / `POST` / `DELETE /{telegram_id}`                 | Manage delegated chat admins                               | Bot admin                                     |
+| `GET /scopes/{scope_key}/settings` / `PATCH`                                     | View/update versioned scope overlay                        | Authorized scope admin                        |
+| `GET /scopes/{scope_key}/policy` / `PATCH`                                       | View/update learning policy                                | Authorized scope admin                        |
+| `POST /query/search`                                                             | Run scoped retrieval with one-shot embedding selection     | Authorized scope admin                        |
+| `POST /query/ask`                                                                | Run scoped retrieval plus chat generation                  | Authorized scope admin                        |
+| `GET /memory/items` / `GET /memory/items/{id}`                                   | Page durable memory and item detail                        | Authorized scope admin                        |
+| `POST /memory/items/{id}/sources`                                                | Return bounded raw source rows and audit access            | Authorized scope admin                        |
+| `DELETE /memory/items/{id}` / `POST /memory/items/{id}/refresh`                  | Existing item maintenance                                  | Authorized scope admin                        |
+| `GET /memory/reviews` / `POST /memory/reviews/{id}/approve                       | reject`                                                    | Existing review workflow                      | Persisted review-scope admin |
+| `GET /memory/export`                                                             | Stream Markdown/JSONL export                               | Authorized scope admin                        |
+| `GET /stats/overview` / `GET /stats/timeseries`                                  | Bounded global/scoped status                               | Scoped or bot admin                           |
+| `GET /audit/events`                                                              | Page safe audit events                                     | Scoped or bot admin                           |
+| `GET /operations/health` / `POST /operations/checks/{name}`                      | Safe status/manual diagnostics                             | Bot admin                                     |
+| `GET /alerts` / `POST /alerts/{id}/retry`                                        | View/retry sanitized alert delivery                        | Bot admin                                     |
+
+Browser OIDC endpoints live outside the JSON prefix at `/auth/telegram/start` and `/auth/telegram/callback` because they use redirects. The frontend must not call Telegram's token endpoint or hold the OIDC client secret.
+
+### Persistence model
+
+| Table                     | Required purpose and important columns                                                                                                                                                                                                                 |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `control_plane_users`     | Unique `telegram_user_id`, current display metadata, first/last login, disabled timestamp and version                                                                                                                                                  |
+| `control_plane_sessions`  | SHA-256 token hash, user ID, created/seen/idle/absolute expiry, `verified_at`, revoked timestamp/reason, CSRF-token hash and safe client metadata                                                                                                      |
+| `oidc_auth_transactions`  | State hash, encrypted PKCE verifier, nonce, safe return path, action binding, expiry and consumed timestamp                                                                                                                                            |
+| `bot_admin_grants`        | Managed Telegram user ID, granted/revoked actor/timestamps and version; bootstrap owners remain environment-only                                                                                                                                       |
+| `chat_admin_grants`       | Chat ID, Telegram user ID, grant/revoke actor/timestamps and version                                                                                                                                                                                   |
+| `managed_chats`           | Unique chat ID, lifecycle state, enrollment token/state, lifecycle actor/timestamps and version; display metadata remains in `scope_metadata`                                                                                                          |
+| `ai_provider_profiles`    | Unique normalized name, provider kind, base URL, default models, capability flags, enabled/source/version and actor/timestamps                                                                                                                         |
+| `ai_provider_credentials` | Profile FK, label, source kind, environment variable name or encrypted secret/wrapped DEK fields, master key ID, fingerprint, last four, order, lifecycle/health state, cooldown/error classification, success/failure counters/timestamps and version |
+| `ai_provider_pool_state`  | Unique profile FK, active credential FK, health epoch, last exhaustion/recovery and compare-and-swap version                                                                                                                                           |
+| `admin_alerts`            | Safe alert type/payload, dedupe key, recipient Telegram ID, state, attempts, retry time and delivery/error classification timestamps                                                                                                                   |
+
+Use Alembic revision `0013_control_plane_identity_access` for users, sessions, OIDC transactions, admin grants and managed chats; revision `0014_provider_credential_pools` for provider profiles, encrypted credentials and pool state; revision `0015_admin_alert_outbox` for alert delivery. Every downgrade must remove only its own new surfaces and must never attempt to decrypt or export provider credentials.
+
+## 2. Implementation Steps
+
+### Implementation Phase 1: Approval, drift refresh and executable contracts
+
+- **GOAL-001**: Freeze the reviewed design, refresh it against the execution commit and establish contract tests before production code changes.
+
+| Task     | Description                                                                                                                                                                                                                                                                     | Completed | Date |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ---- |
+| TASK-001 | Obtain explicit user approval of this plan and record approved deviations in this file before editing application code.                                                                                                                                                         |           |      |
+| TASK-002 | Run read-only worktree inspection and `git diff --stat f1d8cd1..HEAD -- PLAN.md plans docs src tests pyproject.toml uv.lock Dockerfile docker-compose.yml .github/workflows/ci.yml`; refresh stale paths, package versions and migration head without discarding user changes.  |           |      |
+| TASK-003 | Inventory current `AppContext`, provider registry/cache, `MemoryService` query/settings/export facades, Telegram admin checks, webhook/polling lifecycles, scheduler health and existing OpenAPI routes; add characterization assertions before extraction or behavior changes. |           |      |
+| TASK-004 | Write API request/response schemas and the authorization matrix from this plan as failing Python contract tests; declare pagination, error envelope, version-conflict and secret-redaction behavior before handler implementation.                                              |           |      |
+| TASK-005 | Verify current official Telegram OIDC, Mini App, Bot API `requestChat`, Nuxt 4, Nuxt UI 4, Node LTS and security-library documentation at execution time; pin reviewed versions and record any upstream contract change in this plan and `PLAN.md`.                             |           |      |
+
+### Implementation Phase 2: Nuxt workspace and reproducible frontend gates
+
+- **GOAL-002**: Add a deterministic Nuxt 4 client application and development proxy without changing production runtime behavior yet.
+
+| Task     | Description                                                                                                                                                                                                                       | Completed | Date |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ---- |
+| TASK-006 | Create `web/` as a Nuxt 4 TypeScript project with `ssr: false`, Vue 3, Nuxt UI 4, Node 24 declaration, pnpm package manager metadata and exact pinned dependencies in `pnpm-lock.yaml`; do not initialize another Git repository. |           |      |
+| TASK-007 | Configure Nuxt paths so the generated client is rooted at `/`, calls same-origin `/api/control/v1`, loads Telegram's official Web App script only in a client plugin and uses a development proxy to the uv-run FastAPI server.   |           |      |
+| TASK-008 | Add oxlint & oxfmt, `vue-tsc`/`nuxt typecheck`, Vitest with Nuxt Test Utils and Playwright; pin each reviewed dependency and add `format:check`, `lint`, `typecheck`, `test`, `test:e2e` and `generate` scripts.                  |           |      |
+| TASK-009 | Add Nuxt UI application shell, responsive dashboard layout, Telegram theme/safe-area tokens, loading/error/unauthorized pages and keyboard/screen-reader behavior without implementing privileged forms.                          |           |      |
+| TASK-010 | Add `openapi-typescript` generation from a deterministic FastAPI schema file, commit the generated API type file and add a drift check that fails when backend schema and frontend types disagree.                                |           |      |
+| TASK-011 | Add frontend-only CI gates using a frozen pnpm install, formatting, lint, Nuxt typecheck, unit/component tests and static generation; keep Python gates unchanged until integration phases require updates.                       |           |      |
+| TASK-012 | Add artifact tests proving generated assets contain no `.env` values, bot/OIDC/master/provider secrets, database URLs or server-only runtime configuration.                                                                       |           |      |
+
+### Implementation Phase 3: Control-plane identity, OIDC, Mini App validation and sessions
+
+- **GOAL-003**: Implement one secure Telegram identity/session system shared by Mini App and browser entry paths.
+
+| Task     | Description                                                                                                                                                                                                                                                            | Completed | Date |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ---- |
+| TASK-013 | Add control-plane settings for enablement, public origin, OIDC client ID/secret, fixed callback, auth/step-up ages, session idle/absolute TTLs, master-key map/active ID and rate limits; keep secret values out of `show-config`.                                     |           |      |
+| TASK-014 | Add SQLAlchemy models, repositories and Alembic revision `0013_control_plane_identity_access` for users, sessions, OIDC transactions, bot-admin grants, chat-admin grants and managed chats, including uniqueness, expiry and lookup indexes.                          |           |      |
+| TASK-015 | Implement `control_plane/auth/mini_app.py` with strict query parsing, duplicate-field rejection, documented HMAC construction, constant-time comparison, future/age checks and typed Telegram-user extraction.                                                         |           |      |
+| TASK-016 | Implement OIDC discovery/token/JWKS clients with bounded httpx timeouts and PyJWT/cryptography verification fixed to RS256; validate state, PKCE, nonce, issuer, audience, required time claims and numeric Telegram identity.                                         |           |      |
+| TASK-017 | Implement one-time server-side OIDC transactions with encrypted PKCE verifier, exact callback URI and safe relative return path; reject replay, expired transaction, missing code, OAuth error and identity mismatch.                                                  |           |      |
+| TASK-018 | Implement opaque database-backed sessions, hashed CSRF tokens, idle/absolute expiry, rotation, revocation, account-switch handling and cleanup; never persist the cookie token or CSRF plaintext.                                                                      |           |      |
+| TASK-019 | Implement shared actor/capability resolution using bootstrap bot admins, managed bot-admin grants, delegated chat-admin grants and the existing Telegram-native admin lookup; make authorization reusable by Telegram handlers and control API without importing Nuxt. |           |      |
+| TASK-020 | Implement browser start/callback, Mini App exchange, session, logout and Mini App step-up endpoints with independent rate limits, safe cookies, no-store responses and content-free auth audit events.                                                                 |           |      |
+| TASK-021 | Add strict CSRF and same-origin middleware for mutating control-plane endpoints, security headers for HTML/API responses and a CSP that permits Telegram web framing and the official Web App script without exposing broader frame/script origins.                    |           |      |
+| TASK-022 | Add the Nuxt session composable, route middleware, regular-browser redirect login, Mini App bootstrap/account-switch flow and capability-driven navigation; never rely on UI hiding as authorization.                                                                  |           |      |
+| TASK-023 | Verify browser OIDC and Mini App paths mint the same user/session model, stale/invalid auth cannot fall back incorrectly, managed-admin removal invalidates access and normal Telegram command authorization remains unchanged.                                        |           |      |
+
+### Implementation Phase 4: Envelope-encrypted provider secrets and controlled reveal
+
+- **GOAL-004**: Add a reloadable secret-management boundary that implements accepted option A without exposing bootstrap secrets.
+
+| Task     | Description                                                                                                                                                                                                                                               | Completed | Date |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ---- |
+| TASK-024 | Add the reviewed authenticated-encryption and JWT dependencies to `pyproject.toml`, refresh `uv.lock` with uv and add a startup preflight that validates master-key JSON, active key ID and 32-byte base64 material without printing it.                  |           |      |
+| TASK-025 | Implement `control_plane/secrets/crypto.py` with HKDF domain separation, per-secret random DEK, AES-GCM encryption/wrapping, exact AAD formats, constant-time keyed fingerprinting, tamper detection and zero secret-bearing exception messages.          |           |      |
+| TASK-026 | Add SQLAlchemy models, repositories and Alembic revision `0014_provider_credential_pools` for managed provider profiles, credentials and pool state, including version, ordering, health and safe metadata indexes.                                       |           |      |
+| TASK-027 | Implement environment-bootstrap profile/credential adapters and database-managed overlay precedence; same-name managed profiles override non-secret bootstrap configuration while missing managed profiles continue to use existing environment behavior. |           |      |
+| TASK-028 | Implement bot-admin-only credential create/list/update/reorder/disable/re-enable/delete APIs with optimistic concurrency, profile limits, normalization, safe audit events and immediate provider-registry invalidation.                                  |           |      |
+| TASK-029 | Implement action-bound step-up for secret create/delete/reveal and managed bot-admin removal; browser uses a new OIDC transaction and Mini App uses fresh same-identity signed data or a reopen instruction.                                              |           |      |
+| TASK-030 | Implement controlled `POST` reveal, no-store headers, audit-before-return, generic response logging exclusion and Nuxt masked/reveal/copy behavior with the 30-second and lifecycle clearing rules from SEC-010 and SEC-011.                              |           |      |
+| TASK-031 | Add `pzp-bot secrets status` and `pzp-bot secrets rewrap --to <master-key-id>` with backup warning, transaction-safe DEK rewrap, verify-before-commit, counts-only output and tests for interrupted/partial rotation.                                     |           |      |
+
+### Implementation Phase 5: Provider key pool, retry classification and admin alerts
+
+- **GOAL-005**: Make each managed provider profile survive individual key failure through bounded, observable and concurrency-safe rotation.
+
+| Task     | Description                                                                                                                                                                                                                                     | Completed | Date |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ---- |
+| TASK-032 | Extract the current OpenAI retry helper into a typed provider-call policy that receives an opaque credential lease and returns safe attempt metadata while preserving GPT-5 payload, redaction and telemetry behavior.                          |           |      |
+| TASK-033 | Implement the exception/status/error-code classifier exactly as specified in the classification table, including bounded `Retry-After`, insufficient-quota allowlist and invalid-request no-rotation behavior.                                  |           |      |
+| TASK-034 | Implement `CredentialPoolService` selection, stable circular order, persisted sticky active credential, eligible/cooldown filtering, one-traversal bound, ten-key maximum and compare-and-swap state transitions.                               |           |      |
+| TASK-035 | Add a per-profile in-process lock around selection/state updates while retaining SQLite version checks as correctness authority; add high-concurrency tests where many callers observe one rotation rather than disabling every key.            |           |      |
+| TASK-036 | Change `ProviderRegistry` caching so provider clients are keyed or invalidated by managed profile revision and credential ID; no cached provider may continue using a deleted/disabled/replaced credential.                                     |           |      |
+| TASK-037 | Route both chat and embedding OpenAI-compatible calls through the pool while keeping fake and local providers deterministic and keyless.                                                                                                        |           |      |
+| TASK-038 | Extend safe AI usage metadata with managed profile revision, credential fingerprint/label, attempted credential count, rotation count and final classification; exclude credential IDs from non-admin user text when they add no value.         |           |      |
+| TASK-039 | Add Alembic revision `0015_admin_alert_outbox`, repositories and deduplicated safe alert intents for cooldown, hard disable, recovery and exhaustion.                                                                                           |           |      |
+| TASK-040 | Add a non-critical supervised alert-delivery worker that resolves the current effective bot-admin set, sends sanitized DMs, respects Telegram retry-after, marks unreachable admins safely and never affects provider calls or critical health. |           |      |
+| TASK-041 | Add bot-admin APIs/UI for pool health, safe credential history, manual constant-input chat/embedding tests, alert backlog and alert retry; show explicit provider cost and local-model download warnings.                                       |           |      |
+| TASK-042 | Run classifier, sticky selection, retry, traversal, concurrency, restart persistence, cache invalidation, telemetry, outbox, DM-failure and exhaustion regressions before enabling pool use by default.                                         |           |      |
+
+### Implementation Phase 6: Bot settings, admins and managed-chat lifecycle
+
+- **GOAL-006**: Expose existing settings and new group/admin operations through one authorization-correct service/API layer.
+
+| Task     | Description                                                                                                                                                                                                                               | Completed | Date |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ---- |
+| TASK-043 | Refactor `AdminService` to merge immutable bootstrap owners, reloadable managed bot admins, delegated chat admins and Telegram-native admins through explicit methods; preserve existing Telegram command behavior and cache diagnostics. |           |      |
+| TASK-044 | Add bot-admin grant list/add/remove APIs and Nuxt UI with live session invalidation, at-least-one-owner protection, step-up on removal and content-free audit events.                                                                     |           |      |
+| TASK-045 | Add delegated chat-admin list/add/remove APIs and UI; verify the target identity and membership through `getChatMember` when available and reject grants to bots, unknown/unverifiable IDs or other chats.                                |           |      |
+| TASK-046 | Add managed-chat repository/service lifecycle transitions and enforce `active`, `paused`, `detached` behavior in ingestion, idle summarization, scope discovery and UI visibility without deleting memory.                                |           |      |
+| TASK-047 | Implement Mini App `requestChat` enrollment behind capability detection and a prepared request ID, plus regular-browser/older-client add-bot instructions and bounded pending-enrollment polling.                                         |           |      |
+| TASK-048 | Add pause, resume, detach, leave and forget UI/API actions with distinct effects, optimistic versions, safe before/after display, required step-up/confirmation and existing Markdown reconciliation for forget.                          |           |      |
+| TASK-049 | Add bot-wide safe runtime-settings APIs and UI by reusing `SAFE_RUNTIME_SETTING_TYPES`, current validation and refresh; do not move secret or bootstrap-only settings into `runtime_settings`.                                            |           |      |
+| TASK-050 | Add scope settings/policy APIs and UI through existing parsers/validators/service methods, show inherited/effective/overridden values separately and preserve global/chat/topic precedence.                                               |           |      |
+| TASK-051 | Add full authorization matrix tests across browser and Mini App sessions, bootstrap/managed bot admins, native/delegated chat admins, foreign chats, topics, revoked grants and detached chats.                                           |           |      |
+
+### Implementation Phase 7: Query, memory, stats, audit and operations APIs
+
+- **GOAL-007**: Expose bounded business capabilities through typed control-plane APIs without duplicating the MemoryService facade.
+
+| Task     | Description                                                                                                                                                                                                                                        | Completed | Date |
+| -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ---- |
+| TASK-052 | Add provider capability discovery and safe profile/model catalogs that combine approved allowlists, local dependency/model state and managed profile health without revealing secrets.                                                             |           |      |
+| TASK-053 | Extend `AIRequestOptions` and provider selection only as required for independently selected one-shot retrieval and chat profiles; preserve `provider_profile` as the backward-compatible shorthand and keep existing Telegram/CLI outputs stable. |           |      |
+| TASK-054 | Add Search and Ask API orchestration through `MemoryService`, enforce destination/source permissions, validate capabilities/model/reasoning allowlists and return safe source/provider metadata plus existing insufficient-context behavior.       |           |      |
+| TASK-055 | Add keyset-paginated memory item/review endpoints, item detail, explicit bounded raw-source access, existing delete/refresh/review mutations and safe authorization against the persisted owning scope.                                            |           |      |
+| TASK-056 | Add HTTP streaming Markdown/JSONL exports using the existing export generator, authorization and scope naming; include sensitive download/cache headers and cancellation cleanup.                                                                  |           |      |
+| TASK-057 | Add SQL-aggregated overview/timeseries statistics for global/chat/topic scopes plus bounded filesystem, process uptime, scheduler, migration, admin, managed-chat, provider pool, local-model and alert status.                                    |           |      |
+| TASK-058 | Add paginated safe audit/AI-usage/alert views and manual operations checks for DB integrity, projection status, provider profile test and local-model readiness; manual checks must not run on normal dashboard load.                              |           |      |
+| TASK-059 | Add API performance/query-count tests proving dashboard, memory, audit and stats pages do not perform N+1 hydration or load unbounded rows, prompts, embeddings or exports.                                                                        |           |      |
+
+### Implementation Phase 8: Complete Nuxt control-plane experience
+
+- **GOAL-008**: Deliver the graphical control plane requested by the user on desktop, mobile browser and Telegram Mini App surfaces.
+
+| Task     | Description                                                                                                                                                                                                                                                   | Completed | Date |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ---- |
+| TASK-060 | Build Dashboard with health, uptime, version/schema, memory/database size, provider/local-model status, chat/admin/message/knowledge/review/AI/alert metrics and safe lightweight trends.                                                                     |           |      |
+| TASK-061 | Build Bot Settings with safe runtime defaults, approved model/reasoning allowlists, inherited values, version conflict handling and bot-admin management.                                                                                                     |           |      |
+| TASK-062 | Build Providers with profile create/edit, capability display, ordered key pool, masked metadata, health history, test, enable/disable, replace, controlled reveal, copy, delete and exhaustion guidance.                                                      |           |      |
+| TASK-063 | Build Chats with active/paused/detached filters, enrollment, status counts, delegated admins, learning policy, scope settings, topic navigation and distinct lifecycle/forget actions.                                                                        |           |      |
+| TASK-064 | Build Query workspace with selected chat/topic, memory profile, Search/Ask modes, local/provider/model/reasoning controls, unsupported-combination guidance, progress/cancel behavior, source references and no hidden-reasoning display.                     |           |      |
+| TASK-065 | Build Memory Explorer with filters, pagination, item/review detail, explicit raw-source access, refresh/delete/approve/reject actions and browser-safe streamed export downloads.                                                                             |           |      |
+| TASK-066 | Build Stats, Audit and Operations views with scoped filters, safe event detail, diagnostics actions, alert delivery state and clear distinction between cached status and a live paid/download-triggering check.                                              |           |      |
+| TASK-067 | Integrate Telegram BackButton, SettingsButton, theme colors, safe-area/content-safe-area, closing confirmation for dirty forms, responsive navigation and feature-detected `requestChat`; keep normal-browser controls fully usable without Telegram globals. |           |      |
+| TASK-068 | Add accessible loading/empty/error/401/403/409/429 states, focus management, keyboard navigation, reduced-motion support, sensitive-value masking and automatic session-expiry recovery across every page.                                                    |           |      |
+
+### Implementation Phase 9: Runtime, Docker, CI and deployment integration
+
+- **GOAL-009**: Ship one reproducible runtime that serves bot, API and Nuxt assets in both polling and webhook modes.
+
+| Task     | Description                                                                                                                                                                                                                           | Completed | Date |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ---- |
+| TASK-069 | Factor a shared `create_http_app` from webhook composition, mount auth/control API/static assets/history fallback safely and keep `/telegram/webhook` enabled only in webhook mode.                                                   |           |      |
+| TASK-070 | Start/stop embedded Uvicorn with polling when control plane is enabled, supervise its task and add HTTP readiness without double-starting background summarizer/settings/alert loops.                                                 |           |      |
+| TASK-071 | Extend health/doctor/show-config with safe control-plane, OIDC, master-key, static-asset, session-store, provider-pool and alert-worker checks; never perform paid provider calls in health or reveal configuration values.           |           |      |
+| TASK-072 | Add a Node 24/pnpm frozen Nuxt build stage to Docker, copy only generated public assets into the final non-root Python image and retain the current uv-frozen application installation and doctor healthcheck.                        |           |      |
+| TASK-073 | Update Compose for HTTPS-origin/OIDC/master-key bootstrap settings and persistent SQLite/memory only; do not bake or echo secrets and keep fake-provider smoke runnable without real Telegram credentials.                            |           |      |
+| TASK-074 | Expand CI into Python quality, frontend quality and Docker smoke gates, including frozen uv/pnpm locks, OpenAPI client drift, Nuxt generation, asset-secret scan, migration upgrade/check and HTTP static/control-plane health smoke. |           |      |
+| TASK-075 | Add production reverse-proxy guidance for HTTPS, exact public origin/callback, BotFather Web Login allowed URLs, Main Mini App/menu URL, CSP/frame behavior, secure cookies, backup/master-key recovery and single-instance routing.  |           |      |
+
+### Implementation Phase 10: Verification, live acceptance and roadmap closure
+
+- **GOAL-010**: Prove security and behavior through deterministic, Docker and live Telegram/provider gates before marking this plan complete.
+
+| Task     | Description                                                                                                                                                                                                                                                                                                                                   | Completed | Date |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ---- |
+| TASK-076 | Run focused Python tests after every backend phase, frontend unit/component tests after every page family and full Python/frontend static gates before Docker acceptance.                                                                                                                                                                     |           |      |
+| TASK-077 | Run fresh empty-database upgrade through revisions 0013-0015, downgrade/re-upgrade tests where supported, `alembic check`, seeded legacy-database upgrade and encrypted-credential restore with required/missing master keys.                                                                                                                 |           |      |
+| TASK-078 | Run adversarial auth/authorization tests for forged/stale/future/replayed Mini App data, OIDC state/code/nonce replay, wrong issuer/audience/algorithm/key, CSRF, cross-origin requests, cookie flags, session fixation/account switch and revoked admins.                                                                                    |           |      |
+| TASK-079 | Run adversarial vault/pool tests for ciphertext/wrapped-key/AAD tampering, wrong/rotated master keys, reveal logging/cache leakage, ten-key exhaustion, invalid-request non-rotation, quota/rate/transport/server classification, concurrent rotation and alert failure.                                                                      |           |      |
+| TASK-080 | Run Playwright at desktop/mobile widths for regular browser OIDC stubs, injected Mini App SDK/initData, bot-admin/scoped-admin navigation, settings conflicts, credential reveal auto-clear, managed-chat lifecycle, query, memory and exports.                                                                                               |           |      |
+| TASK-081 | Run Docker build, doctor, migration, polling HTTP app and webhook HTTP app smoke with generated Nuxt assets, readiness, non-root filesystem, secure-header checks and restart-persistent sessions/pool state.                                                                                                                                 |           |      |
+| TASK-082 | Run live Telegram acceptance with the real Main Mini App/menu button, fresh Mini App login, regular-browser OIDC, account switch, scoped/native/delegated admin denial/allow, `requestChat` or fallback enrollment and sanitized DM alert delivery where Telegram permits.                                                                    |           |      |
+| TASK-083 | Run live provider acceptance with two disposable keys in one profile: healthy stickiness, forced safe authentication failure, rotation, DM alert, manual recovery and continued chat/embedding behavior using `gpt-5.6-terra` at `medium` reasoning plus the configured OpenAI embedding model; revoke disposable credentials after the test. |           |      |
+| TASK-084 | Update all canonical docs, `PLAN.md` status/version/changelog, this plan and `plans/README.md` with exact test/live/deployment evidence; mark DONE only when every done criterion and release gate below is satisfied.                                                                                                                        |           |      |
+
+## 3. Alternatives
+
+- **ALT-001**: Run Nuxt SSR/Nitro as a separate production Backend-for-Frontend in front of FastAPI. Rejected for v1 because the authenticated dashboard does not need SEO/SSR, Node would become a second runtime, and proxy/cookie/origin protection would add a failure boundary already identified in the reference project.
+- **ALT-002**: Host the generated Nuxt app on a separate CDN origin and enable credentialed CORS to FastAPI. Rejected as the default because Mini App/browser cookies, CSRF, CSP, allowed origins and deployment secret coordination become more fragile. A CDN may serve versioned static assets later while HTML/API remain same-origin.
+- **ALT-003**: Use server-rendered Jinja/HTMX pages inside FastAPI. Rejected because the requested control plane includes responsive dashboard navigation, rich settings, provider-key lifecycle, query workspace, memory explorer and Telegram Mini App integration, and the user explicitly prefers Vue/Nuxt.
+- **ALT-004**: Store one encrypted API key directly on each provider profile and rotate profiles. Rejected because it preserves manual failover, duplicates non-secret profile configuration and cannot provide sticky health, bounded rotation or per-key recovery within one logical profile.
+- **ALT-005**: Keep provider keys write-only and never decrypt them to an admin. Rejected by the accepted Option A requirement, but the implementation retains write-only behavior for immutable environment-backed bootstrap keys.
+- **ALT-006**: Use stateless signed session cookies like the supplied reference example. Rejected because bot-admin/grant removal, incident response, account switching and step-up need immediate revocation and server-side session state.
+- **ALT-007**: Store raw API keys in `runtime_settings` or send them through Telegram DMs. Rejected because both surfaces are deliberately non-secret and Telegram conversations are not an application secret vault.
+
+## 4. Dependencies
+
+- **DEP-001**: Telegram BotFather configuration for Web Login client ID/secret, exact HTTPS allowed origin/callback and Main Mini App or menu-button URL.
+- **DEP-002**: Telegram OIDC discovery, authorization, token and JWKS endpoints at the documented `oauth.telegram.org` URLs.
+- **DEP-003**: Telegram Mini App Web App script and signed `initData` contract, plus Bot API/aiogram support or a tested fallback for `savePreparedKeyboardButton` and `requestChat`.
+- **DEP-004**: Nuxt 4, Vue 3, Vue Router, TypeScript and Nuxt UI 4 pinned to reviewed stable releases compatible with Node.js 24 LTS.
+- **DEP-005**: pnpm and a committed frozen `pnpm-lock.yaml`; local Windows execution uses the configured PATH/fnm pnpm executable when necessary.
+- **DEP-006**: `cryptography` for AES-GCM, HKDF and asymmetric JWT primitives, pinned through uv.
+- **DEP-007**: `PyJWT[crypto]`, pinned through uv, as the single JWT/JWKS validation stack; TASK-005 must refresh and validate the exact compatible release before it enters the lockfile.
+- **DEP-008**: Existing `httpx` for OIDC discovery/token/JWKS calls with bounded timeouts and mocked offline tests.
+- **DEP-009**: Existing OpenAI Python SDK 2.50.0 exception taxonomy and request behavior, revalidated if the locked version changes before execution.
+- **DEP-010**: Existing FastAPI/Uvicorn, SQLAlchemy/Alembic, aiogram, `build_context`, `MemoryService`, repository/session patterns and scheduler supervision.
+- **DEP-011**: Existing approved non-Pro GPT-5 model and reasoning allowlists, local MiniLM extra/model cache and provider telemetry/redaction boundaries.
+- **DEP-012**: A stable single public HTTPS origin and reverse proxy for production; preview/live origins must be registered separately in BotFather.
+
+## 5. Files
+
+- **FILE-001**: `plans/021-provider-key-pools-and-telegram-control-plane.md` — authoritative reviewed execution plan and completion evidence.
+- **FILE-002**: `PLAN.md` and `plans/README.md` — lifecycle roadmap/index status, dependencies and changelog.
+- **FILE-003**: `pyproject.toml`, `uv.lock`, `web/package.json`, `web/pnpm-lock.yaml`, `.node-version` — pinned Python/frontend dependencies and runtimes.
+- **FILE-004**: `src/pzp_ai_bot/config.py` and `.env.example` — safe control-plane/OIDC/master-key/session settings without secret output.
+- **FILE-005**: `src/pzp_ai_bot/app_context.py` — construction of auth, provider-profile/pool, alert and control-plane services through the existing composition root.
+- **FILE-006**: `src/pzp_ai_bot/control_plane/app.py`, `schemas.py`, `middleware.py`, `static.py` — FastAPI composition, typed contracts, security middleware and Nuxt asset serving.
+- **FILE-007**: `src/pzp_ai_bot/control_plane/auth/mini_app.py`, `oidc.py`, `sessions.py`, `authorization.py` — isolated Telegram auth, sessions, CSRF and capabilities.
+- **FILE-008**: `src/pzp_ai_bot/control_plane/secrets/crypto.py`, `service.py` — envelope encryption, reveal, fingerprint and master rewrap.
+- **FILE-009**: `src/pzp_ai_bot/control_plane/api/auth.py`, `bot_settings.py`, `providers.py`, `chats.py`, `query.py`, `memory.py`, `stats.py`, `audit.py`, `operations.py`, `alerts.py` — bounded versioned HTTP routes.
+- **FILE-010**: `src/pzp_ai_bot/ai/factory.py`, `openai_compatible.py`, new `credential_pool.py`, `failure_classification.py` — dynamic managed profiles, pool selection, retry and safe classification.
+- **FILE-011**: `src/pzp_ai_bot/telegram/admin.py`, `dispatcher.py`, `polling.py`, `webhook.py`, `scheduler.py`, `commands.py` and relevant routers — shared admin model, HTTP lifecycle, enrollment updates and optional UI launch command/button.
+- **FILE-012**: `src/pzp_ai_bot/memory/contracts.py`, `service.py`, `retrieval_service.py`, `settings_profiles.py`, `provider_operations.py` — only the minimal shared provider-selection/settings/query extensions required by the control API.
+- **FILE-013**: `src/pzp_ai_bot/db/models.py`, `db/repos/control_plane.py`, `db/repos/provider_credentials.py`, `db/repos/alerts.py`, `db/repositories.py` — new models/repositories plus compatibility exports where required.
+- **FILE-014**: `alembic/versions/0013_control_plane_identity_access.py`, `0014_provider_credential_pools.py`, `0015_admin_alert_outbox.py` — schema revisions and indexes.
+- **FILE-015**: `src/pzp_ai_bot/main.py` — secret status/rewrap commands and safe control-plane doctor/config output.
+- **FILE-016**: `web/nuxt.config.ts`, `web/app.vue`, `web/app.config.ts`, `web/app/assets/css/main.css`, `web/app/spa-loading-template.html` — Nuxt client build, Nuxt UI theme and Mini App/browser shell.
+- **FILE-017**: `web/app/plugins/telegram.client.ts`, `web/app/composables/useApi.ts`, `useSession.ts`, `useCapabilities.ts`, `useSensitiveReveal.ts` and route middleware — auth bootstrap, same-origin API/CSRF, capability navigation and reveal lifecycle.
+- **FILE-018**: `web/app/pages/index.vue`, `bot/settings.vue`, `providers/*.vue`, `chats/*.vue`, `query.vue`, `memory.vue`, `stats.vue`, `audit.vue`, `operations.vue`, `login.vue` — requested control-plane pages.
+- **FILE-019**: `web/app/components/` — focused dashboard, setting, provider-key, chat, query, memory, stats and confirmation components.
+- **FILE-020**: `web/app/types/openapi.d.ts` and schema-generation scripts — generated backend contract.
+- **FILE-021**: `tests/test_control_plane_auth.py`, `test_control_plane_authorization.py`, `test_control_plane_api.py` — Python auth/RBAC/API contract tests.
+- **FILE-022**: `tests/test_secret_vault.py`, `test_provider_key_pool.py`, `test_admin_alerts.py` — encryption, rotation, classification, concurrency and DM tests.
+- **FILE-023**: `tests/test_webhook.py`, `test_operations.py`, `test_deployment_artifacts.py`, `test_ai_providers.py`, `test_memory_service.py`, `test_telegram_integration.py` — affected regression suites.
+- **FILE-024**: `web/test/` and `web/e2e/` — Nuxt unit/component and Playwright browser/Mini App tests.
+- **FILE-025**: `Dockerfile`, `docker-compose.yml`, `.dockerignore`, `.github/workflows/ci.yml` — frozen Nuxt build and integrated runtime gates.
+- **FILE-026**: `docs/architecture.md`, `setup.md`, `privacy.md`, `secrets.md`, `commands.md`, `operations.md`, `deployment.md`, `testing.md`, `release.md` — canonical behavior, security, recovery, BotFather and acceptance documentation.
+- **FILE-027**: `README.md` — concise feature/setup navigation only after the control plane is implemented.
+
+## 6. Testing
+
+- **TEST-001**: Mini App validator accepts an official-shape fresh signed payload and rejects missing/duplicate hash, malformed encoding/user, wrong bot token, wrong hash, future timestamp, expired timestamp and numeric overflow without logging input.
+- **TEST-002**: OIDC accepts one valid mocked Authorization Code + S256 PKCE exchange and rejects state, code, verifier, nonce, issuer, audience, expiry, issued-at, signature, algorithm, key ID and callback replay failures.
+- **TEST-003**: OIDC JWKS caching refreshes once for an unknown key ID, uses bounded timeouts and fails closed during unavailable/malformed discovery, token or JWKS responses.
+- **TEST-004**: Sessions hash tokens/CSRF values, enforce cookie flags plus idle/absolute/step-up ages, rotate on login, revoke on logout/admin removal/account switch and reject CSRF/cross-origin mutation.
+- **TEST-005**: Authorization matrix covers bootstrap and managed bot admins, native and delegated chat admins, ordinary authenticated users, foreign chats/topics, global scopes, detached chats and grant revocation.
+- **TEST-006**: Envelope encryption round-trips Unicode/long provider keys and detects altered ciphertext, secret nonce, wrapped DEK, wrap nonce, AAD, credential/profile identity, master-key ID and missing/wrong master key.
+- **TEST-007**: Master-key rewrap changes only wrapped-DEK/master metadata, preserves ciphertext/fingerprint/last-four, verifies before commit and rolls back a partial failure.
+- **TEST-008**: Reveal requires POST, CSRF, bot-admin capability and fresh step-up; environment keys cannot reveal; response/log/audit/cache/HTML/generated-asset scans contain no raw secret.
+- **TEST-009**: Frontend reveal masks by default and clears plaintext after 30 seconds, page hide, route change, unmount, logout, account switch, 401 or manual mask; Copy occurs only after explicit action.
+- **TEST-010**: Provider classifier covers every table row using installed OpenAI exception types/status/code inputs and proves invalid request/model errors never rotate or degrade keys.
+- **TEST-011**: Sticky pool uses one healthy key repeatedly, rotates once after classified death, respects cooldown/order/manual state, recovers, persists restart state and returns one bounded exhaustion error.
+- **TEST-012**: Concurrent provider calls produce one coherent active-key transition with compare-and-swap retries, never use deleted/disabled cached clients and never exceed the ten-key/request bound.
+- **TEST-013**: Provider telemetry and audit include safe profile/fingerprint/attempt/classification metadata while excluding raw keys, provider bodies, prompts and exception messages.
+- **TEST-014**: Alert outbox deduplicates health epochs, survives Telegram failure/rate limit/unreachable users, resolves the current bot-admin set and never changes provider results or critical health.
+- **TEST-015**: Managed chats transition pending/active/paused/detached correctly; paused updates are safely skipped, detached chats do not process, resume restores normal policy and detach/leave never implicitly forget.
+- **TEST-016**: Bot/delegated-admin changes enforce membership, immutable bootstrap owners, version conflicts, last-owner protection and immediate capability/session invalidation.
+- **TEST-017**: Settings APIs preserve validation, direct web mutation, runtime/global/chat/topic precedence, audit events, version conflicts and unchanged Telegram confirmation-token behavior.
+- **TEST-018**: Search/Ask enforce scope/profile permissions, local/chat capabilities, approved models/reasoning, split one-shot retrieval/chat selections, provider failure fallback and safe source presentation.
+- **TEST-019**: Memory explorer pages and bounds durable items/reviews, raw source access is explicit/audited, item actions authorize owning scope and exports stream/cancel without materializing full payloads.
+- **TEST-020**: Stats/audit/operations queries use bounded SQL/query counts and report correct global/chat/topic hierarchy, uptime/files/schema/task/local-model/pool/alert state without automatic paid provider calls.
+- **TEST-021**: Nuxt component tests cover every page's success/loading/empty/error/401/403/409/422/429 state, capability navigation, responsive layout, Telegram theme/safe areas and accessibility.
+- **TEST-022**: Playwright covers normal browser login stub, Mini App SDK/initData injection, account switch, bot/scoped admin flows, provider key lifecycle/reveal, managed chats, query, memory and export at desktop/mobile sizes.
+- **TEST-023**: Docker/CI prove frozen uv/pnpm locks, Nuxt generation, OpenAPI type drift, asset secret scan, non-root static serving, migrations, polling/webhook HTTP lifecycle, health and restart persistence.
+- **TEST-024**: Live acceptance proves real BotFather OIDC, real Mini App auth, sanitized DM alert and two-key failover with disposable credentials; every unavailable permission/credential is reported as an unexecuted release gate rather than a passing test.
+
+### Completion gates
+
+- Gate A — Identity and vault: Mini App/OIDC/session/CSRF/RBAC/encryption/reveal adversarial suites, migration upgrade/check and Nuxt auth shell pass.
+- Gate B — Provider resilience: classifier, concurrency, sticky rotation, telemetry, outbox/DM failure and controlled exhaustion suites pass; one real two-key rotation is accepted.
+- Gate C — Control-plane product: every requested settings, admins, chats, query, stats, memory, export, audit and operations page passes Python contract plus Nuxt component/Playwright coverage.
+- Gate D — Runtime and deployment: polling and webhook modes serve the same generated UI/API, Docker/Compose/health/migration/restart checks pass and production HTTPS/BotFather/master-key configuration is documented.
+- Gate E — Final acceptance: full `uv run ruff format --check .`, `uv run ruff check .`, `uv run ty check`, branch-coverage pytest, frozen frontend format/lint/typecheck/tests/generate, Docker smoke and live Telegram/OIDC/provider gates are recorded with exact results.
+
+### Done criteria
+
+- [ ] One Nuxt control plane works in Telegram and normal browsers through separate validated auth inputs and one revocable session/RBAC model.
+- [ ] Bot admins can manage and controlled-reveal encrypted database provider keys without restart; bootstrap secrets remain non-revealable.
+- [ ] Provider profiles rotate through healthy keys with the exact bounded classifier/state/concurrency/telemetry contract and sanitized non-fatal DM alerts.
+- [ ] Bot/global and chat/topic settings/admin permissions preserve existing precedence and scope boundaries with optimistic concurrency.
+- [ ] Managed chats have distinct enrollment, active, pause, detach, leave and forget behavior.
+- [ ] Query, stats, memory, exports, audit and operations pages are bounded, authorized and source-backed.
+- [ ] Polling/webhook, Docker, CI, migrations, docs and live acceptance gates pass with no secret leakage.
+- [ ] `PLAN.md`, `plans/README.md` and this plan distinguish DONE, PARTIAL and TODO using reproduced evidence.
+
+## 7. Risks & Assumptions
+
+- **RISK-001**: Full secret reveal means a compromised bot-admin session can obtain provider keys; short step-up, auditable no-store reveal, immediate session revocation and strict master-key handling reduce but cannot eliminate this accepted Option A risk.
+- **RISK-002**: Losing every master key referenced by a restored database makes encrypted credentials unrecoverable; backups must pair encrypted data with separately protected master-key recovery material.
+- **RISK-003**: A provider-wide outage can degrade every credential and create a rotation storm; bounded traversal, cooldown, deduplicated alerts and provider-wide safe classifications must cap work.
+- **RISK-004**: Some provider 403/429 bodies vary across compatible services; only allowlisted safe error codes may cause hard disable, while unknown 4xx failures must remain non-rotating configuration errors.
+- **RISK-005**: Telegram OIDC or Mini App contracts may change; implementation must use discovery/current official docs and include one real BotFather smoke before release.
+- **RISK-006**: Telegram web clients require frame permissions that conflict with common clickjacking defaults; the CSP must allow only Telegram's documented web origins plus self and be verified in real web/mobile/desktop clients.
+- **RISK-007**: Mini App cookies can behave differently across Telegram clients; fresh initData exchange plus a durable same-origin session must be tested on relevant clients, and invalid/aged initData must never silently authenticate another account.
+- **RISK-008**: Telegram `requestChat` is new in Bot API 9.6 and aiogram/client support may lag; the manual add-bot/pending-enrollment fallback is release-required (installed version 3.30 supports Bot API 10.2).
+- **RISK-009**: Database-backed admin grants can outlive real Telegram membership changes; native membership is rechecked for sensitive scoped actions and grants remain explicitly revocable/auditable.
+- **RISK-010**: A large dashboard can recreate N+1 or unbounded telemetry/memory work; every list and timeseries must have SQL aggregation, indexes, page/time bounds and query-count tests.
+- **RISK-011**: Adding frontend tooling expands dependency and supply-chain surface; use exact locks, frozen installs, asset scans and separate dependency-review work rather than floating versions.
+- **RISK-012**: Serving static SPA fallbacks from FastAPI can shadow API/webhook/health paths; reserved-route precedence and artifact tests must prove those routes never return `index.html`.
+- **RISK-013**: Polling plus embedded Uvicorn adds lifecycle complexity; one composition root and supervised shutdown must prevent duplicate background workers or leaked bot/http sessions.
+- **RISK-014**: Raw source viewing and browser exports expose more sensitive content than current compact Telegram commands; explicit actions, scope checks, auditing and no-store/download guidance are mandatory.
+- **RISK-015**: Live failover tests can consume quota or disable real keys; use disposable credentials/profile state, constant safe inputs and revoke them immediately after acceptance.
+- **ASSUMPTION-001**: The deployment remains a trusted single-instance private service with SQLite and a stable HTTPS origin.
+- **ASSUMPTION-002**: `BOT_ADMINS` contains at least one recovery owner when the control plane is enabled.
+- **ASSUMPTION-003**: The user will configure BotFather Web Login and Main Mini App/menu URLs for each release environment.
+- **ASSUMPTION-004**: Node.js 24 LTS, Nuxt 4 and Nuxt UI 4 remain supported when implementation begins; exact versions are refreshed and pinned during TASK-005.
+- **ASSUMPTION-005**: Database-managed provider credentials are the only secrets eligible for UI reveal; bot token, webhook secret, OIDC secret and master keys remain deployment-only.
+- **ASSUMPTION-006**: Telegram-native and delegated chat admins should receive scoped control-plane access, while provider secrets and bot-wide settings remain bot-admin-only.
+- **ASSUMPTION-007**: Local MiniLM remains an embedding/search provider; a real local chat model requires a later provider profile that honestly advertises chat capability.
+- **ASSUMPTION-008**: Production deployment stays deferred until the complete control-plane and provider-pool acceptance gates are green.
+
+## 8. Related Specifications / Further Reading
+
+- [PZP AI living roadmap](../PLAN.md)
+- [PZP AI architecture](../docs/architecture.md)
+- [PZP AI privacy](../docs/privacy.md)
+- [PZP AI secrets handling](../docs/secrets.md)
+- [PZP AI deployment](../docs/deployment.md)
+- [PZP AI operations](../docs/operations.md)
+- [Telegram Mini Apps](https://core.telegram.org/bots/webapps)
+- [Telegram Login and OpenID Connect](https://core.telegram.org/bots/telegram-login)
+- [Telegram Bot API](https://core.telegram.org/bots/api)
+- [Nuxt 4 rendering modes](https://nuxt.com/docs/4.x/guide/concepts/rendering)
+- [Nuxt 4 static/client deployment](https://nuxt.com/docs/4.x/getting-started/deployment)
+- [Nuxt UI](https://ui.nuxt.com/)
+- [Node.js release schedule](https://nodejs.org/en/about/previous-releases)
+- [PyJWT API and JWKS validation](https://pyjwt.readthedocs.io/en/stable/api.html)
