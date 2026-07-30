@@ -1,10 +1,10 @@
 ---
 goal: Telegram Group Memory Assistant PoC v1
-version: 0.32
+version: 0.33
 date_created: 2026-06-16
 last_updated: 2026-07-30
 owner: PZP-AI
-status: In progress — private beta validation and OpenAI quota pending
+status: In progress — production deployment, elapsed-retention validation and provider failover deferred
 tags:
   - telegram
   - ai
@@ -215,13 +215,13 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 - **DONE**: Current Docker runtime verification passed on 2026-07-30 after correcting the frozen production sync to install the project non-editably; image build, image `doctor`, empty-schema migration, Compose `doctor` and a Docker health transition to `healthy` all passed
 - **DONE**: CI workflow validation passed locally through static artifact tests; `.github/workflows/ci.yml` runs format, lint, type check, tests, isolated-database Alembic upgrade and model/history drift detection, CLI help, doctor and Docker smoke on GitHub Actions
 - **DONE**: Full local and Docker verification baseline was re-run on 2026-06-24 after plan v0.11
-- **DONE**: The full post-Plan-020 baseline was rerun on 2026-07-30: frozen lock check, Ruff format/lint, `ty`, disposable empty-schema migration/drift checks, 228 passed and 1 skipped at 82.43% branch coverage, Docker acceptance and live Telegram `getMe`; repeat this gate after future code or dependency changes
+- **DONE**: The full post-acceptance baseline was rerun on 2026-07-30: Ruff format/lint, `ty`, focused provider tests and 229 passed with 1 skipped in the fresh complete branch-coverage suite; the owner also confirmed both hosted CI jobs green
 
 ## 4. Known Partial Implementations
 
-- **PARTIAL**: Live Telegram connectivity is proven by the 2026-07-30 `getMe` smoke, but disposable-group commands, BotFather privacy/admin behavior, forget and retention checks remain in Gate C.
-- **PARTIAL**: The requested live OpenAI `gpt-5.6-terra` request with medium reasoning reached the endpoint on 2026-07-30 but returned `insufficient_quota`, so successful generation remains externally blocked.
-- **PARTIAL**: The optional `sentence-transformers` dependency is installed, but the multilingual MiniLM model is not cached; local embedding acceptance remains unrun to avoid an unrequested model download.
+- **PARTIAL**: Disposable-group Telegram command, privacy/admin, learning, summarization, retrieval, settings, export and forget behavior passed live on 2026-07-30; only retention after real elapsed age remains a manual Gate C validation.
+- **PARTIAL**: Local Docker acceptance is current, but the production deployment and deployment-specific secret injection/sizing validation are explicitly deferred.
+- **TODO**: Provider profiles support several separately keyed bootstrap profiles and restartless manual profile switching, but one profile still resolves only one key. Add multiple secret references per profile with sticky healthy-key selection, bounded same-key retry, rotation to the next eligible key only for classified authentication/quota/rate-limit/provider failures, temporary cooldown versus hard-disable state, concurrency-safe selection, secret-free audit telemetry and deduplicated best-effort DM alerts to configured bot admins. Invalid request payloads must not rotate keys, alert failures must not fail provider calls, exhausted pools must return one controlled error and raw keys must remain outside Telegram settings, DMs, logs and the database.
 
 ## 5. Remaining Roadmap
 
@@ -366,8 +366,8 @@ Goal: make the assistant useful to group admins and participants beyond the mini
 - **DONE**: TEST-SEC-002 provider and CLI regressions verify quoted JSON secret redaction and credential-bearing DB URL redaction
 - **DONE**: TEST-013 Docker smoke test and documentation are implemented
 - **DONE**: TEST-019 `/settings` view, direct edit compatibility, preview, confirm, rejection and unauthorized coverage is implemented
-- **PARTIAL**: The optional live Telegram `getMe` smoke passed with configured credentials on 2026-07-30, but disposable-group command, BotFather privacy/admin, forget and retention behavior remain unverified
-- **PARTIAL**: The 78% global coverage floor is only a regression signal; current external gaps include disposable-group Telegram behavior, successful OpenAI acceptance after quota is restored, optional local-provider success after its model is installed/cached and uncovered configuration/Telegram error branches
+- **PARTIAL**: Live Telegram acceptance passed with ordinary-message ingestion, 43 registered commands, scoped settings confirmation, OpenAI-backed summary/search/ask, redaction, document export and confirmed forget; retention after real elapsed age remains unverified
+- **PARTIAL**: The 78% global coverage floor is only a regression signal; current external gaps are production deployment, elapsed-retention behavior, automatic provider-key failover/reload and uncovered configuration/Telegram error branches
 
 ### Required Verification Commands
 
@@ -418,11 +418,11 @@ Required before serious local dogfooding:
 
 Required before inviting a real private group:
 
-- **PARTIAL**: A live Telegram Bot API `getMe` smoke passed on 2026-07-30; a command smoke in a disposable group is still TODO
+- **DONE**: Live polling in the disposable `test pzp-ai` supergroup registered 43 commands and passed policy setup, ordinary-message ingestion, OpenAI-backed summarize/search/ask, safe sensitive-data handling, settings confirmation, Markdown export and confirmed forget on 2026-07-30 with 19 AI operations and no AI errors
 - **DONE**: BotFather privacy-mode/admin setup is documented with exact steps in `docs/setup.md`
-- **TODO**: BotFather privacy-mode/admin setup is verified in a disposable group
+- **DONE**: Telegram reported `can_read_all_group_messages=true`, the bot was a group administrator and ordinary non-command messages were ingested in the disposable group
 - **DONE**: Forget behavior, retention behavior and destructive-operation audit expectations are documented
-- **TODO**: Forget behavior and real-group retention behavior are manually tested in a disposable group
+- **PARTIAL**: Confirmed `/forget scope=this_chat` removed every test message, knowledge item and embedding while preserving audit and AI-usage rows; retention after real elapsed age remains unverified
 - **DONE**: Export and forget workflows are tested offline with a representative imported-memory dataset
 - **DONE**: Admin policy behavior is tested with configured bot admins and mocked Telegram chat admins
 - **DONE**: Cross-chat retrieval is disabled by default, explicitly query-permissioned for every destination/source pair used in beta and still requires each source scope's own learning policy
@@ -435,12 +435,12 @@ Required before calling this v1 complete:
 
 - **DONE**: All Phase 1, Phase 2, Phase 3, Phase 4, Phase 5 and Phase 6 tasks are complete
 - **DONE**: Docker runtime verification is current: the frozen non-editable production image builds, imports the packaged application, runs non-root and passes doctor, migration, Compose and healthcheck acceptance
-- **DONE**: CI workflow pins uv 0.12.0, rejects lock drift, performs a frozen sync, then runs formatting, linting, type checking, the 78% branch-coverage gate, migration checks, CLI checks and Docker smoke on GitHub Actions
+- **DONE**: CI workflow pins uv 0.12.0, rejects lock drift, performs a frozen sync, then runs formatting, linting, type checking, the 78% branch-coverage gate, migration checks, CLI checks and Docker smoke on GitHub Actions; the owner confirmed both hosted jobs green on 2026-07-30
 - **DONE**: Migration history is stable, tested from an empty database through `0012_telemetry_scope_indexes`, and compared with live SQLAlchemy metadata in CI; the SQLite expression index is asserted directly because the dialect cannot reflect it for autogenerate comparison
 - **DONE**: Memory quality is covered by a representative imported dataset test using summarize, ask, export and forget
 - **DONE**: Privacy and operational documentation is complete
 - **DONE**: Manual runbook covers install, upgrade, backup, restore, token rotation, provider switching, prompt/template switching, reloadless settings, `/settings` and emergency forget
-- **PARTIAL**: v1 implementation and local automated/runtime gates are complete, but release readiness remains blocked by the required Gate C disposable-group validations and a successful live OpenAI provider call; the 2026-07-30 Terra/medium request reached OpenAI but was rejected with `insufficient_quota`
+- **PARTIAL**: v1 implementation, local automated/runtime gates, hosted CI, Docker, local embeddings, live OpenAI and the disposable-group functional suite are complete. Production readiness still lacks elapsed-retention validation, automatic provider-key failover/reload and the explicitly deferred production deployment checks.
 
 ## 8. Operational Runbook
 
@@ -519,9 +519,10 @@ uv run pzp-bot webhook
 
 - `/runtime_settings` is the current global safe runtime-settings command from Telegram
 - `/settings` is the scoped memory/provider/prompt settings command with preview/confirmation UX; `/memory_settings` remains available for direct local admin edits
+- Effective settings resolve from environment/runtime defaults through global, chat and topic overlays. Configured bot admins may target `all`, a chat or a topic from bot DMs; ordinary Telegram chat admins may target only the current chat they administer.
 - File and environment values remain the bootstrap and secret source of truth
 - Non-secret runtime choices such as learning default, provider profile, model, reasoning level, memory top-k, batch sizes, summary cadence and retention defaults are editable without a process restart after validation
-- Provider secrets must not be pasted through Telegram unless a future encrypted secret workflow is explicitly designed and documented
+- Provider secrets must not be pasted through Telegram groups or bot DMs. Multiple bootstrap profiles permit restartless manual switching; the planned pool will allow multiple external secret references inside one profile, rotate only after classified key/provider failures and notify configured bot admins by sanitized best-effort DM.
 
 ## 9. File Ownership Map
 
@@ -538,18 +539,19 @@ uv run pzp-bot webhook
 
 - **RISK-001**: Telegram privacy mode or missing admin permissions can make live testing look broken even when code works
 - **RISK-003**: Provider costs and privacy risks can grow quickly if large raw chats are summarized by external models
-- **RISK-004**: Current fake provider is useful for deterministic tests but does not prove real answer quality; the 2026-07-30 `gpt-5.6-terra`/medium live request reached OpenAI but could not prove generation because the account returned `insufficient_quota`
+- **CLOSED-004**: Live `gpt-5.6-terra`/medium generation and `text-embedding-3-small` embeddings passed directly, then the same provider configuration passed the disposable-group summarize/search/ask suite with no AI errors
 - **RISK-005**: Bulk import atomicity is intentionally per 100-row checkpoint, so operators must inspect content-free checkpoint/failure events and retry the same input after a later parse, provider or write failure rather than assuming whole-file rollback
 - **RISK-005**: Current memory compaction performs deterministic heuristic deduplication but can still miss deeper semantic duplicates or keep low-value facts
 - **RISK-006**: Runtime scheduling has focused tests, but true long-running polling/webhook behavior can still differ under real Telegram load
-- **RISK-007**: Optional local embeddings can pull large model dependencies and need explicit deployment sizing; `sentence-transformers` is installed locally but the multilingual MiniLM model was not cached on 2026-07-30, so no download or live embedding acceptance was attempted
-- **RISK-008**: Live Telegram behavior may surface API or permission details not covered by offline tests
+- **RISK-007**: Optional local embeddings can pull large model dependencies and still need explicit deployment sizing; the multilingual MiniLM model is now cached and passed online plus forced-offline semantic ordering acceptance at 384 dimensions
+- **CLOSED-008**: Live Telegram API, permission, command, ordinary-message, AI generation, export and forget behavior passed in the disposable administrator-controlled supergroup; sustained real load remains covered separately by RISK-006
 - **RISK-009**: Cross-chat retrieval can leak context across communities if destination query permissions are misconfigured or tested only on synthetic scopes
 - **CLOSED-010**: Runtime prompt/provider changes remain attributable because selected templates, profiles, models and reasoning levels are logged through one safe provider-call telemetry record; failed calls commit only controlled metadata and bounded error summaries after the business rollback or claim release
 - **RISK-011**: `/settings` preview/confirmation reduces broad-change surprises, but concurrent admins can still preview overlapping scoped changes and apply the latest active token
-- **RISK-012**: GitHub Actions has been defined locally but the first hosted run still needs to pass after the branch is pushed
+- **CLOSED-012**: The owner confirmed both hosted GitHub Actions jobs green on the pushed branch
 - **RISK-013**: Telegram Desktop JSON exports and Bot API update dumps can contain historical group content that predates bot consent; operators must review export files and target scopes before import
 - **RISK-014**: Docker smoke proves local image startup, health checks and migrations, but production server sizing and secret injection still need deployment-specific validation
+- **RISK-015**: A selected provider profile still has a single-key failure domain. The planned pool must rotate among multiple external secret references without exposing key material, distinguish invalid requests from authentication/quota/rate-limit/provider failures, serialize concurrent health transitions and debounce sanitized bot-admin DM alerts; admins must first open the bot DM because Telegram bots cannot initiate a conversation with a user who has never contacted them.
 - **CLOSED-001**: Global review IDs no longer let a Telegram admin act on another chat's review because approval and rejection authorize the persisted owning scope before mutation; same-chat and configured-bot-admin access remain covered by dispatcher tests
 - **CLOSED-002**: Daily Markdown no longer receives pre-commit appends or pending review proposals; it is rebuilt from committed knowledge after mutations and startup, so rejection, deletion, retention and forget operations remove projected content while audit metadata remains
 - **CLOSED-003**: Failed or empty summary generation no longer synthesizes durable raw-chat content or marks source messages summarized; messages remain retryable and diagnostics retain only safe provider/model/source-ID/exception-type metadata
@@ -619,3 +621,4 @@ uv run pzp-bot webhook
 - **2026-07-29 / v0.30**: Streamed JSONL and supported Telegram JSON imports with pinned `ijson==3.5.1`, 512 MiB/100,000-row safeguards, retry-safe independently audited 100-row checkpoints and provider work outside write transactions; added primary-key export paging, batched scope/source hydration, incremental CLI writes and UTF-8-safe Telegram document streaming. Frozen lock, Ruff, ty and 125 focused transfer tests passed; full verification passed with 218 tests, 1 skipped and 81.38% branch coverage.
 - **2026-07-29 / v0.31**: Began the behavior-preserving Plan 020 hotspot split: repository implementations moved under cohesive `db.repos` modules behind the unchanged `db.repositories` facade; shared memory contracts, streaming transfer and provider-operation/telemetry logic moved behind `MemoryService` delegates; architecture and compatibility inventory tests now record the landed boundaries. Whole-project Ruff format/lint and `ty` passed, and the fresh offline checkpoint passed with 222 tests and 1 skipped; Telegram router families and the remaining MemoryService slices remain explicitly pending.
 - **2026-07-30 / v0.32**: Completed Plan 020 by extracting all remaining MemoryService collaborators and Telegram command-family routers behind stable facades, enforced dependency direction and exact composition through architecture tests, and reconciled Plan 014's living roadmap/test/ownership/release-gate drift. Ruff, `ty`, empty-schema migration/drift checks and a fresh 228-passed/1-skipped suite at 82.43% branch coverage passed. Current Docker build/doctor/migration/Compose/health acceptance and live Telegram `getMe` passed after fixing the runtime image to install the project non-editably; live OpenAI remains blocked by account quota, the local model is not cached and disposable-group Telegram validations remain TODO.
+- **2026-07-30 / v0.33**: Corrected GPT-5 Chat Completions requests to use `max_completion_tokens` without a non-default temperature, validated every approved non-Pro GPT-5 alias in the account inventory and completed direct `gpt-5.6-terra`/medium plus OpenAI embedding acceptance. Cached and forced-offline validated multilingual MiniLM, passed a disposable-group Telegram suite across policy, simple/daily/sensitive/technical ingestion, summary/search/ask, settings, export and forget, confirmed both hosted CI jobs green and completed a fresh 229-passed/1-skipped full checkpoint. Documented the exact scope/DM precedence and retained automatic provider-key failover/reload plus production deployment and elapsed-retention checks as explicit remaining work.

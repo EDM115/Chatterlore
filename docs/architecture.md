@@ -63,7 +63,7 @@ The same no-provider-inside-transaction boundary applies to message/note/import 
 
 ## Provider Model
 
-Provider profiles are configured from the default environment variables plus optional `AI_PROVIDER_PROFILES` JSON. The effective chat model and reasoning level can come from environment defaults, safe runtime settings, per-scope settings or a one-shot command override; recognized OpenAI reasoning-model IDs receive that level as the outbound Chat Completions `reasoning_effort` parameter. Missing OpenAI-compatible credentials fail closed before provider calls. Local embeddings fail with an actionable `uv sync --extra local` message when `sentence-transformers` is not installed.
+Provider profiles are configured from the default environment variables plus optional `AI_PROVIDER_PROFILES` JSON. The effective chat model and reasoning level can come from environment defaults, safe runtime settings, per-scope settings or a one-shot command override. Recognized OpenAI reasoning-model IDs receive that level as the outbound Chat Completions `reasoning_effort` parameter, use `max_completion_tokens` and omit the unsupported non-default temperature; legacy compatible models keep `max_tokens` and the configured temperature. Missing OpenAI-compatible credentials fail closed before provider calls. Local embeddings fail with an actionable `uv sync --extra local` message when `sentence-transformers` is not installed.
 
 ## Telegram Runtime
 
