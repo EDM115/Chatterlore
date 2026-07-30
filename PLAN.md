@@ -1,10 +1,10 @@
 ---
 goal: Telegram Group Memory Assistant PoC v1
-version: 0.33
+version: 0.34
 date_created: 2026-06-16
 last_updated: 2026-07-30
 owner: PZP-AI
-status: In progress — production deployment, elapsed-retention validation and provider failover deferred
+status: In progress — Plan 021 control plane and provider failover await approval; production deployment and elapsed-retention validation remain deferred
 tags:
   - telegram
   - ai
@@ -39,12 +39,17 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 - **REQ-014**: Allow admins to summarize a bounded message range between two Telegram messages, with optional reusable summary templates
 - **REQ-015**: Allow admins to customize prompt templates, select configured AI providers, switch models and tune reasoning level without code changes
 - **REQ-016**: Support reloadless runtime configuration and Telegram-native settings management for admins
+- **REQ-017**: Support multiple reloadless API credentials inside one provider profile, with sticky healthy selection, classified bounded failover and sanitized bot-admin notification
+- **REQ-018**: Provide one responsive Nuxt control plane that works both as a Telegram Mini App and as a normal browser application authenticated through current Telegram mechanisms
+- **REQ-019**: Let bot admins manage bot-wide settings, provider profiles/secrets, managed chats and bot admins, while Telegram-native or delegated chat admins remain restricted to the chats and topics they actually administer
+- **REQ-020**: Let authorized users query a selected chat/topic with an explicit provider profile, supported model and reasoning effort, inspect bounded status/statistics/audit data, browse memory and stream scoped exports
 
 - **CON-001**: Telegram Bot API does not provide arbitrary full historical group backfill. v1 learns live updates plus manual JSONL imports
 - **CON-002**: Reading non-command group messages requires BotFather privacy mode disabled or the bot running as a group admin
 - **CON-003**: Default learning must remain disabled unless explicitly enabled
 - **CON-004**: Use `uv`, `ruff`, `ty` and `pytest`. Do not add `mypy`
 - **CON-005**: Keep tests offline by default. Any live Telegram tests must be explicitly marked `telegram_live`
+- **CON-006**: Keep the control-plane production runtime single-origin and Python-owned: Nuxt generates static assets during development/CI/Docker build, while FastAPI serves those assets and `/api/control/v1`; do not add a second Node production server
 
 - **SEC-001**: Never commit `.env`, raw runtime data, SQLite DBs, or generated memory
 - **SEC-002**: Reject Telegram webhook calls with a missing or wrong secret token
@@ -54,6 +59,9 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 - **SEC-006**: Authorize review approval and rejection against each review's persisted owning scope before mutation
 - **SEC-007**: Keep pending review content out of Markdown and reconcile every generated memory file after deletion, retention or forget operations
 - **SEC-008**: Never promote raw chat to durable memory when summary generation fails; retain retryable source state and content-free diagnostics
+- **SEC-009**: Authenticate normal browsers with Telegram OIDC Authorization Code plus PKCE and server-validated issuer, audience, signature, expiry and state; authenticate Mini Apps only from fresh server-validated `initData`, never `initDataUnsafe`
+- **SEC-010**: Keep managed provider credentials envelope-encrypted at rest with deployment-supplied master keys outside the database; never place raw keys in Telegram, runtime settings, logs, audit payloads, telemetry, browser storage or backups without separate master-key protection
+- **SEC-011**: Mask managed credentials by default and allow Option A full reveal only to a bot admin after fresh step-up authentication, through one audited non-cacheable response; environment-backed bootstrap secrets remain non-revealable
 
 ## 2. Current Architecture
 
@@ -221,7 +229,8 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 
 - **PARTIAL**: Disposable-group Telegram command, privacy/admin, learning, summarization, retrieval, settings, export and forget behavior passed live on 2026-07-30; only retention after real elapsed age remains a manual Gate C validation.
 - **PARTIAL**: Local Docker acceptance is current, but the production deployment and deployment-specific secret injection/sizing validation are explicitly deferred.
-- **TODO**: Provider profiles support several separately keyed bootstrap profiles and restartless manual profile switching, but one profile still resolves only one key. Add multiple secret references per profile with sticky healthy-key selection, bounded same-key retry, rotation to the next eligible key only for classified authentication/quota/rate-limit/provider failures, temporary cooldown versus hard-disable state, concurrency-safe selection, secret-free audit telemetry and deduplicated best-effort DM alerts to configured bot admins. Invalid request payloads must not rotate keys, alert failures must not fail provider calls, exhausted pools must return one controlled error and raw keys must remain outside Telegram settings, DMs, logs and the database.
+- **TODO**: Provider profiles support several separately keyed bootstrap profiles and restartless manual profile switching, but one profile still resolves only one key. Plan 021 specifies multiple credentials per profile, sticky healthy-key selection, bounded same-key retry, classified rotation, cooldown/hard-disable state, concurrency control, safe telemetry and deduplicated best-effort bot-admin DM alerts. Until it lands, invalid payload classification, pool exhaustion behavior, encrypted database-managed keys and automatic failover remain unimplemented.
+- **TODO**: The Telegram-authenticated web control plane in Plan 021 is fully designed but not implemented. The current bot has no Nuxt UI, browser OIDC flow, Mini App session exchange, managed-chat dashboard, encrypted credential vault, graphical scope administration, web query workspace, memory explorer or operational dashboard.
 
 ## 5. Remaining Roadmap
 
@@ -246,20 +255,20 @@ Goal: make existing behavior deterministic, internally consistent and covered by
 
 Goal: make `MEMORY.md` a useful canonical memory file rather than only a dump of stored knowledge rows.
 
-| Task     | Status | Description                                                                                                                          | Acceptance Criteria                                                                                                                                                                                            |
-| -------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| TASK-011 | DONE   | Implement LLM-assisted canonical compaction from daily summaries into stable facts, decisions, preferences, open questions and todos | `MEMORY.md` is grouped by scope and semantic category; sources are preserved; fake provider test is deterministic                                                                                              |
-| TASK-012 | DONE   | Deduplicate semantically similar knowledge items during compaction                                                                   | Repeated facts do not produce repeated bullets; source IDs are merged                                                                                                                                          |
-| TASK-013 | DONE   | Add source formatting with Telegram message references where possible                                                                | Memory entries include source IDs and, when chat username/link data exists, clickable Telegram links                                                                                                           |
-| TASK-014 | DONE   | Store optional chat title, topic title, username and message permalink metadata                                                      | Exports are readable without raw numeric IDs only; migration and tests cover metadata                                                                                                                          |
-| TASK-015 | DONE   | Add per-scope memory settings such as top-k, summary batch size and summary model                                                    | Scope-specific settings override defaults and are visible in `/learn_status`                                                                                                                                   |
-| TASK-016 | DONE   | Add retention controls for raw messages and generated knowledge                                                                      | Admins can configure retention; old raw messages can be pruned without deleting durable summaries                                                                                                              |
-| TASK-017 | DONE   | Add memory review workflow before compacting sensitive scopes                                                                        | Optional mode writes proposed summaries and requires admin approval before knowledge insertion                                                                                                                 |
-| TASK-018 | DONE   | Add richer manual note commands: tags, source, priority and edit/delete note                                                         | `/remember` notes can be listed, edited, deleted and exported with tags                                                                                                                                        |
-| TASK-019 | DONE   | Add explicit cross-chat retrieval profiles for selected source channels, groups and topics                                            | Admin can define a named retrieval profile such as one channel, two groups and three topics; ingestion stays in each original source scope and retrieval can opt into the profile without leaking unrelated chats |
-| TASK-020 | DONE   | Add destination query permissions for cross-chat memory retrieval                                                                     | A destination can query another scope only when its admin-managed query permission and the source scope's own learning policy both allow it; tests cover denied and allowed cross-scope access                    |
-| TASK-021 | DONE   | Add message-range summarization between two Telegram messages                                                                        | Admin can reply/select/provide two message IDs; the bot checks both message dates and source scope, summarizes only the bounded range and records the date interval and source IDs                             |
-| TASK-022 | DONE   | Add reusable summary templates for range and scope summaries                                                                         | Admin can choose configured templates for decisions, todos, meeting notes, incident recap, or custom formats; fake provider tests snapshot the prompt inputs                                                   |
+| Task     | Status | Description                                                                                                                          | Acceptance Criteria                                                                                                                                                                                               |
+| -------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| TASK-011 | DONE   | Implement LLM-assisted canonical compaction from daily summaries into stable facts, decisions, preferences, open questions and todos | `MEMORY.md` is grouped by scope and semantic category; sources are preserved; fake provider test is deterministic                                                                                                 |
+| TASK-012 | DONE   | Deduplicate semantically similar knowledge items during compaction                                                                   | Repeated facts do not produce repeated bullets; source IDs are merged                                                                                                                                             |
+| TASK-013 | DONE   | Add source formatting with Telegram message references where possible                                                                | Memory entries include source IDs and, when chat username/link data exists, clickable Telegram links                                                                                                              |
+| TASK-014 | DONE   | Store optional chat title, topic title, username and message permalink metadata                                                      | Exports are readable without raw numeric IDs only; migration and tests cover metadata                                                                                                                             |
+| TASK-015 | DONE   | Add per-scope memory settings such as top-k, summary batch size and summary model                                                    | Scope-specific settings override defaults and are visible in `/learn_status`                                                                                                                                      |
+| TASK-016 | DONE   | Add retention controls for raw messages and generated knowledge                                                                      | Admins can configure retention; old raw messages can be pruned without deleting durable summaries                                                                                                                 |
+| TASK-017 | DONE   | Add memory review workflow before compacting sensitive scopes                                                                        | Optional mode writes proposed summaries and requires admin approval before knowledge insertion                                                                                                                    |
+| TASK-018 | DONE   | Add richer manual note commands: tags, source, priority and edit/delete note                                                         | `/remember` notes can be listed, edited, deleted and exported with tags                                                                                                                                           |
+| TASK-019 | DONE   | Add explicit cross-chat retrieval profiles for selected source channels, groups and topics                                           | Admin can define a named retrieval profile such as one channel, two groups and three topics; ingestion stays in each original source scope and retrieval can opt into the profile without leaking unrelated chats |
+| TASK-020 | DONE   | Add destination query permissions for cross-chat memory retrieval                                                                    | A destination can query another scope only when its admin-managed query permission and the source scope's own learning policy both allow it; tests cover denied and allowed cross-scope access                    |
+| TASK-021 | DONE   | Add message-range summarization between two Telegram messages                                                                        | Admin can reply/select/provide two message IDs; the bot checks both message dates and source scope, summarizes only the bounded range and records the date interval and source IDs                                |
+| TASK-022 | DONE   | Add reusable summary templates for range and scope summaries                                                                         | Admin can choose configured templates for decisions, todos, meeting notes, incident recap, or custom formats; fake provider tests snapshot the prompt inputs                                                      |
 
 ### Phase 3 - Provider And AI Hardening
 
@@ -300,20 +309,20 @@ Goal: prove Telegram behavior without requiring live Telegram servers in default
 
 Goal: make the bot safe to run for a real group over time.
 
-| Task     | Status   | Description                                                  | Acceptance Criteria                                                                                                                                                  |
-| -------- | -------- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| TASK-044 | DONE     | Implement structured logging with `structlog`                | Logs include event type, chat_id, thread_id, user_id when safe, duration and error                                                                                   |
-| TASK-045 | DONE     | Add audit views or export for `bot_events`                   | Admin actions and destructive operations can be reviewed                                                                                                             |
-| TASK-046 | DONE     | Persist forget confirmation challenges with expiry           | Restart does not create ambiguous destructive state; expired tokens cannot be reused                                                                                 |
-| TASK-047 | DONE     | Add DB maintenance commands                                  | CLI supports vacuum, backup, stats and integrity check for SQLite                                                                                                    |
-| TASK-048 | DONE     | Add privacy/data-processing documentation for real group use | Docs explain what is stored, sent to providers, retained, exported and deleted                                                                                       |
-| TASK-049 | DONE     | Add retention pruning command and policy                     | Admin can prune raw messages older than configured window per scope                                                                                                  |
-| TASK-050 | DONE     | Add secrets handling guidance for deployment                 | Docs cover `.env`, Docker secrets, provider keys and Telegram token rotation                                                                                         |
-| TASK-051 | DONE     | Add Docker runtime verification                              | Docker build, container `doctor`, container migration and compose `doctor` smoke pass locally without starting Telegram polling                                      |
-| TASK-052 | DONE     | Add CI workflow                                              | GitHub Actions runs format, lint, type check, tests, Alembic upgrade, CLI help, doctor and Docker smoke on push and pull request                                    |
-| TASK-053 | DONE     | Add release checklist and versioning process                 | Releases specify migration state, config changes and manual Telegram smoke tests                                                                                     |
-| TASK-054 | DONE     | Add reloadless runtime settings refresh                      | File/env-backed settings have a validated reload path; long-running polling and webhook runtimes apply non-secret setting changes without process restart where safe |
-| TASK-055 | DONE     | Store editable bot settings in the database                  | Runtime settings that are safe to edit are persisted with schema, validation, defaults, scope overrides, audit events and rollback behavior                          |
+| Task     | Status | Description                                                  | Acceptance Criteria                                                                                                                                                  |
+| -------- | ------ | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| TASK-044 | DONE   | Implement structured logging with `structlog`                | Logs include event type, chat_id, thread_id, user_id when safe, duration and error                                                                                   |
+| TASK-045 | DONE   | Add audit views or export for `bot_events`                   | Admin actions and destructive operations can be reviewed                                                                                                             |
+| TASK-046 | DONE   | Persist forget confirmation challenges with expiry           | Restart does not create ambiguous destructive state; expired tokens cannot be reused                                                                                 |
+| TASK-047 | DONE   | Add DB maintenance commands                                  | CLI supports vacuum, backup, stats and integrity check for SQLite                                                                                                    |
+| TASK-048 | DONE   | Add privacy/data-processing documentation for real group use | Docs explain what is stored, sent to providers, retained, exported and deleted                                                                                       |
+| TASK-049 | DONE   | Add retention pruning command and policy                     | Admin can prune raw messages older than configured window per scope                                                                                                  |
+| TASK-050 | DONE   | Add secrets handling guidance for deployment                 | Docs cover `.env`, Docker secrets, provider keys and Telegram token rotation                                                                                         |
+| TASK-051 | DONE   | Add Docker runtime verification                              | Docker build, container `doctor`, container migration and compose `doctor` smoke pass locally without starting Telegram polling                                      |
+| TASK-052 | DONE   | Add CI workflow                                              | GitHub Actions runs format, lint, type check, tests, Alembic upgrade, CLI help, doctor and Docker smoke on push and pull request                                     |
+| TASK-053 | DONE   | Add release checklist and versioning process                 | Releases specify migration state, config changes and manual Telegram smoke tests                                                                                     |
+| TASK-054 | DONE   | Add reloadless runtime settings refresh                      | File/env-backed settings have a validated reload path; long-running polling and webhook runtimes apply non-secret setting changes without process restart where safe |
+| TASK-055 | DONE   | Store editable bot settings in the database                  | Runtime settings that are safe to edit are persisted with schema, validation, defaults, scope overrides, audit events and rollback behavior                          |
 
 ### Phase 6 - Product Completeness
 
@@ -333,6 +342,19 @@ Goal: make the assistant useful to group admins and participants beyond the mini
 | TASK-065 | DONE   | Add response source presentation improvements                               | `/ask` answers cite compact source references without overwhelming Telegram messages                                                                                          |
 | TASK-066 | DONE   | Add `/settings` admin command                                               | Admins can view and edit validated settings from Telegram, including learning policy defaults, provider profile, model, reasoning level, summary template and prompt template |
 | TASK-067 | DONE   | Add settings change previews and confirmation                               | Sensitive or broad changes show a preview, require confirmation and write an audit event before taking effect                                                                 |
+
+### Phase 7 - Secure Operator Control Plane And Provider Resilience
+
+Goal: add the requested operator experience and remove each provider profile's single-key failure domain without weakening Telegram scope authorization or secret handling.
+
+| Task     | Status | Description                                                                                     | Acceptance Criteria                                                                                                                                                                                     |
+| -------- | ------ | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| TASK-068 | TODO   | Add the envelope-encrypted managed provider-secret vault and multi-key profile persistence      | Multiple credentials can be added, reordered, disabled, tested, rotated and removed without restart; plaintext is never persisted outside the bounded decrypt/reveal path                               |
+| TASK-069 | TODO   | Add sticky provider-key selection, failure classification, bounded retry/failover and DM alerts | Safe classifier tests distinguish invalid requests from key/provider failures; concurrent calls cannot corrupt state; exhausted pools fail once; sanitized alert delivery is deduplicated and non-fatal |
+| TASK-070 | TODO   | Add Telegram OIDC, Mini App `initData` validation, opaque sessions, CSRF and step-up            | Both entry modes resolve the same Telegram identity and revocable server-side session; stale/replayed/tampered auth and unauthorized secret reveal fail closed                                          |
+| TASK-071 | TODO   | Add the static Nuxt 4/Vue 3/Nuxt UI control plane and same-origin FastAPI API                   | Mobile Mini App and regular browser flows provide accessible authenticated navigation without a Node production runtime or broad CORS                                                                   |
+| TASK-072 | TODO   | Add bot/scoped settings, admin, managed-chat, query, memory, stats, health and audit workflows  | Bot admins receive global controls; chat admins receive only proven scoped controls; mutations are validated and audited; lists/exports are bounded and streaming                                       |
+| TASK-073 | TODO   | Integrate runtime supervision, migrations, Docker/CI/docs and complete offline/live acceptance  | Polling and webhook deployments serve the UI safely; frontend/backend/static/migration/security gates pass; real Telegram OIDC/Mini App, provider failover and backup/restore evidence is recorded      |
 
 ## 6. Test Plan
 
@@ -368,6 +390,7 @@ Goal: make the assistant useful to group admins and participants beyond the mini
 - **DONE**: TEST-019 `/settings` view, direct edit compatibility, preview, confirm, rejection and unauthorized coverage is implemented
 - **PARTIAL**: Live Telegram acceptance passed with ordinary-message ingestion, 43 registered commands, scoped settings confirmation, OpenAI-backed summary/search/ask, redaction, document export and confirmed forget; retention after real elapsed age remains unverified
 - **PARTIAL**: The 78% global coverage floor is only a regression signal; current external gaps are production deployment, elapsed-retention behavior, automatic provider-key failover/reload and uncovered configuration/Telegram error branches
+- **TODO**: Plan 021 TEST-001 through TEST-024 cover provider-pool classification/concurrency/exhaustion, encrypted secret storage/reveal/rotation, OIDC/Mini App/session/CSRF/RBAC, scoped API behavior, Nuxt component/accessibility/e2e behavior, static route precedence, migrations, Docker, backup/restore and authorized live acceptance
 
 ### Required Verification Commands
 
@@ -442,6 +465,17 @@ Required before calling this v1 complete:
 - **DONE**: Manual runbook covers install, upgrade, backup, restore, token rotation, provider switching, prompt/template switching, reloadless settings, `/settings` and emergency forget
 - **PARTIAL**: v1 implementation, local automated/runtime gates, hosted CI, Docker, local embeddings, live OpenAI and the disposable-group functional suite are complete. Production readiness still lacks elapsed-retention validation, automatic provider-key failover/reload and the explicitly deferred production deployment checks.
 
+### Gate E - Secure Control Plane And Resilient Provider Operations
+
+Required before enabling Plan 021 in a production deployment:
+
+- **TODO**: Every Plan 021 implementation task, security requirement, offline test and completion criterion is green
+- **TODO**: Real Telegram browser OIDC and Mini App authentication pass against registered production-like HTTPS URLs, including session revocation, account switching, scope authorization and step-up reveal denial/success
+- **TODO**: A disposable multi-key provider profile proves sticky selection, classified failover, cooldown/recovery, pool exhaustion and deduplicated sanitized bot-admin DM notification without exposing credentials
+- **TODO**: Nuxt static artifacts pass responsive browser and Telegram Web/Mobile/Desktop acceptance, and reserved FastAPI API/webhook/health paths never fall through to the SPA
+- **TODO**: Encrypted database backup/restore and master-key rotation/recovery are rehearsed, while losing the referenced master key is documented as unrecoverable
+- **TODO**: Production deployment remains deferred until Gate E and the existing deployment-specific secret injection, sizing and elapsed-retention checks are all accepted
+
 ## 8. Operational Runbook
 
 ### Local Offline
@@ -453,7 +487,6 @@ uv run pzp-bot migrate
 uv run pytest
 AI_PROVIDER=fake uv run pzp-bot polling
 ```
-
 
 ### Docker Smoke
 
@@ -468,6 +501,7 @@ docker compose down
 ```
 
 These commands verify the image and compose runtime without starting Telegram polling.
+
 ### Cloud AI Provider
 
 ```env
@@ -520,9 +554,9 @@ uv run pzp-bot webhook
 - `/runtime_settings` is the current global safe runtime-settings command from Telegram
 - `/settings` is the scoped memory/provider/prompt settings command with preview/confirmation UX; `/memory_settings` remains available for direct local admin edits
 - Effective settings resolve from environment/runtime defaults through global, chat and topic overlays. Configured bot admins may target `all`, a chat or a topic from bot DMs; ordinary Telegram chat admins may target only the current chat they administer.
-- File and environment values remain the bootstrap and secret source of truth
+- File and environment values remain the current bootstrap and secret source of truth; after Plan 021, deployment master keys and immutable bootstrap secrets stay external while encrypted provider credentials may be database-managed
 - Non-secret runtime choices such as learning default, provider profile, model, reasoning level, memory top-k, batch sizes, summary cadence and retention defaults are editable without a process restart after validation
-- Provider secrets must not be pasted through Telegram groups or bot DMs. Multiple bootstrap profiles permit restartless manual switching; the planned pool will allow multiple external secret references inside one profile, rotate only after classified key/provider failures and notify configured bot admins by sanitized best-effort DM.
+- Provider secrets must not be pasted through Telegram groups or bot DMs. Multiple bootstrap profiles currently permit restartless manual switching; Plan 021 adds a browser/Mini App secret-vault workflow with multiple managed credentials inside one profile, classified rotation and sanitized best-effort bot-admin DM alerts.
 
 ## 9. File Ownership Map
 
@@ -552,6 +586,9 @@ uv run pzp-bot webhook
 - **RISK-013**: Telegram Desktop JSON exports and Bot API update dumps can contain historical group content that predates bot consent; operators must review export files and target scopes before import
 - **RISK-014**: Docker smoke proves local image startup, health checks and migrations, but production server sizing and secret injection still need deployment-specific validation
 - **RISK-015**: A selected provider profile still has a single-key failure domain. The planned pool must rotate among multiple external secret references without exposing key material, distinguish invalid requests from authentication/quota/rate-limit/provider failures, serialize concurrent health transitions and debounce sanitized bot-admin DM alerts; admins must first open the bot DM because Telegram bots cannot initiate a conversation with a user who has never contacted them.
+- **RISK-016**: Full secret reveal intentionally increases impact if a bot-admin session is stolen; Plan 021 therefore requires fresh Telegram step-up, no-store responses, revocable server-side sessions, audit attribution and a deployment option to disable reveal without removing write/replace operations
+- **RISK-017**: Telegram OIDC, Mini App Web APIs and client cookie behavior can drift independently; implementation must re-read discovery/current official docs and pass real Web, Desktop and Mobile client checks rather than copying the older HandleHub popup shortcut
+- **RISK-018**: A dashboard can create unbounded memory/telemetry queries or SPA route shadowing; every list/export requires pagination or streaming, every aggregation requires measured SQL, and reserved API/webhook/health routes must be tested before the static fallback
 - **CLOSED-001**: Global review IDs no longer let a Telegram admin act on another chat's review because approval and rejection authorize the persisted owning scope before mutation; same-chat and configured-bot-admin access remain covered by dispatcher tests
 - **CLOSED-002**: Daily Markdown no longer receives pre-commit appends or pending review proposals; it is rebuilt from committed knowledge after mutations and startup, so rejection, deletion, retention and forget operations remove projected content while audit metadata remains
 - **CLOSED-003**: Failed or empty summary generation no longer synthesizes durable raw-chat content or marks source messages summarized; messages remain retryable and diagnostics retain only safe provider/model/source-ID/exception-type metadata
@@ -573,14 +610,18 @@ uv run pzp-bot webhook
 - **ASSUMPTION-003**: Local development uses `AI_PROVIDER=fake`
 - **ASSUMPTION-004**: Real deployments will use either OpenAI-compatible chat/embeddings or local embeddings through the provider interface
 - **ASSUMPTION-005**: The default storage remains SQLite plus Markdown until the project outgrows a single-node deployment
-- **ASSUMPTION-006**: Telegram-admin settings changes are limited to non-secret values unless a dedicated secret-management workflow is added
+- **ASSUMPTION-006**: Telegram command and DM settings remain limited to non-secret values. Plan 021 is the dedicated secret-management workflow, and it is browser/Mini-App-only even after implementation.
 
 ## 11. References
 
 - Telegram Bot API: https://core.telegram.org/bots/api
 - Telegram bot features and privacy mode: https://core.telegram.org/bots/features
+- Telegram Mini Apps: https://core.telegram.org/bots/webapps
+- Telegram Login and OpenID Connect: https://core.telegram.org/bots/telegram-login
 - aiogram documentation: https://docs.aiogram.dev/
 - OpenAI embeddings guide: https://platform.openai.com/docs/guides/embeddings
+- Nuxt 4 documentation: https://nuxt.com/docs/4.x/
+- Nuxt UI documentation: https://ui.nuxt.com/
 - `uv` documentation: https://docs.astral.sh/uv/
 - `ruff` documentation: https://docs.astral.sh/ruff/
 - `ty` documentation: https://docs.astral.sh/ty/
@@ -589,6 +630,7 @@ uv run pzp-bot webhook
 
 ## 12. Changelog
 
+- **2026-07-30 / v0.34**: Added review-ready Plan 021 for encrypted multi-key provider pools and a Telegram-authenticated Nuxt control plane. Recorded Option A audited full reveal for database-managed provider keys, current Telegram OIDC Authorization Code plus PKCE, signed Mini App `initData`, same-origin static Nuxt/FastAPI architecture, scoped bot/chat administration, managed-chat lifecycle, query/memory/stats/audit surfaces and explicit offline/live/deployment gates; no application implementation is claimed.
 - **2026-06-16 / v0.1**: Initial implementation plan created
 - **2026-06-16 / v0.2**: Plan converted into a lifecycle North Star after PoC scaffold implementation, dependency bumps, `ty` adoption and warning cleanup
 - **2026-06-22 / v0.3**: Added various roadmap items
