@@ -24,7 +24,7 @@ def test_dockerfile_installs_the_frozen_production_lock() -> None:
     assert "COPY pyproject.toml uv.lock README.md ./" in dockerfile
     assert "UV_PROJECT_ENVIRONMENT=/opt/venv" in dockerfile
     assert "uv sync --frozen --no-dev --no-install-project" in dockerfile
-    assert "uv sync --frozen --no-dev" in dockerfile
+    assert "uv sync --frozen --no-dev --no-editable" in dockerfile
     assert "uv pip install" not in dockerfile
     assert "pip install --no-cache-dir uv\n" not in dockerfile
 

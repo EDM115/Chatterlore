@@ -34,7 +34,7 @@ Webhook deployments should probe `GET /health`. It returns HTTP 200 with `pzp-id
 
 ## Docker
 
-The Docker image uses a multi-stage `python:3.12-slim` build, pins uv 0.12.0, installs the exact production dependency set from `uv.lock` through frozen syncs, runs as the non-root `pzp` user and includes a `pzp-bot doctor` healthcheck. The dependency layer copies `pyproject.toml`, `uv.lock` and `README.md` before application source so ordinary source edits reuse the locked dependency layer.
+The Docker image uses a multi-stage `python:3.12-slim` build, pins uv 0.12.0, installs the exact production dependency set from `uv.lock` through frozen syncs, installs the project non-editably so the copied runtime environment is self-contained, runs as the non-root `pzp` user and includes a `pzp-bot doctor` healthcheck. The dependency layer copies `pyproject.toml`, `uv.lock` and `README.md` before application source so ordinary source edits reuse the locked dependency layer.
 
 ```powershell
 docker build --tag pzp-ai:local .

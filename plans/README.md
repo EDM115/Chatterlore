@@ -18,13 +18,13 @@ Read a plan completely before editing, run its drift check first, and leave its 
 | [011](011-bound-and-batch-retrieval.md) | 11 | Batch retrieval hydration and enforce a measured candidate bound | P2 | L | None | DONE |
 | [012](012-compact-only-dirty-scopes.md) | 12 | Canonicalize only dirty scopes and reuse committed snapshots | P2 | L | 002, 006, 008, 010 | DONE |
 | [013](013-make-lockfile-consumption-reproducible.md) | 13 | Make CI and Docker consume the uv lockfile immutably | P2 | S | None | DONE |
-| [014](014-reconcile-living-roadmap.md) | 14 | Reconcile `PLAN.md` with current repository and release gates | P2 | S | None | TODO |
+| [014](014-reconcile-living-roadmap.md) | 14 | Reconcile `PLAN.md` with current repository and release gates | P2 | S | None | DONE |
 | [015](015-complete-cli-command-reference.md) | 15 | Make the canonical CLI reference complete and self-checking | P3 | S | None | DONE |
 | [016](016-enforce-coverage-regression-signal.md) | 16 | Turn existing coverage tooling into a conservative CI regression gate | P3 | S | None | DONE |
 | [017](017-load-policy-snapshots-once.md) | Additional A | Evaluate learning policy from one immutable snapshot per operation | P3 | S | None | DONE |
 | [018](018-aggregate-and-index-telemetry.md) | Additional B | Normalize telemetry scope, aggregate in SQL, and index audit queries | P3 | M | 006, 010 | DONE |
 | [019](019-stream-and-batch-bulk-transfer.md) | Additional C | Stream and batch memory imports and exports | P3 | L | 008, 013 | DONE |
-| [020](020-split-hotspots-behind-compatible-facades.md) | Additional D | Split service, repository, and router hotspots behind compatible facades | P3 | L | 001-005, 007-012, 017-019 | PARTIAL |
+| [020](020-split-hotspots-behind-compatible-facades.md) | Additional D | Split service, repository, and router hotspots behind compatible facades | P3 | L | 001-005, 007-012, 017-019 | DONE |
 ## Recommended execution order
 Wave A contains the independent safety fixes, gates, documentation repairs, and low-risk efficiency work: 001, 002, 003, 004, 005, 006, 011, 013, 015, 016, and 017. Plan 014 is also independent, but it is usually cheaper to execute it after an implementation batch so `PLAN.md` is reconciled once against the resulting state.
 Wave B starts after the migration drift gate exists: 007 and 009.
