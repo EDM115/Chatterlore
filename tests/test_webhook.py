@@ -37,6 +37,12 @@ def test_webhook_rejects_bad_secret(context: AppContext) -> None:
     assert response.status_code == 401
 
 
+def test_webhook_openapi_characterizes_current_reserved_routes(context: AppContext) -> None:
+    app = create_webhook_app(context)
+
+    assert set(app.openapi()["paths"]) == {"/telegram/webhook", "/health"}
+
+
 @pytest.mark.parametrize(
     "secret", ["", "change-me", " Change-Me ", "changeme", "placeholder", "default", "secret"]
 )

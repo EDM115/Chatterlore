@@ -8,6 +8,15 @@ PZP AI is organized around clear runtime boundaries: Telegram update handling, s
 - `memory`: policy evaluation, ingestion, summarization, canonical Markdown compaction, retrieval, import/export, Telegram JSON import, manual note metadata, per-scope settings, cross-chat profiles/permissions, summary templates, system prompt templates, bounded range summaries, retention pruning, review approvals, provider/model selection, usage telemetry and forget confirmation.
 - `db`: async SQLAlchemy models and repositories over SQLite, managed through Alembic migrations.
 - `ai`: provider protocols plus fake, OpenAI-compatible and local embedding providers, provider profile selection, retry/backoff and configurable redaction including common key/value, quoted JSON secret fields, bearer/common token, email, phone and custom-pattern forms.
+- `web`: client-rendered Nuxt 4/Nuxt UI control-plane workspace, same-origin API contract types, Telegram client integration and generated-asset security gates. Phase 2 provides the unprivileged shell only; FastAPI serving, authentication and control-plane handlers remain future Plan 021 boundaries.
+
+## Control-Plane Frontend Foundation
+
+`web/` is an exact-pinned pnpm workspace whose `devEngines.runtime` locks Node.js 24.18.0 and lets pnpm provision that runtime for installs and scripts. Nuxt runs with `ssr: false`, generates a static client rooted at `/`, and exposes only `/api/control/v1` as public runtime configuration. Development proxies `/api` to the uv-run FastAPI origin; production serving has deliberately not been wired yet.
+
+The shell loads Telegram's official Web App script only from a client plugin, consumes Telegram theme and safe-area variables, and provides accessible desktop/mobile navigation plus explicit loading, error, sign-in-readiness and unauthorized states. It does not authenticate users, expose settings or secrets, or implement privileged mutations. Those boundaries stay closed until the identity/session and API phases land.
+
+The backend-owned deterministic OpenAPI snapshot is committed under `web/openapi/`, and `openapi-typescript` produces the committed client declaration under `web/app/types/`. CI rejects schema/type drift, floating frontend installs, static generation failures and generated assets containing server-only configuration or credential material.
 
 ## Module Ownership And Compatibility Facades
 

@@ -1,0 +1,11 @@
+{
+  "ignorePatterns": [
+    ".nuxt/**",
+    ".output/**",
+    "app/types/openapi.d.ts",
+    "node_modules/**",
+    "playwright-report/**",
+    "pnpm-lock.yaml",
+    "test-results/**"
+  ]
+}

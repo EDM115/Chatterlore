@@ -13,6 +13,24 @@ uv run ty check
 
 Use `AI_PROVIDER=fake` for deterministic no-network behavior.
 
+The Nuxt workspace has an independent frozen frontend gate:
+
+```powershell
+Set-Location web
+pnpm install --frozen-lockfile
+pnpm runtime:check
+pnpm format:check
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm playwright test
+pnpm openapi:check
+pnpm generate
+pnpm scan:generated
+```
+
+Run `pnpm typecheck` directly rather than through RTK because RTK's `typecheck` shortcut invokes `tsc` instead of the Nuxt typecheck script. `pnpm playwright test` uses the project Playwright binary and the pnpm-managed Node runtime. The asset scanner checks the generated client for server-only configuration names, credential patterns, database URLs, private-key material and sensitive values loaded from local environment files.
+
 ## Coverage Gate
 
 The CI test command measures statement and branch coverage, prints missing lines and enforces the `pyproject.toml` floor of 78%. The starting live baseline measured on 2026-07-29 is 81%; the lower floor is a conservative regression alarm rather than a coverage target. Do not add superficial tests or omit production modules to chase the percentage: authorization, privacy, destructive operations, migrations, concurrency and other behavior-critical paths remain more important than the global number.
@@ -61,4 +79,4 @@ These commands do not start polling and do not connect to Telegram.
 
 ## CI
 
-`.github/workflows/ci.yml` pins uv 0.12.0 and runs GitHub Actions quality gates on pushes and pull requests to `main`: `uv lock --check`, `uv sync --frozen --extra dev`, format check, lint, `ty`, the branch-coverage pytest gate, Alembic upgrade plus metadata drift detection against the same isolated runner-temp database, CLI help, `doctor` and a Docker build/run smoke. Docker pins the same uv release and installs production dependencies from `uv.lock` through frozen syncs. The optional `telegram_live` test is intentionally excluded from default CI.
+`.github/workflows/ci.yml` pins uv 0.12.0 and runs GitHub Actions quality gates on pushes and pull requests to `main`: `uv lock --check`, `uv sync --frozen --extra dev`, format check, lint, `ty`, the branch-coverage pytest gate, Alembic upgrade plus metadata drift detection against the same isolated runner-temp database, CLI help, `doctor` and a Docker build/run smoke. A separate frontend job pins pnpm 11.18.0, lets pnpm resolve the locked Node 24.18.0 runtime, uses a frozen install, and runs format, lint, Nuxt typecheck, unit/component, OpenAPI drift, static generation and generated-asset secret-scan gates. Docker pins the same uv release and installs production dependencies from `uv.lock` through frozen syncs. The optional `telegram_live` test and frontend Playwright suite are intentionally excluded from default CI.

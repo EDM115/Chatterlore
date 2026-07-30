@@ -6,6 +6,7 @@ This guide gets a local PZP AI instance ready for development, offline verificat
 
 - Python 3.12
 - [uv](https://docs.astral.sh/uv/) for dependency management and command execution
+- pnpm 11.18.0 for control-plane frontend development; `web/package.json` makes pnpm download and use the exact Node.js 24.18.0 runtime
 - A Telegram bot token from BotFather for live Telegram use
 - Docker Desktop if you want to run the container smoke checks
 
@@ -20,6 +21,17 @@ uv run pytest
 ```
 
 The default `AI_PROVIDER=fake` is deterministic and does not call external AI services. Use it for local development, CI and documentation examples.
+
+The Phase 2 control-plane shell is developed separately and is not served by the production Python runtime yet:
+
+```powershell
+Set-Location web
+pnpm install --frozen-lockfile
+pnpm runtime:check
+pnpm dev
+```
+
+The development client uses same-origin `/api/control/v1` requests and proxies `/api` to `PZP_API_DEV_ORIGIN`, which defaults to `http://127.0.0.1:8000`. The current Phase 2 shell contains no authentication, privileged forms or implemented control-plane API routes; those remain gated behind later Plan 021 phases. A cold Nuxt development start can display the loading template while the initial client bundle compiles.
 
 For an OpenAI-backed run, keep the key out of committed files and select the model plus reasoning effort explicitly:
 
