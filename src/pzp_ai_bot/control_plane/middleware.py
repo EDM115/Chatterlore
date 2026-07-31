@@ -76,7 +76,11 @@ class ControlPlaneSecurityHeadersMiddleware:
         async def send_with_headers(message: Message) -> None:
             if message["type"] == "http.response.start":
                 headers = MutableHeaders(scope=message)
-                headers["Cache-Control"] = "no-store"
+                headers["Cache-Control"] = (
+                    "no-store, private"
+                    if str(scope.get("path", "")).endswith("/reveal")
+                    else "no-store"
+                )
                 headers["Pragma"] = "no-cache"
                 headers["X-Content-Type-Options"] = "nosniff"
                 headers["Referrer-Policy"] = "no-referrer"

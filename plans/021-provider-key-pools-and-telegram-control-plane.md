@@ -1,10 +1,10 @@
 ---
 goal: Secure Telegram-authenticated control plane and resilient provider API-key pools
-version: 1.3
+version: 1.4
 date_created: 2026-07-30
-last_updated: 2026-07-31
+last_updated: 2026-08-01
 owner: PZP-AI
-status: In progress — Phase 3 complete; paused before Phase 4
+status: In progress — Phase 4 complete; paused before Phase 5
 tags:
   - feature
   - security
@@ -346,14 +346,23 @@ Phase 3 evidence:
 
 | Task     | Description                                                                                                                                                                                                                                               | Completed | Date |
 | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ---- |
-| TASK-024 | Add a startup preflight that validates master-key JSON, active key ID and 32-byte base64 material without printing it; the reviewed authenticated-encryption and JWT dependencies were installed early for Phase 3 OIDC transaction/ID-token security.     |           |      |
-| TASK-025 | Implement `control_plane/secrets/crypto.py` with HKDF domain separation, per-secret random DEK, AES-GCM encryption/wrapping, exact AAD formats, constant-time keyed fingerprinting, tamper detection and zero secret-bearing exception messages.          |           |      |
-| TASK-026 | Add SQLAlchemy models, repositories and Alembic revision `0014_provider_credential_pools` for managed provider profiles, credentials and pool state, including version, ordering, health and safe metadata indexes.                                       |           |      |
-| TASK-027 | Implement environment-bootstrap profile/credential adapters and database-managed overlay precedence; same-name managed profiles override non-secret bootstrap configuration while missing managed profiles continue to use existing environment behavior. |           |      |
-| TASK-028 | Implement bot-admin-only credential create/list/update/reorder/disable/re-enable/delete APIs with optimistic concurrency, profile limits, normalization, safe audit events and immediate provider-registry invalidation.                                  |           |      |
-| TASK-029 | Implement action-bound step-up for secret create/delete/reveal and managed bot-admin removal; browser uses a new OIDC transaction and Mini App uses fresh same-identity signed data or a reopen instruction.                                              |           |      |
-| TASK-030 | Implement controlled `POST` reveal, no-store headers, audit-before-return, generic response logging exclusion and Nuxt masked/reveal/copy behavior with the 30-second and lifecycle clearing rules from SEC-010 and SEC-011.                              |           |      |
-| TASK-031 | Add `pzp-bot secrets status` and `pzp-bot secrets rewrap --to <master-key-id>` with backup warning, transaction-safe DEK rewrap, verify-before-commit, counts-only output and tests for interrupted/partial rotation.                                     |           |      |
+| TASK-024 | Add a startup preflight that validates master-key JSON, active key ID and 32-byte base64 material without printing it; the reviewed authenticated-encryption and JWT dependencies were installed early for Phase 3 OIDC transaction/ID-token security.     | DONE      | 2026-08-01 |
+| TASK-025 | Implement `control_plane/secrets/crypto.py` with HKDF domain separation, per-secret random DEK, AES-GCM encryption/wrapping, exact AAD formats, constant-time keyed fingerprinting, tamper detection and zero secret-bearing exception messages.          | DONE      | 2026-08-01 |
+| TASK-026 | Add SQLAlchemy models, repositories and Alembic revision `0014_provider_credential_pools` for managed provider profiles, credentials and pool state, including version, ordering, health and safe metadata indexes.                                       | DONE      | 2026-08-01 |
+| TASK-027 | Implement environment-bootstrap profile/credential adapters and database-managed overlay precedence; same-name managed profiles override non-secret bootstrap configuration while missing managed profiles continue to use existing environment behavior. | DONE      | 2026-08-01 |
+| TASK-028 | Implement bot-admin-only credential create/list/update/reorder/disable/re-enable/delete APIs with optimistic concurrency, profile limits, normalization, safe audit events and immediate provider-registry invalidation.                                  | DONE      | 2026-08-01 |
+| TASK-029 | Implement action-bound step-up for secret create/delete/reveal and managed bot-admin removal; browser uses a new OIDC transaction and Mini App uses fresh same-identity signed data or a reopen instruction.                                              | DONE      | 2026-08-01 |
+| TASK-030 | Implement controlled `POST` reveal, no-store headers, audit-before-return, generic response logging exclusion and Nuxt masked/reveal/copy behavior with the 30-second and lifecycle clearing rules from SEC-010 and SEC-011.                              | DONE      | 2026-08-01 |
+| TASK-031 | Add `pzp-bot secrets status` and `pzp-bot secrets rewrap --to <master-key-id>` with backup warning, transaction-safe DEK rewrap, verify-before-commit, counts-only output and tests for interrupted/partial rotation.                                     | DONE      | 2026-08-01 |
+
+Phase 4 evidence:
+- `Settings` now validates the complete master-key map as strict base64-encoded 32-byte values, requires the selected active key when the control plane is enabled and exposes only configured-state, key IDs and safe limits. The provider vault derives independent wrapping and fingerprint keys with HKDF-SHA-256, encrypts each secret and its random DEK with separate AES-256-GCM nonces and credential-bound AAD, detects tampering without secret-bearing errors and verifies every rewrap before persistence.
+- Revision `0014_provider_credential_pools` adds versioned managed provider profiles, encrypted credentials and persisted pool state. Repository and service tests cover creation, safe metadata, tombstone deletion that clears every encrypted field, compare-and-swap conflicts, profile/credential limits, environment fallback and database-overlay precedence.
+- `build_context(Settings)` owns one reloadable `ProviderRegistry`; database-managed profiles override same-name non-secret bootstrap configuration, the first enabled managed credential supplies the current key, environment credentials remain immutable/non-revealable fallback sources and provider instances are invalidated immediately after managed changes. Sticky selection, classified retry/failover, health transitions and alerts remain exclusively Phase 5 work.
+- Bot-admin-only provider and credential APIs implement typed bounded bodies, optimistic version conflicts, safe audit payloads and exact-action step-up for create, delete and reveal. The reusable action vocabulary also includes managed bot-admin deletion for the later admin mutation route, while browser step-up uses a new same-identity OIDC transaction and Mini App step-up requires fresh same-identity signed data.
+- Controlled reveal is an isolated audited `POST` response with `Cache-Control: no-store, private`, `Pragma: no-cache` and generic failures. The Nuxt reveal composable/component keeps plaintext in component memory only, masks after 30 seconds and clears on route/session changes, page hide, failure or unmount; copying remains a separate explicit action.
+- `pzp-bot secrets status` emits safe counts and key IDs, while `pzp-bot secrets rewrap --to <master-key-id>` requires an explicit backup acknowledgement, prepares and verifies the entire transaction before writing and never prints credential material. Focused failure injection proves an interrupted rewrap leaves every credential unchanged.
+- The Phase 4 checkpoint passes `uv lock --check`, Ruff format/lint, `ty`, the full branch-coverage suite with 269 passed, 1 skipped, 4 expected failures and 82.83%, disposable upgrade/drift checks through revision 0014 and the secrets CLI help. Nuxt Oxfmt, type-aware Oxlint, raw `pnpm typecheck`, 11 unit/component tests, OpenAPI type drift, six-route static generation, the 22-text-asset secret scan and all 6 desktop/mobile Playwright checks pass. The Playwright outer timeout is 90 seconds because six parallel cold Nuxt dev clients took 31–34 seconds to hydrate; the unchanged 60-second UI assertion still fails a genuinely stuck client.
 
 ### Implementation Phase 5: Provider key pool, retry classification and admin alerts
 
@@ -467,8 +476,8 @@ Phase 3 evidence:
 - **DEP-003**: Telegram Mini App Web App script and signed `initData` contract, plus Bot API/aiogram support or a tested fallback for `savePreparedKeyboardButton` and `requestChat`.
 - **DEP-004**: Nuxt `4.5.1`, Vue `3.5.40`, Vue Router `5.2.0`, TypeScript `6.0.3`, Nuxt UI `4.10.0` and Tailwind CSS `4.3.3`, pinned to the reviewed stable releases compatible with Node.js `24.18.0` LTS.
 - **DEP-005**: pnpm `11.18.0` and a committed frozen `pnpm-lock.yaml`; local Windows execution uses the configured PATH/fnm pnpm executable when necessary.
-- **DEP-006**: `cryptography==49.0.0` for AES-GCM, HKDF and asymmetric JWT primitives, pinned through uv when TASK-024 begins.
-- **DEP-007**: `PyJWT[crypto]==2.13.0`, pinned through uv when TASK-024 begins, as the single JWT/JWKS validation stack.
+- **DEP-006**: `cryptography==49.0.0` for AES-GCM, HKDF and asymmetric JWT primitives, pinned through uv and used by the Phase 3 authentication boundary plus the Phase 4 provider vault.
+- **DEP-007**: `PyJWT[crypto]==2.13.0`, pinned through uv as the single JWT/JWKS validation stack.
 - **DEP-008**: Existing `httpx` for OIDC discovery/token/JWKS calls with bounded timeouts and mocked offline tests.
 - **DEP-009**: Existing OpenAI Python SDK 2.50.0 exception taxonomy and request behavior, revalidated if the locked version changes before execution.
 - **DEP-010**: Existing FastAPI/Uvicorn, SQLAlchemy/Alembic, aiogram, `build_context`, `MemoryService`, repository/session patterns and scheduler supervision.

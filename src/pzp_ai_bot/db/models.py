@@ -445,6 +445,7 @@ class ControlPlaneSession(Base):
     idle_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     absolute_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     step_up_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    step_up_action: Mapped[str | None] = mapped_column(String(64), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoke_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
@@ -526,4 +527,102 @@ class ManagedChat(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     paused_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+class AIProviderProfile(Base):
+    __tablename__ = "ai_provider_profiles"
+    __table_args__ = (
+        Index("uq_ai_provider_profiles_name", "name", unique=True),
+        Index("ix_ai_provider_profiles_enabled", "enabled", "name"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    provider_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    base_url: Mapped[str] = mapped_column(String(512), nullable=False)
+    chat_model: Mapped[str] = mapped_column(String(255), nullable=False)
+    embedding_model: Mapped[str] = mapped_column(String(255), nullable=False)
+    chat_capable: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    embedding_capable: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    reasoning_capable: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    local: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    redact_before_ai: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    redaction_patterns: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    fake_embedding_dimensions: Mapped[int] = mapped_column(Integer, nullable=False, default=64)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    source_kind: Mapped[str] = mapped_column(String(32), nullable=False, default="managed")
+    created_by: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_by: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+class AIProviderCredential(Base):
+    __tablename__ = "ai_provider_credentials"
+    __table_args__ = (
+        Index("ix_ai_provider_credentials_profile_position", "profile_id", "position", "id"),
+        Index(
+            "ix_ai_provider_credentials_profile_state",
+            "profile_id",
+            "lifecycle_state",
+            "cooldown_until",
+        ),
+        Index("ix_ai_provider_credentials_fingerprint", "profile_id", "fingerprint"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    profile_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("ai_provider_profiles.id", ondelete="CASCADE"), nullable=False
+    )
+    label: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    environment_variable: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    secret_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    secret_nonce: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    wrapped_dek: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    wrap_nonce: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    master_key_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_four: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    lifecycle_state: Mapped[str] = mapped_column(String(32), nullable=False)
+    health_state: Mapped[str] = mapped_column(String(32), nullable=False)
+    cooldown_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error_classification: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    success_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    failure_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_failure_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_by: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    deleted_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+class AIProviderPoolState(Base):
+    __tablename__ = "ai_provider_pool_state"
+    __table_args__ = (
+        Index("uq_ai_provider_pool_state_profile_id", "profile_id", unique=True),
+        Index("ix_ai_provider_pool_state_active", "active_credential_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    profile_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("ai_provider_profiles.id", ondelete="CASCADE"), nullable=False
+    )
+    active_credential_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("ai_provider_credentials.id", ondelete="SET NULL"), nullable=True
+    )
+    health_epoch: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_exhausted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_recovered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)

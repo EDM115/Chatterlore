@@ -19,6 +19,10 @@ from pzp_ai_bot.db.repos.knowledge import KnowledgeRepository
 from pzp_ai_bot.db.repos.messages import MessageRepository
 from pzp_ai_bot.db.repos.policy import PolicyRepository
 from pzp_ai_bot.db.repos.profiles import MemoryProfileRepository, MemoryReviewRepository
+from pzp_ai_bot.db.repos.provider_credentials import (
+    ProviderCredentialRepository,
+    ProviderProfileRepository,
+)
 from pzp_ai_bot.db.repos.settings import (
     RuntimeSettingRepository,
     RuntimeSettingView,
@@ -66,6 +70,8 @@ __all__ = [
     "MessageScopeCounts",
     "OIDCTransactionRepository",
     "PolicyRepository",
+    "ProviderCredentialRepository",
+    "ProviderProfileRepository",
     "RetrievedItem",
     "RuntimeSettingRepository",
     "RuntimeSettingView",

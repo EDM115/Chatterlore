@@ -10,9 +10,11 @@ from urllib.parse import urlsplit, urlunsplit
 import typer
 from rich.console import Console
 
+from pzp_ai_bot.ai.factory import ProviderRegistry
 from pzp_ai_bot.app_context import AppContext, build_context
 from pzp_ai_bot.config import Settings, get_settings
-from pzp_ai_bot.db.session import upgrade_schema
+from pzp_ai_bot.control_plane.secrets.service import ProviderSecretService
+from pzp_ai_bot.db.session import create_session_factory, upgrade_schema
 from pzp_ai_bot.memory.scope import Scope, parse_scope
 from pzp_ai_bot.memory.service import (
     MemoryExportFormat,
@@ -27,6 +29,8 @@ from pzp_ai_bot.telegram.polling import run_polling
 from pzp_ai_bot.telegram.webhook import run_webhook
 
 app = typer.Typer(help="Telegram scoped memory assistant.")
+secrets_app = typer.Typer(help="Inspect and rotate encrypted provider credentials.")
+app.add_typer(secrets_app, name="secrets")
 console = Console()
 
 
@@ -46,6 +50,12 @@ def redact_url_credentials(url: str) -> str:
 
 def run(coro):
     return asyncio.run(coro)
+
+
+def build_secret_service(settings: Settings) -> ProviderSecretService:
+    return ProviderSecretService(
+        settings, create_session_factory(settings), ProviderRegistry(settings)
+    )
 
 
 @app.command()
@@ -341,6 +351,49 @@ def show_config() -> None:
     }
     for key, value in visible.items():
         console.print(f"{key}: {value}")
+
+
+@secrets_app.command("status")
+def secrets_status() -> None:
+    """Show safe master-key and encrypted-credential counts."""
+    settings = get_settings()
+    upgrade_schema(settings)
+    try:
+        status = run(build_secret_service(settings).status())
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    console.print(f"configured_key_ids: {','.join(status.configured_key_ids) or 'none'}")
+    console.print(f"active_key_id: {status.active_key_id or 'none'}")
+    console.print(f"encrypted_credentials: {status.encrypted_credentials}")
+    for key_id, count in status.credentials_by_key_id.items():
+        console.print(f"key_{key_id}: {count}")
+    console.print(f"missing_key_ids: {','.join(status.missing_key_ids) or 'none'}")
+
+
+@secrets_app.command("rewrap")
+def secrets_rewrap(
+    target_key_id: Annotated[str, typer.Option("--to", help="Configured target master-key ID.")],
+    assume_yes: Annotated[
+        bool,
+        typer.Option(
+            "--yes",
+            help="Confirm that a current database backup exists and proceed non-interactively.",
+        ),
+    ] = False,
+) -> None:
+    """Atomically rewrap every managed credential DEK under another master key."""
+    console.print(
+        "[bold yellow]Back up the database before rewrapping provider credentials.[/bold yellow]"
+    )
+    if not assume_yes and not typer.confirm("Continue only after verifying the backup?"):
+        raise typer.Abort()
+    settings = get_settings()
+    upgrade_schema(settings)
+    try:
+        count = run(build_secret_service(settings).rewrap(target_key_id))
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    console.print(f"Rewrapped {count} encrypted credentials to key {target_key_id}.")
 
 
 def require_sqlite_path(settings: Settings) -> Path:

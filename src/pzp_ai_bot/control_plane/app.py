@@ -4,10 +4,11 @@ import time
 from collections import defaultdict, deque
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
-from typing import Any
+from datetime import UTC, datetime, timedelta
+from typing import Any, Never
 
-from fastapi import APIRouter, FastAPI, Query, Request
+from fastapi import APIRouter, Body, FastAPI, Query, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 
 from pzp_ai_bot.app_context import AppContext
@@ -16,7 +17,13 @@ from pzp_ai_bot.db.session import session_scope
 
 from .auth.mini_app import MiniAppValidationError, validate_mini_app_init_data
 from .auth.oidc import OIDCValidationError, TelegramOIDCClient
-from .auth.sessions import AuthenticatedSession, IssuedSession, SessionAuthenticationError
+from .auth.sessions import (
+    SENSITIVE_ACTIONS,
+    AuthenticatedSession,
+    IssuedSession,
+    SessionAuthenticationError,
+    has_fresh_step_up,
+)
 from .auth.transactions import OIDCTransactionError
 from .authorization import CAPABILITY_CHAT_ADMIN, ControlPlaneActor
 from .middleware import (
@@ -26,19 +33,37 @@ from .middleware import (
 )
 from .runtime import ControlPlaneRuntime
 from .schemas import (
+    ControlPlaneConflictEnvelope,
     ControlPlaneErrorEnvelope,
     ControlPlaneSessionResponse,
     ControlPlaneUserResponse,
+    DeleteMutationResponse,
     MiniAppAuthRequest,
+    MiniAppStepUpRequest,
+    ProviderCredentialCreateRequest,
+    ProviderCredentialDeleteRequest,
+    ProviderCredentialMutationResponse,
+    ProviderCredentialRevealResponse,
+    ProviderCredentialSummary,
+    ProviderCredentialUpdateRequest,
+    ProviderProfileCreateRequest,
+    ProviderProfileDeleteRequest,
+    ProviderProfileMutationResponse,
+    ProviderProfileResponse,
+    ProviderProfileUpdateRequest,
     StepUpResponse,
 )
+from .secrets.service import ProviderSecretConflictError
 
 
 class ControlPlaneAPIError(Exception):
-    def __init__(self, status_code: int, code: str, message: str) -> None:
+    def __init__(
+        self, status_code: int, code: str, message: str, *, current: dict[str, Any] | None = None
+    ) -> None:
         self.status_code = status_code
         self.code = code
         self.message = message
+        self.current = current
         super().__init__(message)
 
 
@@ -95,6 +120,7 @@ def create_control_plane_schema_app() -> FastAPI:
         openapi_url=None,
     )
     app.include_router(_build_auth_router())
+    app.include_router(_build_provider_router())
     return app
 
 
@@ -107,6 +133,7 @@ def install_control_plane(app: FastAPI, context: AppContext) -> None:
         window_seconds=context.settings.control_plane_rate_limit_window_seconds
     )
     app.include_router(_build_auth_router())
+    app.include_router(_build_provider_router())
     app.add_middleware(
         ControlPlaneRequestGuardMiddleware,
         settings=context.settings,
@@ -116,9 +143,28 @@ def install_control_plane(app: FastAPI, context: AppContext) -> None:
 
     @app.exception_handler(ControlPlaneAPIError)
     async def control_plane_error_handler(_: Request, exc: ControlPlaneAPIError) -> JSONResponse:
+        content: dict[str, Any] = {"error": {"code": exc.code, "message": exc.message}}
+        if exc.current is not None:
+            content["current"] = exc.current
+        return JSONResponse(status_code=exc.status_code, content=content)
+
+    @app.exception_handler(RequestValidationError)
+    async def control_plane_validation_handler(
+        _: Request, exc: RequestValidationError
+    ) -> JSONResponse:
+        fields: dict[str, list[str]] = defaultdict(list)
+        for error in exc.errors():
+            location = ".".join(str(part) for part in error["loc"] if part != "body")
+            fields[location or "request"].append(str(error["msg"]))
         return JSONResponse(
-            status_code=exc.status_code,
-            content={"error": {"code": exc.code, "message": exc.message}},
+            status_code=422,
+            content={
+                "error": {
+                    "code": "validation_failed",
+                    "message": "Request validation failed.",
+                    "field_errors": fields,
+                }
+            },
         )
 
 
@@ -146,6 +192,47 @@ def _build_auth_router() -> APIRouter:
         except (OIDCTransactionError, OIDCValidationError) as exc:
             raise ControlPlaneAPIError(
                 400, "oidc_start_rejected", "Telegram sign-in could not be started."
+            ) from exc
+        return RedirectResponse(target)
+
+    @router.get(
+        "/auth/telegram/step-up/start",
+        response_class=RedirectResponse,
+        openapi_extra={"x-pzp-capability": "authenticated_same_identity"},
+        responses={
+            400: {"model": ControlPlaneErrorEnvelope},
+            401: {"model": ControlPlaneErrorEnvelope},
+            429: {"model": ControlPlaneErrorEnvelope},
+        },
+    )
+    async def telegram_step_up_start(
+        request: Request,
+        action: str = Query(min_length=1, max_length=64),
+        return_to: str = Query(default="/", max_length=512),
+    ) -> RedirectResponse:
+        context, runtime = _services(request)
+        _check_rate_limit(
+            request,
+            bucket="oidc_step_up_start",
+            limit=context.settings.control_plane_step_up_rate_limit,
+        )
+        token = _session_token(request)
+        authenticated = await _authenticate(runtime, token)
+        if action not in SENSITIVE_ACTIONS:
+            raise ControlPlaneAPIError(
+                400, "step_up_action_invalid", "The requested step-up action is invalid."
+            )
+        try:
+            transaction = await runtime.transactions.create(
+                return_to=return_to,
+                now=datetime.now(UTC),
+                action=f"step_up:{action}",
+                expected_telegram_user_id=authenticated.identity.telegram_user_id,
+            )
+            target = await runtime.oidc.authorization_url(transaction)
+        except (OIDCTransactionError, OIDCValidationError) as exc:
+            raise ControlPlaneAPIError(
+                400, "oidc_step_up_rejected", "Telegram verification could not be started."
             ) from exc
         return RedirectResponse(target)
 
@@ -206,6 +293,25 @@ def _build_auth_router() -> APIRouter:
             raise ControlPlaneAPIError(
                 403, "oidc_identity_mismatch", "Telegram identity does not match the session."
             )
+        if transaction.action.startswith("step_up:"):
+            action = transaction.action.removeprefix("step_up:")
+            token = _session_token(request)
+            authenticated = await _authenticate(runtime, token)
+            if authenticated.identity.telegram_user_id != identity.telegram_user_id:
+                raise ControlPlaneAPIError(
+                    403,
+                    "oidc_identity_mismatch",
+                    "Telegram identity does not match the active session.",
+                )
+            await runtime.sessions.mark_step_up(token, now=datetime.now(UTC), action=action)
+            await _audit(
+                context,
+                method="oidc",
+                outcome="success",
+                reason=f"step_up:{action}",
+                user_id=identity.telegram_user_id,
+            )
+            return RedirectResponse(transaction.return_to, status_code=303)
         issued = await runtime.sessions.issue(
             identity,
             client_kind="browser",
@@ -325,7 +431,7 @@ def _build_auth_router() -> APIRouter:
             429: {"model": ControlPlaneErrorEnvelope},
         },
     )
-    async def mini_app_step_up(request: Request, payload: MiniAppAuthRequest) -> StepUpResponse:
+    async def mini_app_step_up(request: Request, payload: MiniAppStepUpRequest) -> StepUpResponse:
         context, runtime = _services(request)
         _check_rate_limit(
             request,
@@ -334,6 +440,10 @@ def _build_auth_router() -> APIRouter:
         )
         token = _session_token(request)
         authenticated = await _authenticate(runtime, token)
+        if payload.action not in SENSITIVE_ACTIONS and payload.action != "generic":
+            raise ControlPlaneAPIError(
+                400, "step_up_action_invalid", "The requested step-up action is invalid."
+            )
         try:
             identity = validate_mini_app_init_data(
                 payload.init_data,
@@ -361,15 +471,249 @@ def _build_auth_router() -> APIRouter:
                 "Telegram identity does not match the active session.",
             )
         verified_at = datetime.now(UTC)
-        await runtime.sessions.mark_step_up(token, now=verified_at)
+        await runtime.sessions.mark_step_up(token, now=verified_at, action=payload.action)
         await _audit(
             context,
             method="mini_app",
             outcome="success",
-            reason="step_up",
+            reason=f"step_up:{payload.action}",
             user_id=identity.telegram_user_id,
         )
-        return StepUpResponse(step_up=True, verified_at=verified_at)
+        return StepUpResponse(step_up=True, verified_at=verified_at, action=payload.action)
+
+    return router
+
+
+def _build_provider_router() -> APIRouter:
+    router = APIRouter(prefix="/api/control/v1/providers", tags=["providers"])
+    common_errors: dict[int | str, dict[str, Any]] = {
+        401: {"model": ControlPlaneErrorEnvelope},
+        403: {"model": ControlPlaneErrorEnvelope},
+        422: {"model": ControlPlaneErrorEnvelope},
+    }
+    versioned_errors: dict[int | str, dict[str, Any]] = {
+        **common_errors,
+        409: {"model": ControlPlaneConflictEnvelope},
+    }
+
+    @router.get(
+        "",
+        response_model=list[ProviderProfileResponse],
+        openapi_extra={"x-pzp-capability": "bot_admin"},
+        responses=common_errors,
+    )
+    async def list_providers(request: Request) -> list[dict[str, Any]]:
+        _, runtime, _, _ = await _require_bot_admin(request)
+        return [profile.as_dict() for profile in await runtime.secrets.list_profiles()]
+
+    @router.post(
+        "",
+        response_model=ProviderProfileMutationResponse,
+        openapi_extra={"x-pzp-capability": "bot_admin"},
+        responses=common_errors,
+    )
+    async def create_provider(
+        request: Request, payload: ProviderProfileCreateRequest
+    ) -> dict[str, Any]:
+        _, runtime, authenticated, _ = await _require_bot_admin(request)
+        try:
+            profile = await runtime.secrets.create_profile(
+                payload.model_dump(),
+                actor_user_id=authenticated.identity.telegram_user_id,
+                now=datetime.now(UTC),
+            )
+        except ValueError as exc:
+            _raise_provider_error(exc)
+        return _profile_mutation_payload(profile)
+
+    @router.get(
+        "/{name}",
+        response_model=ProviderProfileResponse,
+        openapi_extra={"x-pzp-capability": "bot_admin"},
+        responses=common_errors,
+    )
+    async def get_provider(request: Request, name: str) -> dict[str, Any]:
+        _, runtime, _, _ = await _require_bot_admin(request)
+        try:
+            return (await runtime.secrets.get_profile(name)).as_dict()
+        except ValueError as exc:
+            _raise_provider_error(exc)
+
+    @router.patch(
+        "/{name}",
+        response_model=ProviderProfileMutationResponse,
+        openapi_extra={"x-pzp-capability": "bot_admin"},
+        responses=versioned_errors,
+    )
+    async def update_provider(
+        request: Request, name: str, payload: ProviderProfileUpdateRequest
+    ) -> dict[str, Any]:
+        _, runtime, authenticated, _ = await _require_bot_admin(request)
+        updates = payload.model_dump(exclude={"version"}, exclude_none=True)
+        try:
+            profile = await runtime.secrets.update_profile(
+                name,
+                expected_version=payload.version,
+                updates=updates,
+                actor_user_id=authenticated.identity.telegram_user_id,
+                now=datetime.now(UTC),
+            )
+        except (ProviderSecretConflictError, ValueError) as exc:
+            _raise_provider_error(exc)
+        return _profile_mutation_payload(profile)
+
+    @router.delete(
+        "/{name}",
+        response_model=DeleteMutationResponse,
+        openapi_extra={"x-pzp-capability": "bot_admin_step_up"},
+        responses={**versioned_errors, 429: {"model": ControlPlaneErrorEnvelope}},
+    )
+    async def delete_provider(
+        request: Request, name: str, payload: ProviderProfileDeleteRequest = Body()
+    ) -> DeleteMutationResponse:
+        context, runtime, authenticated, _ = await _require_bot_admin(request)
+        _check_rate_limit(
+            request,
+            bucket="provider_delete",
+            limit=context.settings.control_plane_step_up_rate_limit,
+        )
+        _require_step_up(authenticated, action="profile:delete", context=context)
+        try:
+            audit_event_id = await runtime.secrets.delete_profile(
+                name,
+                expected_version=payload.version,
+                actor_user_id=authenticated.identity.telegram_user_id,
+            )
+        except (ProviderSecretConflictError, ValueError) as exc:
+            _raise_provider_error(exc)
+        return DeleteMutationResponse(audit_event_id=audit_event_id, version=payload.version + 1)
+
+    @router.get(
+        "/{name}/credentials",
+        response_model=list[ProviderCredentialSummary],
+        openapi_extra={"x-pzp-capability": "bot_admin"},
+        responses=common_errors,
+    )
+    async def list_provider_credentials(request: Request, name: str) -> list[dict[str, Any]]:
+        _, runtime, _, _ = await _require_bot_admin(request)
+        try:
+            return [item.as_dict() for item in await runtime.secrets.list_credentials(name)]
+        except ValueError as exc:
+            _raise_provider_error(exc)
+
+    @router.post(
+        "/{name}/credentials",
+        response_model=ProviderCredentialMutationResponse,
+        openapi_extra={"x-pzp-capability": "bot_admin_step_up"},
+        responses={**common_errors, 429: {"model": ControlPlaneErrorEnvelope}},
+    )
+    async def create_provider_credential(
+        request: Request, name: str, payload: ProviderCredentialCreateRequest
+    ) -> dict[str, Any]:
+        context, runtime, authenticated, _ = await _require_bot_admin(request)
+        _check_rate_limit(
+            request,
+            bucket="credential_create",
+            limit=context.settings.control_plane_step_up_rate_limit,
+        )
+        _require_step_up(authenticated, action="credential:create", context=context)
+        if len(payload.value) > context.settings.control_plane_max_secret_length:
+            raise ControlPlaneAPIError(
+                422, "credential_invalid", "The provider credential is invalid."
+            )
+        try:
+            credential = await runtime.secrets.create_credential(
+                name,
+                label=payload.label,
+                value=payload.value,
+                actor_user_id=authenticated.identity.telegram_user_id,
+                now=datetime.now(UTC),
+            )
+        except ValueError as exc:
+            _raise_provider_error(exc)
+        return _credential_mutation_payload(credential)
+
+    @router.patch(
+        "/{name}/credentials/{credential_id}",
+        response_model=ProviderCredentialMutationResponse,
+        openapi_extra={"x-pzp-capability": "bot_admin"},
+        responses=versioned_errors,
+    )
+    async def update_provider_credential(
+        request: Request, name: str, credential_id: int, payload: ProviderCredentialUpdateRequest
+    ) -> dict[str, Any]:
+        _, runtime, authenticated, _ = await _require_bot_admin(request)
+        try:
+            credential = await runtime.secrets.update_credential(
+                name,
+                credential_id,
+                expected_version=payload.version,
+                updates=payload.model_dump(exclude={"version"}, exclude_none=True),
+                actor_user_id=authenticated.identity.telegram_user_id,
+                now=datetime.now(UTC),
+            )
+        except (ProviderSecretConflictError, ValueError) as exc:
+            _raise_provider_error(exc)
+        return _credential_mutation_payload(credential)
+
+    @router.post(
+        "/{name}/credentials/{credential_id}/reveal",
+        response_model=ProviderCredentialRevealResponse,
+        openapi_extra={"x-pzp-capability": "bot_admin_step_up"},
+        responses={**common_errors, 429: {"model": ControlPlaneErrorEnvelope}},
+    )
+    async def reveal_provider_credential(
+        request: Request, name: str, credential_id: int
+    ) -> JSONResponse:
+        context, runtime, authenticated, _ = await _require_bot_admin(request)
+        _check_rate_limit(
+            request,
+            bucket="credential_reveal",
+            limit=context.settings.control_plane_step_up_rate_limit,
+        )
+        _require_step_up(authenticated, action="credential:reveal", context=context)
+        try:
+            value = await runtime.secrets.reveal_credential(
+                name, credential_id, actor_user_id=authenticated.identity.telegram_user_id
+            )
+        except ValueError as exc:
+            _raise_provider_error(exc)
+        expires_at = datetime.now(UTC) + timedelta(seconds=30)
+        return JSONResponse(
+            {"credential_id": credential_id, "value": value, "expires_at": expires_at.isoformat()},
+            headers={"Cache-Control": "no-store, private", "Pragma": "no-cache"},
+        )
+
+    @router.delete(
+        "/{name}/credentials/{credential_id}",
+        response_model=DeleteMutationResponse,
+        openapi_extra={"x-pzp-capability": "bot_admin_step_up"},
+        responses={**versioned_errors, 429: {"model": ControlPlaneErrorEnvelope}},
+    )
+    async def delete_provider_credential(
+        request: Request,
+        name: str,
+        credential_id: int,
+        payload: ProviderCredentialDeleteRequest = Body(),
+    ) -> DeleteMutationResponse:
+        context, runtime, authenticated, _ = await _require_bot_admin(request)
+        _check_rate_limit(
+            request,
+            bucket="credential_delete",
+            limit=context.settings.control_plane_step_up_rate_limit,
+        )
+        _require_step_up(authenticated, action="credential:delete", context=context)
+        try:
+            audit_event_id = await runtime.secrets.delete_credential(
+                name,
+                credential_id,
+                expected_version=payload.version,
+                actor_user_id=authenticated.identity.telegram_user_id,
+                now=datetime.now(UTC),
+            )
+        except (ProviderSecretConflictError, ValueError) as exc:
+            _raise_provider_error(exc)
+        return DeleteMutationResponse(audit_event_id=audit_event_id, version=payload.version + 1)
 
     return router
 
@@ -392,6 +736,70 @@ async def _authenticate(runtime: ControlPlaneRuntime, token: str) -> Authenticat
         raise ControlPlaneAPIError(
             401, "session_invalid", "The authenticated session is invalid or expired."
         ) from exc
+
+
+async def _require_bot_admin(
+    request: Request,
+) -> tuple[AppContext, ControlPlaneRuntime, AuthenticatedSession, ControlPlaneActor]:
+    context, runtime = _services(request)
+    authenticated = await _authenticate(runtime, _session_token(request))
+    actor = await runtime.authorization.resolve(authenticated.identity.telegram_user_id)
+    if not actor.is_bot_admin:
+        raise ControlPlaneAPIError(
+            403, "bot_admin_required", "Bot administrator access is required."
+        )
+    return context, runtime, authenticated, actor
+
+
+def _require_step_up(
+    authenticated: AuthenticatedSession, *, action: str, context: AppContext
+) -> None:
+    if not has_fresh_step_up(
+        authenticated,
+        action=action,
+        now=datetime.now(UTC),
+        max_age_seconds=context.settings.control_plane_step_up_max_age_seconds,
+    ):
+        raise ControlPlaneAPIError(
+            403, "step_up_required", "Fresh Telegram verification is required for this action."
+        )
+
+
+def _raise_provider_error(exc: ValueError) -> Never:
+    if isinstance(exc, ProviderSecretConflictError):
+        raise ControlPlaneAPIError(
+            409,
+            "version_conflict",
+            "The resource changed concurrently.",
+            current={"version": exc.current_version},
+        ) from exc
+    message = str(exc)
+    if "not found" in message:
+        raise ControlPlaneAPIError(
+            404, "provider_resource_not_found", "The provider resource was not found."
+        ) from exc
+    if "already exists" in message:
+        raise ControlPlaneAPIError(
+            409,
+            "provider_already_exists",
+            "The managed provider profile already exists.",
+            current={},
+        ) from exc
+    raise ControlPlaneAPIError(
+        422, "provider_request_invalid", "The provider request is invalid."
+    ) from exc
+
+
+def _profile_mutation_payload(profile: Any) -> dict[str, Any]:
+    payload = profile.as_dict()
+    payload["audit_event_id"] = int(profile.audit_event_id)
+    return payload
+
+
+def _credential_mutation_payload(credential: Any) -> dict[str, Any]:
+    payload = credential.as_dict()
+    payload["audit_event_id"] = int(credential.audit_event_id)
+    return payload
 
 
 def _check_rate_limit(request: Request, *, bucket: str, limit: int) -> None:

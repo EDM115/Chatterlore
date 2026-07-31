@@ -27,6 +27,8 @@ def settings_for(tmp_path: Path) -> Settings:
         control_plane_public_origin="https://control.example.test",
         telegram_oidc_client_id="123456789",
         telegram_oidc_client_secret="oidc-secret",  # noqa: S106
+        control_plane_master_keys='{"test":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}',
+        control_plane_active_master_key_id="test",
     )
 
 

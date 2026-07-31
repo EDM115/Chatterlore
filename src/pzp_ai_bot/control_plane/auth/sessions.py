@@ -36,6 +36,7 @@ class AuthenticatedSession:
     client_kind: str
     authenticated_at: datetime
     step_up_at: datetime | None
+    step_up_action: str | None
     idle_expires_at: datetime
     absolute_expires_at: datetime
 
@@ -126,14 +127,18 @@ class ControlPlaneSessionService:
             )
         return csrf_token
 
-    async def mark_step_up(self, session_token: str, *, now: datetime) -> None:
+    async def mark_step_up(self, session_token: str, *, now: datetime, action: str) -> None:
+        if action not in SENSITIVE_ACTIONS and action != "generic":
+            raise ValueError("step-up action is invalid")
         async with session_scope(self.session_factory) as session:
             active = await ControlPlaneSessionRepository(session).get_active(
                 token_hash=_secret_hash(session_token), now=now
             )
             if active is None:
                 raise SessionAuthenticationError("session is invalid or expired")
-            await ControlPlaneSessionRepository(session).mark_step_up(active[0], now=now)
+            await ControlPlaneSessionRepository(session).mark_step_up(
+                active[0], now=now, action=action
+            )
 
     async def revoke(self, session_token: str, *, now: datetime, reason: str = "logout") -> bool:
         async with session_scope(self.session_factory) as session:
@@ -165,6 +170,7 @@ def _authenticated_session(
         client_kind=stored.client_kind,
         authenticated_at=_as_aware(stored.authenticated_at),
         step_up_at=_as_aware(stored.step_up_at) if stored.step_up_at else None,
+        step_up_action=stored.step_up_action,
         idle_expires_at=_as_aware(stored.idle_expires_at),
         absolute_expires_at=_as_aware(stored.absolute_expires_at),
     )
@@ -178,3 +184,24 @@ def _as_aware(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
     return value.astimezone(UTC)
+
+
+SENSITIVE_ACTIONS = frozenset(
+    {
+        "credential:create",
+        "credential:delete",
+        "credential:reveal",
+        "profile:delete",
+        "bot_admin:delete",
+    }
+)
+
+
+def has_fresh_step_up(
+    authenticated: AuthenticatedSession, *, action: str, now: datetime, max_age_seconds: int
+) -> bool:
+    return bool(
+        authenticated.step_up_at is not None
+        and authenticated.step_up_action == action
+        and now - authenticated.step_up_at <= timedelta(seconds=max_age_seconds)
+    )

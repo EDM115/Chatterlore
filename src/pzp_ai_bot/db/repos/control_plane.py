@@ -143,6 +143,7 @@ class ControlPlaneSessionRepository:
             idle_expires_at=idle_expires_at,
             absolute_expires_at=absolute_expires_at,
             step_up_at=None,
+            step_up_action=None,
             revoked_at=None,
             revoke_reason=None,
         )
@@ -183,8 +184,11 @@ class ControlPlaneSessionRepository:
         stored.last_seen_at = now
         await self.session.flush()
 
-    async def mark_step_up(self, stored: ControlPlaneSession, *, now: datetime) -> None:
+    async def mark_step_up(
+        self, stored: ControlPlaneSession, *, now: datetime, action: str
+    ) -> None:
         stored.step_up_at = now
+        stored.step_up_action = action
         stored.last_seen_at = now
         await self.session.flush()
 

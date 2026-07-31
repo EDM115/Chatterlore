@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from pzp_ai_bot.ai import ProviderRegistry, build_providers
+from pzp_ai_bot.ai import ProviderRegistry
 from pzp_ai_bot.config import Settings
 from pzp_ai_bot.control_plane.runtime import ControlPlaneRuntime, build_control_plane_runtime
 from pzp_ai_bot.db.session import create_session_factory, upgrade_schema
@@ -27,7 +27,9 @@ async def build_context(settings: Settings, *, ensure_schema: bool = True) -> Ap
     if ensure_schema:
         upgrade_schema(settings)
     provider_registry = ProviderRegistry(settings)
-    chat_provider, embedding_provider = build_providers(settings)
+    provider_selection = provider_registry.select(settings.ai_provider_profile)
+    chat_provider = provider_selection.chat_provider
+    embedding_provider = provider_selection.embedding_provider
     session_factory = create_session_factory(settings)
     memory = MemoryService(
         settings=settings,
@@ -41,10 +43,15 @@ async def build_context(settings: Settings, *, ensure_schema: bool = True) -> Ap
     await memory.refresh_runtime_settings()
     admins = AdminService(settings.bot_admin_ids, ttl_seconds=settings.admin_cache_ttl_seconds)
     control_plane = (
-        build_control_plane_runtime(settings, session_factory, admins)
+        build_control_plane_runtime(settings, session_factory, admins, provider_registry)
         if settings.control_plane_enabled
         else None
     )
+    if control_plane is not None:
+        await control_plane.secrets.refresh_registry()
+        refreshed = provider_registry.select(settings.ai_provider_profile)
+        memory.chat_provider = refreshed.chat_provider
+        memory.embedding_provider = refreshed.embedding_provider
     return AppContext(
         settings=settings,
         session_factory=session_factory,
