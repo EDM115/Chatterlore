@@ -5,6 +5,7 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 2 : 0,
+  timeout: 90_000,
   reporter: process.env.CI ? "github" : "list",
   expect: {
     timeout: 60_000,

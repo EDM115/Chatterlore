@@ -17,6 +17,8 @@ from pzp_ai_bot.config import Settings
 from pzp_ai_bot.db.repos.control_plane import OIDCTransactionRepository
 from pzp_ai_bot.db.session import session_scope
 
+from .sessions import SENSITIVE_ACTIONS
+
 
 class OIDCTransactionError(ValueError):
     pass
@@ -61,7 +63,9 @@ class OIDCTransactionService:
         expected_telegram_user_id: int | None = None,
     ) -> IssuedOIDCTransaction:
         safe_return = validate_relative_return_to(return_to)
-        if action not in {"login", "step_up"}:
+        if action != "login" and action not in {
+            f"step_up:{sensitive_action}" for sensitive_action in SENSITIVE_ACTIONS
+        }:
             raise OIDCTransactionError("OIDC transaction action is invalid")
         state = secrets.token_urlsafe(32)
         state_hash = _secret_hash(state)

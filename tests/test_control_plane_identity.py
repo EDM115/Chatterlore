@@ -20,6 +20,8 @@ def control_plane_settings(tmp_path: Path, **overrides: object) -> Settings:
         "control_plane_public_origin": "https://control.example.test",
         "telegram_oidc_client_id": "123456789",
         "telegram_oidc_client_secret": "oidc-secret",
+        "control_plane_master_keys": '{"test":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}',
+        "control_plane_active_master_key_id": "test",
     }
     values.update(overrides)
     return Settings.model_validate(values)
@@ -37,7 +39,7 @@ def test_control_plane_settings_fail_closed_and_expose_only_safe_metadata(tmp_pa
     settings = control_plane_settings(
         tmp_path,
         control_plane_public_origin="https://control.example.test/",
-        control_plane_master_keys='{"k1":"secret-material"}',
+        control_plane_master_keys='{"k1":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}',
         control_plane_active_master_key_id="k1",
     )
 
@@ -60,13 +62,13 @@ def test_control_plane_settings_fail_closed_and_expose_only_safe_metadata(tmp_pa
     }
     rendered = repr(settings.control_plane_safe_config)
     assert "oidc-secret" not in rendered
-    assert "secret-material" not in rendered
+    assert "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" not in rendered
 
 
 def test_revision_0013_creates_control_plane_identity_and_access_schema(tmp_path: Path) -> None:
     settings = control_plane_settings(tmp_path)
 
-    upgrade_schema(settings)
+    upgrade_schema(settings, "0013_control_plane_identity_access")
 
     assert settings.sqlite_path is not None
     with sqlite3.connect(settings.sqlite_path) as connection:

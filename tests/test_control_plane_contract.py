@@ -5,6 +5,7 @@ from typing import Any
 import pytest
 
 from pzp_ai_bot.app_context import AppContext
+from pzp_ai_bot.control_plane.app import create_control_plane_schema_app
 from pzp_ai_bot.telegram.webhook import create_webhook_app
 
 pending_contract = pytest.mark.xfail(
@@ -141,6 +142,8 @@ FORBIDDEN_CREDENTIAL_PROPERTIES = {
 
 
 def _openapi(context: AppContext) -> dict[str, Any]:
+    if context.control_plane is None:
+        return create_control_plane_schema_app().openapi()
     return create_webhook_app(context).openapi()
 
 
@@ -251,7 +254,6 @@ def test_control_plane_versioned_mutations_require_and_return_versions(context: 
         assert {"audit_event_id", "version"} <= set(response_model["required"])
 
 
-@pending_contract
 def test_provider_credentials_are_masked_except_for_the_isolated_reveal_response(
     context: AppContext,
 ) -> None:

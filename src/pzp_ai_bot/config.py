@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import os
 from dataclasses import dataclass
@@ -21,6 +23,7 @@ class ProviderProfile:
     chat_model: str
     embedding_model: str
     openai_api_key: str
+    openai_api_key_env: str | None
     openai_base_url: str
     redact_before_ai: bool
     redaction_custom_patterns: tuple[str, ...]
@@ -59,6 +62,9 @@ class Settings(BaseSettings):
     control_plane_auth_callback_rate_limit: int = Field(default=20, ge=1)
     control_plane_mini_app_rate_limit: int = Field(default=20, ge=1)
     control_plane_step_up_rate_limit: int = Field(default=10, ge=1)
+    control_plane_max_managed_profiles: int = Field(default=32, ge=1, le=256)
+    control_plane_max_credentials_per_profile: int = Field(default=10, ge=1, le=100)
+    control_plane_max_secret_length: int = Field(default=16_384, ge=1, le=131_072)
 
     db_url: str = "sqlite+aiosqlite:///data/bot.db"
     memory_dir: Path = Path("data/memory")
@@ -129,6 +135,10 @@ class Settings(BaseSettings):
             raise ValueError("control plane requires a Telegram OIDC client ID")
         if not self.telegram_oidc_client_secret.strip():
             raise ValueError("control plane requires a Telegram OIDC client secret")
+        if not key_ids:
+            raise ValueError("control plane requires a master key map")
+        if not self.control_plane_active_master_key_id:
+            raise ValueError("control plane requires an active master key ID")
         return self
 
     @property
@@ -158,7 +168,7 @@ class Settings(BaseSettings):
         return f"{self.control_plane_public_origin}/auth/telegram/callback"
 
     @property
-    def control_plane_master_key_map(self) -> dict[str, str]:
+    def control_plane_master_key_bytes(self) -> dict[str, bytes]:
         if not self.control_plane_master_keys.strip():
             return {}
         try:
@@ -167,18 +177,28 @@ class Settings(BaseSettings):
             raise ValueError(f"CONTROL_PLANE_MASTER_KEYS must be JSON: {exc.msg}") from exc
         if not isinstance(payload, dict):
             raise ValueError("CONTROL_PLANE_MASTER_KEYS must be a JSON object")
-        keys = {
-            str(key).strip(): str(value).strip()
-            for key, value in payload.items()
-            if str(key).strip() and str(value).strip()
-        }
-        if len(keys) != len(payload):
-            raise ValueError("CONTROL_PLANE_MASTER_KEYS cannot contain empty IDs or values")
+        keys: dict[str, bytes] = {}
+        for raw_key_id, raw_value in payload.items():
+            key_id = str(raw_key_id).strip()
+            value = str(raw_value).strip()
+            if not key_id or not value:
+                raise ValueError("CONTROL_PLANE_MASTER_KEYS cannot contain empty IDs or values")
+            try:
+                material = base64.b64decode(value, validate=True)
+            except (binascii.Error, ValueError) as exc:
+                raise ValueError(
+                    f"CONTROL_PLANE_MASTER_KEYS entry {key_id!r} must be valid base64"
+                ) from exc
+            if len(material) != 32:
+                raise ValueError(
+                    f"CONTROL_PLANE_MASTER_KEYS entry {key_id!r} must decode to 32 bytes"
+                )
+            keys[key_id] = material
         return keys
 
     @property
     def control_plane_master_key_ids(self) -> tuple[str, ...]:
-        return tuple(sorted(self.control_plane_master_key_map))
+        return tuple(sorted(self.control_plane_master_key_bytes))
 
     @property
     def control_plane_safe_config(self) -> dict[str, Any]:
@@ -226,6 +246,7 @@ class Settings(BaseSettings):
             chat_model=self.chat_model,
             embedding_model=self.embedding_model,
             openai_api_key=self.openai_api_key,
+            openai_api_key_env="OPENAI_API_KEY" if self.openai_api_key else None,
             openai_base_url=self.openai_base_url,
             redact_before_ai=self.redact_before_ai,
             redaction_custom_patterns=self.custom_redaction_patterns,
@@ -261,6 +282,7 @@ class Settings(BaseSettings):
                 chat_model=str(raw_profile.get("chat_model") or default.chat_model),
                 embedding_model=str(raw_profile.get("embedding_model") or default.embedding_model),
                 openai_api_key=api_key or default.openai_api_key,
+                openai_api_key_env=api_key_env or default.openai_api_key_env,
                 openai_base_url=str(
                     raw_profile.get("openai_base_url")
                     or raw_profile.get("base_url")

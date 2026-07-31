@@ -29,6 +29,8 @@ def settings_for(tmp_path: Path, **overrides: object) -> Settings:
         "control_plane_public_origin": "https://control.example.test",
         "telegram_oidc_client_id": "123456789",
         "telegram_oidc_client_secret": "oidc-secret",
+        "control_plane_master_keys": '{"test":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}',
+        "control_plane_active_master_key_id": "test",
     }
     values.update(overrides)
     return Settings.model_validate(values)

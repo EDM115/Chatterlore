@@ -22,6 +22,24 @@ class ProviderRegistry:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self._cache: dict[tuple[str, str | None, str | None], ProviderSelection] = {}
+        self._managed_profiles: dict[str, ProviderProfile] = {}
+
+    def replace_managed_profiles(self, profiles: dict[str, ProviderProfile]) -> None:
+        self._managed_profiles = dict(profiles)
+        self.invalidate()
+
+    def invalidate(self, profile_name: str | None = None) -> None:
+        if profile_name is None:
+            self._cache.clear()
+            return
+        clean = profile_name.strip().lower()
+        self._cache = {key: selection for key, selection in self._cache.items() if key[0] != clean}
+
+    def profile_by_name(self, name: str | None) -> ProviderProfile:
+        selected = (name or self.settings.ai_provider_profile or "default").strip().lower()
+        if selected in self._managed_profiles:
+            return self._managed_profiles[selected]
+        return self.settings.provider_profile_by_name(selected)
 
     def select(
         self,
@@ -30,7 +48,7 @@ class ProviderRegistry:
         chat_model: str | None = None,
         embedding_model: str | None = None,
     ) -> ProviderSelection:
-        profile = self.settings.provider_profile_by_name(profile_name)
+        profile = self.profile_by_name(profile_name)
         clean_chat_model = self.settings.validate_chat_model(chat_model or profile.chat_model)
         clean_embedding_model = self.settings.validate_embedding_model(
             embedding_model or profile.embedding_model

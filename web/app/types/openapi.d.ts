@@ -55,6 +55,96 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/control/v1/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Providers */
+        get: operations["list_providers_api_control_v1_providers_get"];
+        put?: never;
+        /** Create Provider */
+        post: operations["create_provider_api_control_v1_providers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/control/v1/providers/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Provider */
+        get: operations["get_provider_api_control_v1_providers__name__get"];
+        put?: never;
+        post?: never;
+        /** Delete Provider */
+        delete: operations["delete_provider_api_control_v1_providers__name__delete"];
+        options?: never;
+        head?: never;
+        /** Update Provider */
+        patch: operations["update_provider_api_control_v1_providers__name__patch"];
+        trace?: never;
+    };
+    "/api/control/v1/providers/{name}/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Provider Credentials */
+        get: operations["list_provider_credentials_api_control_v1_providers__name__credentials_get"];
+        put?: never;
+        /** Create Provider Credential */
+        post: operations["create_provider_credential_api_control_v1_providers__name__credentials_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/control/v1/providers/{name}/credentials/{credential_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Provider Credential */
+        delete: operations["delete_provider_credential_api_control_v1_providers__name__credentials__credential_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Provider Credential */
+        patch: operations["update_provider_credential_api_control_v1_providers__name__credentials__credential_id__patch"];
+        trace?: never;
+    };
+    "/api/control/v1/providers/{name}/credentials/{credential_id}/reveal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reveal Provider Credential */
+        post: operations["reveal_provider_credential_api_control_v1_providers__name__credentials__credential_id__reveal_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/control/v1/session": {
         parameters: {
             query?: never;
@@ -106,10 +196,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/telegram/step-up/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Telegram Step Up Start */
+        get: operations["telegram_step_up_start_auth_telegram_step_up_start_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** ControlPlaneConflictEnvelope */
+        ControlPlaneConflictEnvelope: {
+            /** Current */
+            current: {
+                [key: string]: unknown;
+            };
+            error: components["schemas"]["ControlPlaneErrorDetail"];
+        };
         /** ControlPlaneErrorDetail */
         ControlPlaneErrorDetail: {
             /** Code */
@@ -170,6 +285,13 @@ export interface components {
             /** Username */
             username: string | null;
         };
+        /** DeleteMutationResponse */
+        DeleteMutationResponse: {
+            /** Audit Event Id */
+            audit_event_id: number;
+            /** Version */
+            version: number;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -180,8 +302,266 @@ export interface components {
             /** Init Data */
             init_data: string;
         };
+        /** MiniAppStepUpRequest */
+        MiniAppStepUpRequest: {
+            /**
+             * Action
+             * @default generic
+             */
+            action: string;
+            /** Init Data */
+            init_data: string;
+        };
+        /** ProviderCredentialCreateRequest */
+        ProviderCredentialCreateRequest: {
+            /** Label */
+            label: string;
+            /** Value */
+            value: string;
+        };
+        /** ProviderCredentialDeleteRequest */
+        ProviderCredentialDeleteRequest: {
+            /** Version */
+            version: number;
+        };
+        /** ProviderCredentialMutationResponse */
+        ProviderCredentialMutationResponse: {
+            /** Audit Event Id */
+            audit_event_id: number;
+            /** Cooldown Until */
+            cooldown_until: string | null;
+            /** Environment Variable */
+            environment_variable: string | null;
+            /** Fingerprint */
+            fingerprint: string | null;
+            /** Id */
+            id: number | string;
+            /** Label */
+            label: string;
+            /** Last Failure At */
+            last_failure_at: string | null;
+            /** Last Four */
+            last_four: string | null;
+            /** Last Success At */
+            last_success_at: string | null;
+            /** Position */
+            position: number;
+            /** Profile Name */
+            profile_name: string;
+            /** Revealable */
+            revealable: boolean;
+            /** Source */
+            source: string;
+            /** State */
+            state: string;
+            /** Version */
+            version: number;
+        };
+        /** ProviderCredentialRevealResponse */
+        ProviderCredentialRevealResponse: {
+            /** Credential Id */
+            credential_id: number;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Value */
+            value: string;
+        };
+        /** ProviderCredentialSummary */
+        ProviderCredentialSummary: {
+            /** Cooldown Until */
+            cooldown_until: string | null;
+            /** Environment Variable */
+            environment_variable: string | null;
+            /** Fingerprint */
+            fingerprint: string | null;
+            /** Id */
+            id: number | string;
+            /** Label */
+            label: string;
+            /** Last Failure At */
+            last_failure_at: string | null;
+            /** Last Four */
+            last_four: string | null;
+            /** Last Success At */
+            last_success_at: string | null;
+            /** Position */
+            position: number;
+            /** Profile Name */
+            profile_name: string;
+            /** Revealable */
+            revealable: boolean;
+            /** Source */
+            source: string;
+            /** State */
+            state: string;
+            /** Version */
+            version: number;
+        };
+        /** ProviderCredentialUpdateRequest */
+        ProviderCredentialUpdateRequest: {
+            /** Label */
+            label?: string | null;
+            /** Position */
+            position?: number | null;
+            /** State */
+            state?: string | null;
+            /** Version */
+            version: number;
+        };
+        /** ProviderProfileCreateRequest */
+        ProviderProfileCreateRequest: {
+            /** Base Url */
+            base_url: string;
+            /**
+             * Chat Capable
+             * @default true
+             */
+            chat_capable: boolean;
+            /** Chat Model */
+            chat_model: string;
+            /**
+             * Embedding Capable
+             * @default true
+             */
+            embedding_capable: boolean;
+            /** Embedding Model */
+            embedding_model: string;
+            /**
+             * Fake Embedding Dimensions
+             * @default 64
+             */
+            fake_embedding_dimensions: number;
+            /**
+             * Local
+             * @default false
+             */
+            local: boolean;
+            /** Name */
+            name: string;
+            /** Provider Kind */
+            provider_kind: string;
+            /**
+             * Reasoning Capable
+             * @default false
+             */
+            reasoning_capable: boolean;
+            /**
+             * Redact Before Ai
+             * @default true
+             */
+            redact_before_ai: boolean;
+            /** Redaction Patterns */
+            redaction_patterns?: string[];
+        };
+        /** ProviderProfileDeleteRequest */
+        ProviderProfileDeleteRequest: {
+            /** Version */
+            version: number;
+        };
+        /** ProviderProfileMutationResponse */
+        ProviderProfileMutationResponse: {
+            /** Audit Event Id */
+            audit_event_id: number;
+            /** Base Url */
+            base_url: string;
+            /** Chat Capable */
+            chat_capable: boolean;
+            /** Chat Model */
+            chat_model: string;
+            /** Embedding Capable */
+            embedding_capable: boolean;
+            /** Embedding Model */
+            embedding_model: string;
+            /** Enabled */
+            enabled: boolean;
+            /** Fake Embedding Dimensions */
+            fake_embedding_dimensions: number;
+            /** Local */
+            local: boolean;
+            /** Name */
+            name: string;
+            /** Provider Kind */
+            provider_kind: string;
+            /** Reasoning Capable */
+            reasoning_capable: boolean;
+            /** Redact Before Ai */
+            redact_before_ai: boolean;
+            /** Redaction Patterns */
+            redaction_patterns: string[];
+            /** Source */
+            source: string;
+            /** Version */
+            version: number;
+        };
+        /** ProviderProfileResponse */
+        ProviderProfileResponse: {
+            /** Base Url */
+            base_url: string;
+            /** Chat Capable */
+            chat_capable: boolean;
+            /** Chat Model */
+            chat_model: string;
+            /** Embedding Capable */
+            embedding_capable: boolean;
+            /** Embedding Model */
+            embedding_model: string;
+            /** Enabled */
+            enabled: boolean;
+            /** Fake Embedding Dimensions */
+            fake_embedding_dimensions: number;
+            /** Local */
+            local: boolean;
+            /** Name */
+            name: string;
+            /** Provider Kind */
+            provider_kind: string;
+            /** Reasoning Capable */
+            reasoning_capable: boolean;
+            /** Redact Before Ai */
+            redact_before_ai: boolean;
+            /** Redaction Patterns */
+            redaction_patterns: string[];
+            /** Source */
+            source: string;
+            /** Version */
+            version: number;
+        };
+        /** ProviderProfileUpdateRequest */
+        ProviderProfileUpdateRequest: {
+            /** Base Url */
+            base_url?: string | null;
+            /** Chat Capable */
+            chat_capable?: boolean | null;
+            /** Chat Model */
+            chat_model?: string | null;
+            /** Embedding Capable */
+            embedding_capable?: boolean | null;
+            /** Embedding Model */
+            embedding_model?: string | null;
+            /** Enabled */
+            enabled?: boolean | null;
+            /** Fake Embedding Dimensions */
+            fake_embedding_dimensions?: number | null;
+            /** Local */
+            local?: boolean | null;
+            /** Provider Kind */
+            provider_kind?: string | null;
+            /** Reasoning Capable */
+            reasoning_capable?: boolean | null;
+            /** Redact Before Ai */
+            redact_before_ai?: boolean | null;
+            /** Redaction Patterns */
+            redaction_patterns?: string[] | null;
+            /** Version */
+            version: number;
+        };
         /** StepUpResponse */
         StepUpResponse: {
+            /** Action */
+            action: string;
             /** Step Up */
             step_up: boolean;
             /**
@@ -317,7 +697,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["MiniAppAuthRequest"];
+                "application/json": components["schemas"]["MiniAppStepUpRequest"];
             };
         };
         responses: {
@@ -355,6 +735,591 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    list_providers_api_control_v1_providers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderProfileResponse"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    create_provider_api_control_v1_providers_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderProfileCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderProfileMutationResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_provider_api_control_v1_providers__name__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderProfileResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    delete_provider_api_control_v1_providers__name__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderProfileDeleteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeleteMutationResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneConflictEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    update_provider_api_control_v1_providers__name__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderProfileUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderProfileMutationResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneConflictEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    list_provider_credentials_api_control_v1_providers__name__credentials_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderCredentialSummary"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    create_provider_credential_api_control_v1_providers__name__credentials_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderCredentialCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderCredentialMutationResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    delete_provider_credential_api_control_v1_providers__name__credentials__credential_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+                credential_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderCredentialDeleteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeleteMutationResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneConflictEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    update_provider_credential_api_control_v1_providers__name__credentials__credential_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+                credential_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderCredentialUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderCredentialMutationResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneConflictEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    reveal_provider_credential_api_control_v1_providers__name__credentials__credential_id__reveal_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+                credential_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderCredentialRevealResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
                 };
             };
             /** @description Too Many Requests */
@@ -472,6 +1437,63 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    telegram_step_up_start_auth_telegram_step_up_start_get: {
+        parameters: {
+            query: {
+                action: string;
+                return_to?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            307: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
             };
             /** @description Validation Error */
             422: {

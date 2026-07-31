@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import sqlite3
 from collections.abc import Iterator
@@ -11,9 +12,12 @@ import pytest
 from typer.testing import CliRunner
 
 import pzp_ai_bot.main as main_module
+from pzp_ai_bot.ai.factory import ProviderRegistry
 from pzp_ai_bot.app_context import build_context
 from pzp_ai_bot.config import get_settings
-from pzp_ai_bot.db.session import upgrade_schema
+from pzp_ai_bot.control_plane.secrets.service import ProviderSecretService
+from pzp_ai_bot.db.repos.provider_credentials import ProviderCredentialRepository
+from pzp_ai_bot.db.session import create_session_factory, session_scope, upgrade_schema
 from pzp_ai_bot.main import app
 from pzp_ai_bot.memory.scope import Scope
 from pzp_ai_bot.memory.service import IncomingMessage, MemoryService
@@ -90,7 +94,7 @@ def test_migrate_uses_alembic_revision(monkeypatch: pytest.MonkeyPatch, tmp_path
         canonical_snapshot_columns = {
             row[1] for row in connection.execute("pragma table_info(canonical_scope_snapshots)")
         }
-    assert revision[0].startswith("0013_")
+    assert revision[0].startswith("0014_")
     assert {
         "scope_key",
         "chat_id",
@@ -160,7 +164,7 @@ def test_profile_permission_migration_preserves_query_values(
             order by source_chat_id
             """
         ).fetchall()
-    assert revision[0].startswith("0013_")
+    assert revision[0].startswith("0014_")
     assert "can_learn" not in permission_columns
     assert permissions == [(-100802, 0), (-100801, 1)]
 
@@ -213,7 +217,7 @@ def test_telemetry_scope_migration_backfills_supported_legacy_values(
             )
         }
 
-    assert revision[0].startswith("0013_")
+    assert revision[0].startswith("0014_")
     assert scopes == [(-100910, None), (-100910, 7), (None, None), (None, None), (None, None)]
     assert {
         "ix_ai_usage_scope_created_at",
@@ -306,7 +310,7 @@ def test_message_uniqueness_migration_reconciles_main_chat_duplicates(
                 ("2026-07-29 12:00:00", "2026-07-29 12:00:00"),
             )
 
-    assert revision[0].startswith("0013_")
+    assert revision[0].startswith("0014_")
     assert messages == [(10,)]
     assert embeddings == [(10, "provider-a", "model-a"), (10, "provider-b", "model-b")]
 
@@ -419,6 +423,75 @@ def test_cli_redacts_database_url_credentials(
     assert "pass123" not in combined
     assert "user:" not in combined
     assert "postgresql+asyncpg://[REDACTED]@example.invalid:5432/pzp" in combined
+
+
+def test_secret_status_and_atomic_rewrap_report_counts_only(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    configure_cli_env(monkeypatch, tmp_path)
+    primary = base64.b64encode(bytes([1]) * 32).decode()
+    next_key = base64.b64encode(bytes([2]) * 32).decode()
+    monkeypatch.setenv(
+        "CONTROL_PLANE_MASTER_KEYS", json.dumps({"primary": primary, "next": next_key})
+    )
+    monkeypatch.setenv("CONTROL_PLANE_ACTIVE_MASTER_KEY_ID", "primary")
+    get_settings.cache_clear()
+
+    async def seed() -> None:
+        settings = get_settings()
+        upgrade_schema(settings)
+        service = ProviderSecretService(
+            settings, create_session_factory(settings), ProviderRegistry(settings)
+        )
+        await service.create_profile(
+            {
+                "name": "managed",
+                "provider_kind": "openai_compatible",
+                "base_url": "https://api.openai.com/v1",
+                "chat_model": "gpt-5.4",
+                "embedding_model": "text-embedding-3-small",
+                "chat_capable": True,
+                "embedding_capable": True,
+                "reasoning_capable": True,
+                "local": False,
+                "redact_before_ai": True,
+                "redaction_patterns": [],
+                "fake_embedding_dimensions": 64,
+            },
+            actor_user_id=111,
+            now=datetime(2026, 8, 1, tzinfo=UTC),
+        )
+        await service.create_credential(
+            "managed",
+            label="main",
+            value="cli-secret-value",
+            actor_user_id=111,
+            now=datetime(2026, 8, 1, tzinfo=UTC),
+        )
+
+    asyncio.run(seed())
+    status = runner.invoke(app, ["secrets", "status"])
+    rewrap = runner.invoke(app, ["secrets", "rewrap", "--to", "next", "--yes"])
+
+    assert status.exit_code == 0, status.output
+    assert "configured_key_ids: next,primary" in status.output
+    assert "encrypted_credentials: 1" in status.output
+    assert "key_primary: 1" in status.output
+    assert rewrap.exit_code == 0, rewrap.output
+    assert "Back up the database" in rewrap.output
+    assert "Rewrapped 1 encrypted credentials to key next." in rewrap.output
+    combined = status.output + rewrap.output
+    assert "cli-secret-value" not in combined
+    assert primary not in combined
+    assert next_key not in combined
+
+    async def inspect() -> None:
+        settings = get_settings()
+        async with session_scope(create_session_factory(settings)) as session:
+            credentials = await ProviderCredentialRepository(session).list_encrypted()
+            assert [credential.master_key_id for credential in credentials] == ["next"]
+
+    asyncio.run(inspect())
 
 
 def test_successful_cli_memory_commands(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

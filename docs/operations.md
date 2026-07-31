@@ -26,6 +26,13 @@ Audit events are operational metadata, not memory exports. Treat them as sensiti
 
 `ai_usage` writes normalize scope into dedicated chat/topic columns while retaining the controlled metadata scope for backward-compatible audit output. Status queries aggregate counts, errors, average latency and per-operation totals in SQL and apply the normal scope hierarchy: global includes all telemetry, a chat includes its main thread and topics, and a topic is exact. Missing or invalid pre-revision-0012 legacy scope metadata remains unscoped and is visible only in global totals. The usage scope/time, operation/time and error/time indexes and the event type/scope/time and scope/time indexes keep append-only audit queries bounded without introducing prompt or message content into query keys.
 
+## Provider Vault Rotation
+
+- Run `uv run pzp-bot secrets status` before and after any master-key change. The command reports configured key IDs, the active ID, encrypted-row counts by referenced ID and any missing referenced IDs; it never reveals or decrypts a provider credential for display.
+- Add the new 32-byte base64 master key while retaining every referenced old key, restart with the expanded key map, create and verify a current database backup, then run `uv run pzp-bot secrets rewrap --to <new-id> --yes`. Rewrap computes and decrypt-verifies every replacement before issuing database updates and commits the complete batch in one transaction, so an interruption or invalid row leaves all prior wrappings authoritative.
+- Keep old key material available until status reports no credential references to that ID and the post-rotation provider smoke test succeeds. Removing a still-referenced ID makes those credentials undecryptable and provider refresh fails closed rather than silently falling back.
+- Managed credential CRUD and reveal events live under `control_plane.provider.*` with content-free metadata. A reveal event is committed before the response leaves the server; investigate unexpected reveal frequency without exporting response bodies or browser storage.
+
 ## Markdown Projection Recovery
 
 - Treat SQLite `knowledge_items` as authoritative. Files under `data/memory/daily/` and the canonical `data/memory/MEMORY.md` are generated views, so do not repair missing or private content by editing generated files as if they were the source of truth.
