@@ -24,6 +24,7 @@ PZP AI expects secrets to come from environment variables, untracked env files o
 ## Deployment Notes
 
 - For Compose or container platforms, prefer an untracked env file or platform secret injection over baking secrets into images.
+- The Compose bot service is the only application container that receives `.env` and backend secrets. Caddy receives only `CONTROL_PLANE_PUBLIC_ORIGIN`, Nuxt receives only non-secret Node listener settings, and Caddy removes `Cookie`, `Authorization` and `X-CSRF-Token` before proxying frontend requests; never add bot, OIDC, vault, provider, database or webhook secrets to the frontend build arguments or environment.
 - Do not pass secrets through `/runtime_settings`; editable runtime settings intentionally reject secret-bearing keys.
 - Do not paste provider keys into Telegram groups or bot DMs. Bot conversations are not an encrypted application secret store, and deleting a command message would not guarantee removal from Telegram infrastructure or every update consumer.
 - When sharing logs or audit exports, review them for chat/user identifiers even though provider keys and bot tokens are not logged intentionally.

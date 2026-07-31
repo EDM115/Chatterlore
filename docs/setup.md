@@ -22,7 +22,7 @@ uv run pytest
 
 The default `AI_PROVIDER=fake` is deterministic and does not call external AI services. Use it for local development, CI and documentation examples.
 
-The control-plane client is developed separately and is not served as production static content by the Python runtime yet:
+The control-plane frontend is developed separately and is deployed as its own Nuxt SSR Node service rather than being copied into the Python runtime:
 
 ```powershell
 Set-Location web
@@ -31,7 +31,9 @@ pnpm runtime:check
 pnpm dev
 ```
 
-The development client uses credentialed same-origin `/api/control/v1` requests and proxies `/api` to `PZP_API_DEV_ORIGIN`, which defaults to `http://127.0.0.1:8000`. Phase 4 includes browser OIDC, signed Mini App exchange, server-side sessions, capability-driven navigation, bot-admin provider/credential APIs and a reusable ephemeral credential-reveal component. The backend routes are attached when the webhook FastAPI application starts with `CONTROL_PLANE_ENABLED=true`; complete provider settings pages plus chat, memory and operations forms remain unavailable until later Plan 021 phases. A cold Nuxt development start can display the loading template while the initial client bundle compiles.
+The development frontend uses credentialed same-origin `/api/control/v1` requests and proxies `/api` to `PZP_API_DEV_ORIGIN`, which defaults to `http://127.0.0.1:8000`. Nuxt SSR returns public pages and a neutral protected-route gate before hydration; authentication and privileged data still load only in the browser. Phase 4 includes browser OIDC, signed Mini App exchange, server-side sessions, capability-driven navigation, bot-admin provider/credential APIs and a reusable ephemeral credential-reveal component. The backend routes are attached when the webhook FastAPI application starts with `CONTROL_PLANE_ENABLED=true`; complete provider settings pages plus chat, memory and operations forms remain unavailable until later Plan 021 phases.
+
+For a production-style local build, run `pnpm build`, `pnpm scan:generated` and `pnpm smoke:ssr` from `web/`. The production Compose stack keeps Nuxt and FastAPI private behind Caddy, strips credential headers before frontend requests and requires webhook configuration; see [deployment.md](deployment.md) before starting it.
 
 To configure the Phase 3 identity boundary, create a Telegram Login OIDC client in BotFather, allow the exact public origin and register the fixed callback `<CONTROL_PLANE_PUBLIC_ORIGIN>/auth/telegram/callback`. Use an HTTPS origin without a path, query or fragment:
 

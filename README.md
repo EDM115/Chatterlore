@@ -51,10 +51,12 @@ For a real Telegram group, create a bot with BotFather, set `TELEGRAM_BOT_TOKEN`
 
 ```powershell
 docker compose config
+docker build --tag pzp-ai:local .
+docker build --tag pzp-ai-web:local ./web
 docker compose run --rm bot pzp-bot doctor
 ```
 
-For production-style deployment details, including polling, webhook mode, persistent data and health checks, see [docs/deployment.md](docs/deployment.md).
+The production Compose topology runs the bot in webhook mode behind a dedicated Caddy HTTPS ingress and a separate Nuxt SSR image; only Caddy publishes host ports, and the frontend/backend images can be replaced independently. For required webhook/OIDC secrets, persistent data, health checks, local polling and the deferred live proxy acceptance, see [docs/deployment.md](docs/deployment.md).
 
 ## Documentation
 

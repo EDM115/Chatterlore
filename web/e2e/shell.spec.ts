@@ -60,3 +60,32 @@ test("anonymous browsers retain the sign-in document title", async ({ page }) =>
   await page.goto("/login");
   await expect(page).toHaveTitle("Sign in · PZP AI Control Plane");
 });
+
+test.describe("server-rendered direct routes", () => {
+  test.use({ javaScriptEnabled: false });
+
+  test("protected direct routes return a neutral access gate before hydration", async ({
+    page,
+  }) => {
+    const response = await page.goto("/");
+
+    expect(response?.status()).toBe(200);
+    await expect(page.getByTestId("auth-pending")).toContainText("Checking Telegram access");
+    await expect(
+      page.getByRole("heading", { name: "Private operations, one clear surface." }),
+    ).toHaveCount(0);
+    await expect(page.getByText("Opening the control plane…")).toHaveCount(0);
+  });
+
+  test("public login HTML carries the private SSR security policy", async ({ page }) => {
+    const response = await page.goto("/login");
+
+    expect(response?.status()).toBe(200);
+    await expect(page.getByRole("heading", { name: "Sign in with Telegram." })).toBeVisible();
+    expect(response?.headers()["cache-control"]).toBe("private, no-store");
+    expect(response?.headers()["referrer-policy"]).toBe("no-referrer");
+    expect(response?.headers()["content-security-policy"]).toContain(
+      "frame-ancestors 'self' https://telegram.org https://*.telegram.org",
+    );
+  });
+});

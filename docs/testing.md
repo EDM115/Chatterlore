@@ -23,13 +23,14 @@ pnpm format:check
 pnpm lint
 pnpm typecheck
 pnpm test
-pnpm playwright test
 pnpm openapi:check
-pnpm generate
+pnpm build
 pnpm scan:generated
+pnpm smoke:ssr
+pnpm test:e2e
 ```
 
-Run `pnpm typecheck` directly rather than through RTK because RTK's `typecheck` shortcut invokes `tsc` instead of the Nuxt typecheck script. `pnpm playwright test` uses the project Playwright binary and the pnpm-managed Node runtime. The asset scanner checks the generated client for server-only configuration names, credential patterns, database URLs, private-key material and sensitive values loaded from local environment files.
+Run `pnpm typecheck` directly rather than through RTK because RTK's `typecheck` shortcut invokes `tsc` instead of the Nuxt typecheck script. Use the declared `pnpm test:e2e` script for Playwright; it rebuilds the production SSR output and runs against `.output/server/index.mjs` in desktop Chromium and Pixel 7 profiles. The asset scanner checks `.output/public`, the browser-delivered portion of the SSR build, for server-only configuration names, credential patterns, database URLs, private-key material and sensitive values loaded from local environment files. The SSR smoke launches the production Node entrypoint separately and verifies public/protected direct HTML, response security headers, distinct per-response CSP nonces on every inline script without `script-src 'unsafe-inline'`, the neutral authentication gate and absence of deployment-secret sentinels from returned documents and hydration data.
 
 ## Coverage Gate
 
@@ -70,16 +71,17 @@ The drift check must exit successfully with `No new upgrade operations detected.
 docker version
 docker compose config
 docker build --tag pzp-ai:0.9.0 .
+docker build --tag pzp-ai-web:0.9.0 ./web
 docker run --rm -e AI_PROVIDER=fake -e DB_URL=sqlite+aiosqlite:////tmp/pzp/bot.db -e MEMORY_DIR=/tmp/pzp/memory pzp-ai:0.9.0 pzp-bot doctor
 docker run --rm -e AI_PROVIDER=fake -e DB_URL=sqlite+aiosqlite:////tmp/pzp/bot.db -e MEMORY_DIR=/tmp/pzp/memory pzp-ai:0.9.0 pzp-bot migrate
 docker compose run --rm bot pzp-bot doctor
 docker compose down
 ```
 
-These commands do not start polling and do not connect to Telegram.
+These commands do not start polling or the Compose webhook stack and do not connect to Telegram. A full deployment acceptance additionally requires a configured disposable webhook/OIDC environment, `docker compose up -d --build --wait`, direct checks of `/`, `/login`, `/health`, reserved-path failure behavior and headers, Telegram webhook delivery, `docker compose up -d --no-deps frontend` replacement and restart recovery.
 
-The optional Playwright suite runs `pnpm test:e2e` against the declared Nuxt development server in desktop Chromium and Pixel 7 profiles. Six fully parallel clients can take roughly 30–35 seconds to hydrate from a cold Nuxt/Vite cache on Windows, so the outer test timeout is 90 seconds while UI assertions remain bounded at 60 seconds; a page that never leaves the SPA loading template still fails.
+The optional Playwright suite runs `pnpm test:e2e` against the declared production Nuxt Node server in desktop Chromium and Pixel 7 profiles. Authenticated client tests use deterministic same-origin API interception, while JavaScript-disabled tests prove direct `/` and `/login` requests contain safe SSR content before hydration. The outer test timeout remains 90 seconds for slower Windows runners, while production page assertions complete independently of Nuxt development compilation.
 
 ## CI
 
-`.github/workflows/ci.yml` pins uv 0.12.0 and runs GitHub Actions quality gates on pushes and pull requests to `main`: `uv lock --check`, `uv sync --frozen --extra dev`, format check, lint, `ty`, the branch-coverage pytest gate, Alembic upgrade plus metadata drift detection against the same isolated runner-temp database, CLI help, `doctor` and a Docker build/run smoke. A separate frontend job pins pnpm 11.18.0, lets pnpm resolve the locked Node 24.18.0 runtime, uses a frozen install, and runs format, lint, Nuxt typecheck, unit/component, OpenAPI drift, static generation and generated-asset secret-scan gates. Docker pins the same uv release and installs production dependencies from `uv.lock` through frozen syncs. The optional `telegram_live` test and frontend Playwright suite are intentionally excluded from default CI.
+`.github/workflows/ci.yml` pins uv 0.12.0 and runs GitHub Actions quality gates on pushes and pull requests to `main`: `uv lock --check`, `uv sync --frozen --extra dev`, format check, lint, `ty`, the branch-coverage pytest gate, Alembic upgrade plus metadata drift detection against the same isolated runner-temp database, CLI help, `doctor` and a Docker build/run smoke. A separate frontend job pins pnpm 11.18.0, lets pnpm resolve the locked Node 24.18.0 runtime, uses a frozen install, and runs format, lint, Nuxt typecheck, unit/component, OpenAPI drift, SSR build, generated-browser-asset secret scan and production SSR smoke gates. The Docker job builds both the Python bot image and the independent Node frontend image, while the bot image still receives the offline doctor run. Docker pins the same uv release and installs production dependencies from `uv.lock` through frozen syncs. The optional `telegram_live` test, frontend Playwright suite and live three-container proxy acceptance are intentionally excluded from default CI.

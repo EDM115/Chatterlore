@@ -12,8 +12,10 @@
     "runtime:check": "node --version",
     "typecheck": "nuxt typecheck",
     "test": "vitest run",
-    "test:e2e": "playwright test",
-    "generate": "nuxt generate",
+    "build": "nuxt build",
+    "start": "node .output/server/index.mjs",
+    "smoke:ssr": "node ./scripts/smoke-ssr.mjs",
+    "test:e2e": "pnpm build && playwright test",
     "openapi:types": "openapi-typescript ./openapi/control-plane.openapi.json -o ./app/types/openapi.d.ts",
     "openapi:check": "openapi-typescript ./openapi/control-plane.openapi.json -o ./app/types/openapi.d.ts --check",
     "scan:generated": "node ./scripts/scan-generated-assets.mjs ./.output/public"

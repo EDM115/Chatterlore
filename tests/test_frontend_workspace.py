@@ -44,12 +44,14 @@ def test_frontend_workspace_declares_the_reviewed_frozen_toolchain() -> None:
         "vue-tsc": "3.3.8",
     }
     assert set(package["scripts"]) >= {
+        "build",
         "format:check",
         "lint",
+        "smoke:ssr",
+        "start",
         "typecheck",
         "test",
         "test:e2e",
-        "generate",
         "openapi:types",
         "openapi:check",
         "scan:generated",
@@ -73,7 +75,7 @@ def test_control_plane_openapi_snapshot_matches_the_fastapi_exporter() -> None:
     assert result.returncode == 0, result.stderr or result.stdout
 
 
-def test_ci_runs_the_frozen_frontend_quality_and_generation_gates() -> None:
+def test_ci_runs_the_frozen_frontend_quality_and_ssr_gates() -> None:
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 
     for expected in [
@@ -85,10 +87,12 @@ def test_ci_runs_the_frozen_frontend_quality_and_generation_gates() -> None:
         "pnpm typecheck",
         "pnpm test",
         "pnpm openapi:check",
-        "pnpm generate",
+        "pnpm build",
         "pnpm scan:generated",
+        "pnpm smoke:ssr",
     ]:
         assert expected in workflow
+    assert "pnpm generate" not in workflow
 
 
 def test_docker_context_excludes_frontend_dependencies_and_generated_artifacts() -> None:

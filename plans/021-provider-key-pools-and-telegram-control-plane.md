@@ -1,10 +1,10 @@
 ---
 goal: Secure Telegram-authenticated control plane and resilient provider API-key pools
-version: 1.4
+version: 1.5
 date_created: 2026-07-30
 last_updated: 2026-08-01
 owner: PZP-AI
-status: In progress — Phase 4 complete; paused before Phase 5
+status: In progress — Phase 4 and the approved SSR/Caddy deployment transition are complete; Phase 5 has not started
 tags:
   - feature
   - security
@@ -23,9 +23,9 @@ tags:
 
 This plan adds two related product capabilities without weakening PZP AI's existing scope, privacy or service boundaries: a reloadless multi-key credential pool for each AI provider profile, and a responsive Telegram-authenticated control plane that works both as a Telegram Mini App and as a normal website.
 
-The user approved this plan on 2026-07-30 with one execution constraint: stop after every implementation phase for validation before beginning the next phase. Option A is the accepted secret-visibility policy: database-managed provider keys are masked by default but can be fully revealed by a bot admin after a fresh Telegram step-up authentication, through an audited, short-lived, non-cacheable response.
+The user approved this plan on 2026-07-30 with one execution constraint: stop after every numbered implementation phase for validation before beginning the next phase. Option A is the accepted secret-visibility policy: database-managed provider keys are masked by default but can be fully revealed by a bot admin after a fresh Telegram step-up authentication, through an audited, short-lived, non-cacheable response. After Phase 4, the user separately approved replacing the static SPA deployment with Nuxt SSR, Caddy ingress and independently deployable frontend/backend images before Phase 5, and explicitly authorized that transition without another approval pause.
 
-The selected frontend is Nuxt 4 with Vue 3, TypeScript and Nuxt UI 4. The frontend is a client-rendered static application generated at build time and served by the existing FastAPI origin. Node.js is required for development, CI and the Docker build stage only; the production runtime remains the existing Python/FastAPI process. Both browser OIDC and Mini App signed launch data resolve to the same server-side user, session and authorization model.
+The selected frontend is Nuxt 4 with Vue 3, TypeScript and Nuxt UI 4. Production runs Nuxt SSR as a presentation-only Node service behind Caddy, while FastAPI remains the sole identity, authorization, secret, persistence and business API owner. Caddy is the only public origin, routes reserved backend paths to FastAPI, routes every other path to Nuxt and strips credential-bearing headers before frontend proxying. Both browser OIDC and Mini App signed launch data resolve to the same server-side user, session and authorization model; protected Nuxt content remains behind a neutral server render until client-side session bootstrap succeeds.
 
 PZP AI uses Telegram's current OpenID Connect Authorization Code flow with PKCE, an explicit BotFather client ID and secret, registered callback URLs, discovery metadata and JWKS validation. Mini App authentication separately exchanges server-validated signed `initData` for the same opaque session model.
 
@@ -87,11 +87,11 @@ PZP AI uses Telegram's current OpenID Connect Authorization Code flow with PKCE,
 - **CON-006**: The current local sentence-transformer provider supplies embeddings only and returns `local-chat-unavailable` for generation; UI capability discovery must represent this accurately.
 - **CON-007**: Telegram bots cannot initiate a DM with a user who has never opened the bot; alert delivery must surface `unreachable` safely and continue serving provider calls.
 - **CON-008**: Telegram does not provide arbitrary group discovery or historical backfill. Group enrollment requires a Telegram selection/add flow, a known chat update or an operator-entered known chat ID that is verified through Bot API access.
-- **CON-009**: Nuxt is client-rendered with `ssr: false`; no authenticated user, decrypted secret or runtime server secret may be serialized into generated frontend output.
+- **CON-009**: Nuxt uses SSR only for the public shell and neutral protected-route fallback; authentication bootstrap and protected data remain client-only, and no authenticated user, CSRF value, decrypted secret or backend runtime secret may be serialized into SSR HTML or its hydration payload.
 - **CON-010**: Use Node.js 24 LTS, pnpm with a committed frozen lockfile, Nuxt 4, Vue 3, TypeScript and Nuxt UI 4; verify and pin exact stable package versions at execution time rather than using `latest` ranges.
 - **CON-011**: Python remains 3.12 and uv-managed. Add only focused runtime dependencies for authenticated encryption and OIDC/JWT validation, pin them in `pyproject.toml` and refresh `uv.lock` deliberately.
 - **CON-012**: Keep default Python and frontend tests offline. Real Telegram Mini App, OIDC, DM and provider-key checks are explicit live acceptance gates with disposable data and dedicated credentials.
-- **CON-013**: Preserve both polling and webhook operation. The control plane must be available in either mode when enabled, without creating a second independent process that competes for SQLite ownership.
+- **CON-013**: Preserve bot-only polling for local/manual operation and use webhook mode for the production control-plane Compose topology. Nuxt and Caddy are presentation/ingress processes only; the single FastAPI bot process remains the only SQLite writer, and polling must never run beside that webhook writer against the same database.
 - **CON-014**: Do not expose FastAPI Swagger UI or the complete control-plane OpenAPI schema anonymously in production; generated client types may be built from the schema during development/CI.
 
 ### Implementation guidelines and patterns
@@ -116,9 +116,12 @@ PZP AI uses Telegram's current OpenID Connect Authorization Code flow with PKCE,
 
 ```mermaid
 flowchart LR
-    TG["Telegram Mini App"] -->|signed initData| API["FastAPI control API"]
-    BR["Regular browser"] -->|OIDC code + PKCE| OIDC["Telegram OAuth"]
-    OIDC -->|code callback| API
+    TG["Telegram Mini App"] --> EDGE["Caddy public HTTPS origin"]
+    BR["Regular browser"] --> EDGE
+    EDGE -->|HTML and browser assets| UI["Nuxt SSR presentation service"]
+    EDGE -->|/api, /auth, /telegram/webhook, /health| API["FastAPI webhook runtime"]
+    BR -->|OIDC code + PKCE| OIDC["Telegram OAuth"]
+    OIDC -->|code callback through Caddy| API
     API --> AUTH["Session, CSRF and authorization services"]
     API --> CPS["Control-plane services"]
     CPS --> MEM["MemoryService facade"]
@@ -128,12 +131,11 @@ flowchart LR
     POOL --> PROV["OpenAI-compatible provider clients"]
     POOL --> OUTBOX["Admin alert outbox"]
     OUTBOX -->|best effort| DM["Bot-admin Telegram DMs"]
-    API --> UI["Generated Nuxt static assets"]
 ```
 
-FastAPI serves the generated Nuxt application from the root path and keeps `/api/control/v1`, `/auth/telegram/*`, `/telegram/webhook` and `/health` reserved for server routes. The Nuxt development server proxies the same paths to FastAPI so local development preserves same-origin cookie semantics. Production does not run Nitro or a separate Node server.
+Caddy is the only public service. It sends `/api`, `/auth`, `/telegram/webhook` and `/health` to the private FastAPI webhook runtime, sends all other paths to the private Nuxt Node service and removes cookies, authorization and CSRF headers before a request can reach Nuxt. The Nuxt development server still proxies the reserved paths to FastAPI so local development preserves same-origin cookie semantics. Nitro never owns authentication, authorization, secrets, provider calls or database access.
 
-`create_http_app(context, *, telegram_bot, dispatcher, include_webhook)` becomes the shared HTTP composition root. Webhook mode mounts the Telegram webhook, control API, health and static UI in one FastAPI app. Polling mode starts the same HTTP app without the Telegram webhook as a supervised Uvicorn task alongside polling. `CONTROL_PLANE_ENABLED=false` preserves a bot-only runtime; enabling it requires the HTTPS/public URL, OIDC bootstrap settings and master-key configuration before secret management or browser login becomes healthy.
+`create_http_app(context, *, telegram_bot, dispatcher, include_webhook)` remains the FastAPI HTTP composition root. The production Compose topology runs exactly one bot process in webhook mode; the independent Nuxt and Caddy processes do not import the Python application or touch SQLite. `CONTROL_PLANE_ENABLED=false` still preserves bot-only polling/local operation, while an enabled production control plane requires the HTTPS public origin, OIDC bootstrap settings and master-key configuration before secret management or browser login becomes healthy.
 
 ### Identity and authorization matrix
 
@@ -311,6 +313,7 @@ Phase 2 evidence:
 - GitHub Actions has a separate frontend job for frozen install, managed-runtime verification, Oxfmt, Oxlint, Nuxt typecheck, unit/component tests, schema/type drift, static generation and generated-asset scanning; the existing Python quality job is unchanged. `.dockerignore` excludes frontend dependencies, generated output and browser reports from the existing image context.
 - Static generation completed with only non-fatal upstream Nuxt/Nitro/Rolldown warnings, and the security scanner passed 18 generated text assets. Fixture tests prove both safe and intentionally contaminated bundles, while CI supplies representative bot, OIDC, master, provider and database secrets to catch value leakage.
 - The fresh repository checkpoint passed Ruff format/lint, `ty`, an empty-database Alembic upgrade/check and `235 passed, 1 skipped, 5 xfailed` at 82.44% branch coverage. Phase 3 authentication, sessions, RBAC, database migrations and production API/runtime integration have not started; execution is paused here for user validation.
+- This section records the Phase 2 historical baseline. The approved transition after Phase 4 supersedes `ssr: false`, static generation, Python asset serving and the old production-runtime assumptions without changing the evidence of what originally passed.
 
 ### Implementation Phase 3: Control-plane identity, OIDC, Mini App validation and sessions
 
@@ -363,6 +366,25 @@ Phase 4 evidence:
 - Controlled reveal is an isolated audited `POST` response with `Cache-Control: no-store, private`, `Pragma: no-cache` and generic failures. The Nuxt reveal composable/component keeps plaintext in component memory only, masks after 30 seconds and clears on route/session changes, page hide, failure or unmount; copying remains a separate explicit action.
 - `pzp-bot secrets status` emits safe counts and key IDs, while `pzp-bot secrets rewrap --to <master-key-id>` requires an explicit backup acknowledgement, prepares and verifies the entire transaction before writing and never prints credential material. Focused failure injection proves an interrupted rewrap leaves every credential unchanged.
 - The Phase 4 checkpoint passes `uv lock --check`, Ruff format/lint, `ty`, the full branch-coverage suite with 269 passed, 1 skipped, 4 expected failures and 82.83%, disposable upgrade/drift checks through revision 0014 and the secrets CLI help. Nuxt Oxfmt, type-aware Oxlint, raw `pnpm typecheck`, 11 unit/component tests, OpenAPI type drift, six-route static generation, the 22-text-asset secret scan and all 6 desktop/mobile Playwright checks pass. The Playwright outer timeout is 90 seconds because six parallel cold Nuxt dev clients took 31–34 seconds to hydrate; the unchanged 60-second UI assertion still fails a genuinely stuck client.
+
+### Approved transition after Phase 4: Nuxt SSR and split Caddy deployment
+
+- **GOAL-004A**: Replace the slow static-SPA production boundary before Phase 5 without moving authentication, authorization, secrets or business logic out of FastAPI.
+
+| Task         | Description                                                                                                                                                                                                                                             | Completed | Date       |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ---------- |
+| TASK-SSR-001 | Enable Nuxt SSR, keep auth/session bootstrap client-only and gate protected page content behind a neutral server render so unauthenticated HTML and hydration payloads contain no privileged state.                                                    | DONE      | 2026-08-01 |
+| TASK-SSR-002 | Add private no-store SSR document headers, immutable asset caching and a bounded production smoke that checks direct login/protected renders, security headers, absent privileged content and absent sentinel secrets.                                | DONE      | 2026-08-01 |
+| TASK-SSR-003 | Add an independent non-root Node frontend image, exact Caddy ingress pin and three-service Compose topology where only Caddy publishes ports, the bot runs webhook mode and frontend requests receive no cookie, authorization or CSRF headers.          | DONE      | 2026-08-01 |
+| TASK-SSR-004 | Replace static-generation CI with Nuxt server build, public-asset scan, production SSR smoke and independent bot/frontend image builds; add focused artifact and production-browser regressions for the topology and SSR security boundary.             | DONE      | 2026-08-01 |
+| TASK-SSR-005 | Reconcile architecture, setup, deployment, privacy, secrets, testing, release, lifecycle roadmap and Plan 021 documentation; retain live Docker build/Compose/HTTPS acceptance as an explicit environment-dependent release gate.                     | DONE      | 2026-08-01 |
+
+Transition evidence:
+- `nuxt.config.ts` now builds the Nitro Node server with SSR enabled. Auth middleware and session bootstrap short-circuit on the server, while `ProtectedPageGate` emits only a neutral checking state until a hydrated client has established an authenticated session.
+- Nuxt's server middleware applies private no-store HTML policy, per-response 144-bit CSP nonces, HSTS, referrer, permissions and MIME-sniffing headers without intercepting reserved FastAPI routes or immutable `/_nuxt` assets. Nuxt's server head marker plus a Nitro render hook apply the nonce to every generated inline script without `script-src 'unsafe-inline'`; `pnpm smoke:ssr` launches `.output/server/index.mjs` on a bounded disposable port and checks both distinct nonces, server-rendered login/protected HTML, headers and sentinel-secret absence.
+- `web/Dockerfile`, `web/.dockerignore`, `Caddyfile` and `docker-compose.yml` define private `frontend:3000` and `bot:8080` upstreams behind `caddy:2.11.4-alpine`; only Caddy publishes host ports, only the bot receives `.env`, and credential-bearing request headers are removed before proxying to Nuxt.
+- Focused red-green verification covered JavaScript-disabled direct routes, the protected/auth-dependent hydration boundary, nonce-bearing production security headers, Compose/image/ingress structure and CI contract changes. Final frontend gates passed Oxfmt, type-aware Oxlint/tsgolint, raw Nuxt typecheck, 11 unit/component tests, OpenAPI drift, a 2.75 MB production server build, a 17-text-asset secret scan, nonce-aware SSR smoke and 10 Playwright checks across desktop Chromium and Pixel 7. Whole-project Ruff format/lint, `ty` and the fresh offline suite passed with 272 tests, 1 skipped live Telegram test and 4 strict expected failures. Docker image build, Compose startup, live Caddy routing, health, TLS and independent replacement acceptance remain unexecuted because the local Docker daemon is unavailable.
+- This transition does not implement any Phase 5 provider selection, retry, classifier, health-transition, concurrency or alert behavior.
 
 ### Implementation Phase 5: Provider key pool, retry classification and admin alerts
 
@@ -431,17 +453,17 @@ Phase 4 evidence:
 
 ### Implementation Phase 9: Runtime, Docker, CI and deployment integration
 
-- **GOAL-009**: Ship one reproducible runtime that serves bot, API and Nuxt assets in both polling and webhook modes.
+- **GOAL-009**: Ship independently reproducible bot and Nuxt runtimes behind one Caddy HTTPS origin without creating a second backend or SQLite writer.
 
 | Task     | Description                                                                                                                                                                                                                           | Completed | Date |
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ---- |
-| TASK-069 | Factor a shared `create_http_app` from webhook composition, mount auth/control API/static assets/history fallback safely and keep `/telegram/webhook` enabled only in webhook mode.                                                   |           |      |
-| TASK-070 | Start/stop embedded Uvicorn with polling when control plane is enabled, supervise its task and add HTTP readiness without double-starting background summarizer/settings/alert loops.                                                 |           |      |
-| TASK-071 | Extend health/doctor/show-config with safe control-plane, OIDC, master-key, static-asset, session-store, provider-pool and alert-worker checks; never perform paid provider calls in health or reveal configuration values.           |           |      |
-| TASK-072 | Add a Node 24/pnpm frozen Nuxt build stage to Docker, copy only generated public assets into the final non-root Python image and retain the current uv-frozen application installation and doctor healthcheck.                        |           |      |
-| TASK-073 | Update Compose for HTTPS-origin/OIDC/master-key bootstrap settings and persistent SQLite/memory only; do not bake or echo secrets and keep fake-provider smoke runnable without real Telegram credentials.                            |           |      |
-| TASK-074 | Expand CI into Python quality, frontend quality and Docker smoke gates, including frozen uv/pnpm locks, OpenAPI client drift, Nuxt generation, asset-secret scan, migration upgrade/check and HTTP static/control-plane health smoke. |           |      |
-| TASK-075 | Add production reverse-proxy guidance for HTTPS, exact public origin/callback, BotFather Web Login allowed URLs, Main Mini App/menu URL, CSP/frame behavior, secure cookies, backup/master-key recovery and single-instance routing.  |           |      |
+| TASK-069 | Keep webhook composition as the single FastAPI HTTP backend for auth/control API, Telegram webhook and health routes; do not mount Nuxt output or a history fallback in the Python process.                                                           | DONE      | 2026-08-01 |
+| TASK-070 | Keep polling as a separate bot-only local/manual runtime and prevent production Compose from starting it beside the webhook process against the same Telegram bot and SQLite database.                                                                | DONE      | 2026-08-01 |
+| TASK-071 | Extend health/doctor/show-config with safe control-plane, OIDC, master-key, session-store, provider-pool and alert-worker checks; never perform paid provider calls in health or reveal configuration values.                                      | PARTIAL   | 2026-08-01 |
+| TASK-072 | Add an independent Node 24/pnpm frozen multi-stage Nuxt SSR image that copies only `.output`, runs as the non-root Node user and retains the independently buildable uv-frozen non-root bot image.                                                  | DONE      | 2026-08-01 |
+| TASK-073 | Add exact-pinned Caddy plus private bot/frontend Compose services, persistent SQLite/memory/Caddy state, webhook runtime settings and no secrets in the frontend or proxy environment; only Caddy publishes host ports.                             | DONE      | 2026-08-01 |
+| TASK-074 | Expand CI into Python quality, frontend quality and independent image-build gates, including frozen uv/pnpm locks, OpenAPI client drift, Nuxt SSR build, browser-asset secret scan, production SSR smoke and migration upgrade/check.              | DONE      | 2026-08-01 |
+| TASK-075 | Document Caddy HTTPS, exact public origin/callback, BotFather Web Login allowed URLs, Main Mini App/menu URL, CSP/frame behavior, secure cookies, independent replacement, backup/master-key recovery and single-writer routing.                   | DONE      | 2026-08-01 |
 
 ### Implementation Phase 10: Verification, live acceptance and roadmap closure
 
@@ -454,14 +476,14 @@ Phase 4 evidence:
 | TASK-078 | Run adversarial auth/authorization tests for forged/stale/future/replayed Mini App data, OIDC state/code/nonce replay, wrong issuer/audience/algorithm/key, CSRF, cross-origin requests, cookie flags, session fixation/account switch and revoked admins.                                                                                    |           |      |
 | TASK-079 | Run adversarial vault/pool tests for ciphertext/wrapped-key/AAD tampering, wrong/rotated master keys, reveal logging/cache leakage, ten-key exhaustion, invalid-request non-rotation, quota/rate/transport/server classification, concurrent rotation and alert failure.                                                                      |           |      |
 | TASK-080 | Run Playwright at desktop/mobile widths for regular browser OIDC stubs, injected Mini App SDK/initData, bot-admin/scoped-admin navigation, settings conflicts, credential reveal auto-clear, managed-chat lifecycle, query, memory and exports.                                                                                               |           |      |
-| TASK-081 | Run Docker build, doctor, migration, polling HTTP app and webhook HTTP app smoke with generated Nuxt assets, readiness, non-root filesystem, secure-header checks and restart-persistent sessions/pool state.                                                                                                                                 |           |      |
+| TASK-081 | Run bot/frontend image builds plus the Caddy/webhook/Nuxt SSR Compose stack with doctor, migration, reserved-route/header-removal, readiness, non-root filesystem, TLS, independent replacement and restart-persistent sessions/pool state; keep polling a separate bot-only smoke.                                                   |           |      |
 | TASK-082 | Run live Telegram acceptance with the real Main Mini App/menu button, fresh Mini App login, regular-browser OIDC, account switch, scoped/native/delegated admin denial/allow, `requestChat` or fallback enrollment and sanitized DM alert delivery where Telegram permits.                                                                    |           |      |
 | TASK-083 | Run live provider acceptance with two disposable keys in one profile: healthy stickiness, forced safe authentication failure, rotation, DM alert, manual recovery and continued chat/embedding behavior using `gpt-5.6-terra` at `medium` reasoning plus the configured OpenAI embedding model; revoke disposable credentials after the test. |           |      |
 | TASK-084 | Update all canonical docs, `PLAN.md` status/version/changelog, this plan and `plans/README.md` with exact test/live/deployment evidence; mark DONE only when every done criterion and release gate below is satisfied.                                                                                                                        |           |      |
 
 ## 3. Alternatives
 
-- **ALT-001**: Run Nuxt SSR/Nitro as a separate production Backend-for-Frontend in front of FastAPI. Rejected for v1 because the authenticated dashboard does not need SEO/SSR, Node would become a second runtime, and proxy/cookie/origin protection would add an unnecessary failure boundary.
+- **ALT-001**: Run Nuxt SSR/Nitro as a separate production Backend-for-Frontend in front of FastAPI. Originally rejected before the Phase 2 SPA existed, then superseded on 2026-08-01 after the measured 20–30 second cold SPA hydration and direct-route behavior proved the deployment boundary inadequate. The accepted design runs Nitro only as an independently deployable presentation service behind Caddy; FastAPI remains the backend-for-frontend and Caddy strips credential headers before Nuxt.
 - **ALT-002**: Host the generated Nuxt app on a separate CDN origin and enable credentialed CORS to FastAPI. Rejected as the default because Mini App/browser cookies, CSRF, CSP, allowed origins and deployment secret coordination become more fragile. A CDN may serve versioned static assets later while HTML/API remain same-origin.
 - **ALT-003**: Use server-rendered Jinja/HTMX pages inside FastAPI. Rejected because the requested control plane includes responsive dashboard navigation, rich settings, provider-key lifecycle, query workspace, memory explorer and Telegram Mini App integration, and the user explicitly prefers Vue/Nuxt.
 - **ALT-004**: Store one encrypted API key directly on each provider profile and rotate profiles. Rejected because it preserves manual failover, duplicates non-secret profile configuration and cannot provide sticky health, bounded rotation or per-key recovery within one logical profile.
@@ -491,7 +513,7 @@ Phase 4 evidence:
 - **FILE-003**: `pyproject.toml`, `uv.lock`, `web/package.json`, `web/pnpm-lock.yaml`, `.node-version` — pinned Python/frontend dependencies and runtimes.
 - **FILE-004**: `src/pzp_ai_bot/config.py` and `.env.example` — safe control-plane/OIDC/master-key/session settings without secret output.
 - **FILE-005**: `src/pzp_ai_bot/app_context.py` — construction of auth, provider-profile/pool, alert and control-plane services through the existing composition root.
-- **FILE-006**: `src/pzp_ai_bot/control_plane/app.py`, `schemas.py`, `middleware.py`, `static.py` — FastAPI composition, typed contracts, security middleware and Nuxt asset serving.
+- **FILE-006**: `src/pzp_ai_bot/control_plane/app.py`, `schemas.py`, `middleware.py` — FastAPI composition, typed contracts and security middleware; FastAPI does not serve Nuxt output.
 - **FILE-007**: `src/pzp_ai_bot/control_plane/auth/mini_app.py`, `oidc.py`, `sessions.py`, `authorization.py` — isolated Telegram auth, sessions, CSRF and capabilities.
 - **FILE-008**: `src/pzp_ai_bot/control_plane/secrets/crypto.py`, `service.py` — envelope encryption, reveal, fingerprint and master rewrap.
 - **FILE-009**: `src/pzp_ai_bot/control_plane/api/auth.py`, `bot_settings.py`, `providers.py`, `chats.py`, `query.py`, `memory.py`, `stats.py`, `audit.py`, `operations.py`, `alerts.py` — bounded versioned HTTP routes.
@@ -501,7 +523,7 @@ Phase 4 evidence:
 - **FILE-013**: `src/pzp_ai_bot/db/models.py`, `db/repos/control_plane.py`, `db/repos/provider_credentials.py`, `db/repos/alerts.py`, `db/repositories.py` — new models/repositories plus compatibility exports where required.
 - **FILE-014**: `alembic/versions/0013_control_plane_identity_access.py`, `0014_provider_credential_pools.py`, `0015_admin_alert_outbox.py` — schema revisions and indexes.
 - **FILE-015**: `src/pzp_ai_bot/main.py` — secret status/rewrap commands and safe control-plane doctor/config output.
-- **FILE-016**: `web/nuxt.config.ts`, `web/app.vue`, `web/app.config.ts`, `web/app/assets/css/main.css`, `web/app/spa-loading-template.html` — Nuxt client build, Nuxt UI theme and Mini App/browser shell.
+- **FILE-016**: `web/nuxt.config.ts`, `web/app.vue`, `web/app.config.ts`, `web/app/assets/css/main.css`, `web/server/middleware/security-headers.ts` — Nuxt SSR build, Nuxt UI theme, Mini App/browser shell and document-security boundary.
 - **FILE-017**: `web/app/plugins/telegram.client.ts`, `web/app/composables/useApi.ts`, `useSession.ts`, `useCapabilities.ts`, `useSensitiveReveal.ts` and route middleware — auth bootstrap, same-origin API/CSRF, capability navigation and reveal lifecycle.
 - **FILE-018**: `web/app/pages/index.vue`, `bot/settings.vue`, `providers/*.vue`, `chats/*.vue`, `query.vue`, `memory.vue`, `stats.vue`, `audit.vue`, `operations.vue`, `login.vue` — requested control-plane pages.
 - **FILE-019**: `web/app/components/` — focused dashboard, setting, provider-key, chat, query, memory, stats and confirmation components.
@@ -510,7 +532,7 @@ Phase 4 evidence:
 - **FILE-022**: `tests/test_secret_vault.py`, `test_provider_key_pool.py`, `test_admin_alerts.py` — encryption, rotation, classification, concurrency and DM tests.
 - **FILE-023**: `tests/test_webhook.py`, `test_operations.py`, `test_deployment_artifacts.py`, `test_ai_providers.py`, `test_memory_service.py`, `test_telegram_integration.py` — affected regression suites.
 - **FILE-024**: `web/test/` and `web/e2e/` — Nuxt unit/component and Playwright browser/Mini App tests.
-- **FILE-025**: `Dockerfile`, `docker-compose.yml`, `.dockerignore`, `.github/workflows/ci.yml` — frozen Nuxt build and integrated runtime gates.
+- **FILE-025**: `Dockerfile`, `web/Dockerfile`, `web/.dockerignore`, `Caddyfile`, `docker-compose.yml`, `.dockerignore`, `.github/workflows/ci.yml` — independently buildable bot/frontend images, Caddy ingress and frozen CI/runtime gates.
 - **FILE-026**: `docs/architecture.md`, `setup.md`, `privacy.md`, `secrets.md`, `commands.md`, `operations.md`, `deployment.md`, `testing.md`, `release.md` — canonical behavior, security, recovery, BotFather and acceptance documentation.
 - **FILE-027**: `README.md` — concise feature/setup navigation only after the control plane is implemented.
 
@@ -538,7 +560,7 @@ Phase 4 evidence:
 - **TEST-020**: Stats/audit/operations queries use bounded SQL/query counts and report correct global/chat/topic hierarchy, uptime/files/schema/task/local-model/pool/alert state without automatic paid provider calls.
 - **TEST-021**: Nuxt component tests cover every page's success/loading/empty/error/401/403/409/422/429 state, capability navigation, responsive layout, Telegram theme/safe areas and accessibility.
 - **TEST-022**: Playwright covers normal browser login stub, Mini App SDK/initData injection, account switch, bot/scoped admin flows, provider key lifecycle/reveal, managed chats, query, memory and export at desktop/mobile sizes.
-- **TEST-023**: Docker/CI prove frozen uv/pnpm locks, Nuxt generation, OpenAPI type drift, asset secret scan, non-root static serving, migrations, polling/webhook HTTP lifecycle, health and restart persistence.
+- **TEST-023**: Docker/CI prove frozen uv/pnpm locks, Nuxt SSR build, OpenAPI type drift, browser-asset secret scan, non-root bot/frontend images, production SSR smoke, migrations, Caddy reserved-route precedence, webhook HTTP lifecycle, health and independent restart/replacement persistence.
 - **TEST-024**: Live acceptance proves real BotFather OIDC, real Mini App auth, sanitized DM alert and two-key failover with disposable credentials; every unavailable permission/credential is reported as an unexecuted release gate rather than a passing test.
 
 ### Completion gates
@@ -546,8 +568,8 @@ Phase 4 evidence:
 - Gate A — Identity and vault: Mini App/OIDC/session/CSRF/RBAC/encryption/reveal adversarial suites, migration upgrade/check and Nuxt auth shell pass.
 - Gate B — Provider resilience: classifier, concurrency, sticky rotation, telemetry, outbox/DM failure and controlled exhaustion suites pass; one real two-key rotation is accepted.
 - Gate C — Control-plane product: every requested settings, admins, chats, query, stats, memory, export, audit and operations page passes Python contract plus Nuxt component/Playwright coverage.
-- Gate D — Runtime and deployment: polling and webhook modes serve the same generated UI/API, Docker/Compose/health/migration/restart checks pass and production HTTPS/BotFather/master-key configuration is documented.
-- Gate E — Final acceptance: full `uv run ruff format --check .`, `uv run ruff check .`, `uv run ty check`, branch-coverage pytest, frozen frontend format/lint/typecheck/tests/generate, Docker smoke and live Telegram/OIDC/provider gates are recorded with exact results.
+- Gate D — Runtime and deployment: bot-only polling remains available for local/manual operation, the production webhook bot and Nuxt SSR services remain private behind Caddy, Docker/Compose/routing/health/migration/independent-replacement checks pass and production HTTPS/BotFather/master-key configuration is documented.
+- Gate E — Final acceptance: full `uv run ruff format --check .`, `uv run ruff check .`, `uv run ty check`, branch-coverage pytest, frozen frontend format/lint/typecheck/tests/build/asset-scan/SSR-smoke/Playwright gates, Docker smoke and live Telegram/OIDC/provider gates are recorded with exact results.
 
 ### Done criteria
 
@@ -557,7 +579,7 @@ Phase 4 evidence:
 - [ ] Bot/global and chat/topic settings/admin permissions preserve existing precedence and scope boundaries with optimistic concurrency.
 - [ ] Managed chats have distinct enrollment, active, pause, detach, leave and forget behavior.
 - [ ] Query, stats, memory, exports, audit and operations pages are bounded, authorized and source-backed.
-- [ ] Polling/webhook, Docker, CI, migrations, docs and live acceptance gates pass with no secret leakage.
+- [ ] Polling and production webhook/Caddy/Nuxt SSR operation, Docker, CI, migrations, docs and live acceptance gates pass with no secret leakage.
 - [ ] `PLAN.md`, `plans/README.md` and this plan distinguish DONE, PARTIAL and TODO using reproduced evidence.
 
 ## 7. Risks & Assumptions
@@ -573,10 +595,11 @@ Phase 4 evidence:
 - **RISK-009**: Database-backed admin grants can outlive real Telegram membership changes; native membership is rechecked for sensitive scoped actions and grants remain explicitly revocable/auditable.
 - **RISK-010**: A large dashboard can recreate N+1 or unbounded telemetry/memory work; every list and timeseries must have SQL aggregation, indexes, page/time bounds and query-count tests.
 - **RISK-011**: Adding frontend tooling expands dependency and supply-chain surface; use exact locks, frozen installs, asset scans and separate dependency-review work rather than floating versions.
-- **RISK-012**: Serving static SPA fallbacks from FastAPI can shadow API/webhook/health paths; reserved-route precedence and artifact tests must prove those routes never return `index.html`.
-- **RISK-013**: Polling plus embedded Uvicorn adds lifecycle complexity; one composition root and supervised shutdown must prevent duplicate background workers or leaked bot/http sessions.
+- **RISK-012**: Caddy route drift could send API/auth/webhook/health traffic to Nuxt or credential-bearing requests to the presentation service; exact reserved-route artifact tests, upstream header removal and live proxy acceptance must stay release gates.
+- **RISK-013**: Running a polling bot beside the production webhook process against one SQLite database would create competing writers and Telegram update ownership; production Compose intentionally runs webhook mode only, while polling remains a separate local/manual topology.
 - **RISK-014**: Raw source viewing and browser exports expose more sensitive content than current compact Telegram commands; explicit actions, scope checks, auditing and no-store/download guidance are mandatory.
 - **RISK-015**: Live failover tests can consume quota or disable real keys; use disposable credentials/profile state, constant safe inputs and revoke them immediately after acceptance.
+- **RISK-016**: SSR can accidentally serialize auth-derived or secret state into HTML/hydration payloads; server-side auth short-circuits, a neutral protected-page gate, no-store policy, sentinel scans and JavaScript-disabled direct-route tests must remain in place.
 - **ASSUMPTION-001**: The deployment remains a trusted single-instance private service with SQLite and a stable HTTPS origin.
 - **ASSUMPTION-002**: `BOT_ADMINS` contains at least one recovery owner when the control plane is enabled.
 - **ASSUMPTION-003**: The user will configure BotFather Web Login and Main Mini App/menu URLs for each release environment.

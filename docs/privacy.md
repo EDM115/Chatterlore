@@ -39,6 +39,7 @@ PZP AI is built around explicit learning consent, scoped retrieval and reviewabl
 
 ## Operational Metadata
 
+- Nuxt SSR never authenticates or fetches privileged control-plane data on the server. Protected documents contain only a neutral access gate, Caddy removes cookie, authorization and CSRF headers before frontend requests, and browser session/user/provider state is loaded only after hydration from FastAPI so it cannot enter a shared HTML cache or Nuxt payload.
 - Browser OIDC and Mini App authentication normalize Telegram identity into `control_plane_users`, including the Telegram user ID and profile fields Telegram returns. Server-side sessions record that user reference, client kind, authentication/last-seen/expiry/step-up timestamps and revocation reason; they never persist the raw session cookie or CSRF token.
 - One-time OIDC transactions retain a state hash, encrypted PKCE verifier, nonce, fixed callback, safe relative return target, action and expiry/consumption timestamps. Authentication audit events contain only method, outcome and bounded reason codes; they exclude `initData`, authorization codes, tokens, PKCE values and provider response bodies.
 - Managed bot-admin and chat-admin grants plus managed-chat lifecycle rows are authoritative authorization metadata. The API re-resolves them for each session request, so removing a grant or pausing a managed chat stops exposing that capability without waiting for the browser UI to refresh its own assumptions.

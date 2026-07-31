@@ -3,7 +3,14 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[1]
+CONTAINER_ALL_INTERFACES = "0.0.0.0"  # noqa: S104 - asserted Compose listener contract
+
+
+def load_compose() -> dict:
+    return yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
 
 
 def test_dockerfile_is_multi_stage_non_root_and_health_checked() -> None:
@@ -49,6 +56,7 @@ def test_github_actions_ci_runs_quality_migration_and_docker_gates() -> None:
         "uv run pzp-bot --help",
         "uv run pzp-bot doctor",
         "docker build --tag pzp-ai:ci .",
+        "docker build --tag pzp-ai-web:ci ./web",
         "docker run --rm",
     ]:
         assert expected in workflow
@@ -99,3 +107,63 @@ def test_alembic_root_prefers_runtime_working_directory(monkeypatch, tmp_path) -
     monkeypatch.chdir(tmp_path)
 
     assert alembic_project_root() == tmp_path
+
+
+def test_compose_exposes_only_caddy_and_keeps_upstreams_independent() -> None:
+    services = load_compose()["services"]
+
+    assert set(services) == {"bot", "frontend", "proxy"}
+    assert services["bot"]["command"] == ["pzp-bot", "webhook"]
+    assert services["bot"]["expose"] == [8080]
+    assert "ports" not in services["bot"]
+    assert services["frontend"]["build"] == {"context": "./web", "dockerfile": "Dockerfile"}
+    assert services["frontend"]["expose"] == [3000]
+    assert "ports" not in services["frontend"]
+    assert services["frontend"]["environment"] == {
+        "NITRO_HOST": CONTAINER_ALL_INTERFACES,
+        "NITRO_PORT": 3000,
+        "NODE_ENV": "production",
+    }
+    assert services["proxy"]["image"] == "caddy:2.11.4-alpine"
+    assert services["proxy"]["ports"] == [
+        "${PZP_HTTP_PORT:-80}:80",
+        "${PZP_HTTPS_PORT:-443}:443",
+        "${PZP_HTTPS_PORT:-443}:443/udp",
+    ]
+    assert services["proxy"]["depends_on"] == {
+        "bot": {"condition": "service_started"},
+        "frontend": {"condition": "service_started"},
+    }
+    assert all(
+        "restart" not in dependency for dependency in services["proxy"]["depends_on"].values()
+    )
+
+
+def test_frontend_image_is_frozen_multi_stage_and_non_root() -> None:
+    dockerfile = (ROOT / "web" / "Dockerfile").read_text(encoding="utf-8")
+    ignored = set((ROOT / "web" / ".dockerignore").read_text(encoding="utf-8").splitlines())
+
+    assert "FROM node:24.18.0-bookworm-slim AS dependencies" in dockerfile
+    assert "FROM dependencies AS build" in dockerfile
+    assert "FROM node:24.18.0-bookworm-slim AS runtime" in dockerfile
+    assert "corepack prepare pnpm@11.18.0 --activate" in dockerfile
+    assert "pnpm install --frozen-lockfile" in dockerfile
+    assert "RUN pnpm build" in dockerfile
+    assert "COPY --from=build --chown=node:node /app/.output ./.output" in dockerfile
+    assert "USER node" in dockerfile
+    assert 'CMD ["node", ".output/server/index.mjs"]' in dockerfile
+    assert {".env", ".nuxt", ".output", "node_modules", "test-results"} <= ignored
+
+
+def test_caddy_reserves_backend_paths_and_strips_frontend_credentials() -> None:
+    caddyfile = (ROOT / "Caddyfile").read_text(encoding="utf-8")
+
+    assert "@backend path /api /api/* /auth /auth/* /telegram/webhook /health" in caddyfile
+    assert "handle @backend" in caddyfile
+    assert "reverse_proxy bot:8080" in caddyfile
+    assert "reverse_proxy frontend:3000" in caddyfile
+    assert "header_up -Cookie" in caddyfile
+    assert "header_up -Authorization" in caddyfile
+    assert "header_up -X-CSRF-Token" in caddyfile
+    assert caddyfile.index("handle @backend") < caddyfile.index("reverse_proxy frontend:3000")
+    assert "log {" not in caddyfile
