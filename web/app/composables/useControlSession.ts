@@ -76,6 +76,7 @@ export function useControlSession() {
   }
 
   async function bootstrap(): Promise<boolean> {
+    if (import.meta.server) return false;
     if (bootstrapped.value) return status.value === "authenticated";
     bootstrapped.value = true;
     const initData = import.meta.client ? window.Telegram?.WebApp.initData.trim() : "";

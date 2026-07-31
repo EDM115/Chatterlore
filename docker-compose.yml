@@ -7,6 +7,59 @@ services:
     environment:
       DB_URL: sqlite+aiosqlite:///data/bot.db
       MEMORY_DIR: data/memory
+      RUNTIME_MODE: webhook
+      WEBAPP_HOST: 0.0.0.0
+      WEBAPP_PORT: 8080
     volumes:
       - ./data:/app/data
-    command: ["pzp-bot", "polling"]
+    command: ["pzp-bot", "webhook"]
+    expose:
+      - 8080
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=5).read()"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    environment:
+      NITRO_HOST: 0.0.0.0
+      NITRO_PORT: 3000
+      NODE_ENV: production
+    expose:
+      - 3000
+    restart: unless-stopped
+
+  proxy:
+    image: caddy:2.11.4-alpine
+    environment:
+      CONTROL_PLANE_PUBLIC_ORIGIN: ${CONTROL_PLANE_PUBLIC_ORIGIN:-https://localhost}
+    ports:
+      - "${PZP_HTTP_PORT:-80}:80"
+      - "${PZP_HTTPS_PORT:-443}:443"
+      - "${PZP_HTTPS_PORT:-443}:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      bot:
+        condition: service_started
+      frontend:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "caddy", "validate", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

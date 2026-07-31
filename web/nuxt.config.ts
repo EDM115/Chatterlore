@@ -1,6 +1,6 @@
 export default defineNuxtConfig({
   compatibilityDate: "2026-07-30",
-  ssr: false,
+  ssr: true,
   devtools: { enabled: false },
   modules: ["@nuxt/ui"],
   css: ["~/assets/css/main.css"],
@@ -23,16 +23,18 @@ export default defineNuxtConfig({
       controlApiBase: "/api/control/v1",
     },
   },
+  routeRules: {
+    "/_nuxt/**": {
+      headers: { "cache-control": "public, max-age=31536000, immutable" },
+    },
+  },
   nitro: {
+    preset: "node-server",
     devProxy: {
       "/api": {
         target: process.env.PZP_API_DEV_ORIGIN ?? "http://127.0.0.1:8000",
         changeOrigin: true,
       },
-    },
-    prerender: {
-      crawlLinks: true,
-      routes: ["/"],
     },
   },
 });

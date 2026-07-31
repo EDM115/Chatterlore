@@ -96,8 +96,8 @@ jobs:
       - name: Check generated API types
         run: pnpm openapi:check
 
-      - name: Generate static frontend
-        run: pnpm generate
+      - name: Build SSR frontend
+        run: pnpm build
 
       - name: Scan generated frontend for server-only data
         env:
@@ -110,6 +110,9 @@ jobs:
           WEBHOOK_SECRET: phase2-ci-webhook-secret-that-must-never-ship
         run: pnpm scan:generated
 
+      - name: Smoke production SSR output
+        run: pnpm smoke:ssr
+
   docker:
     name: Docker Smoke
     runs-on: ubuntu-latest
@@ -119,6 +122,9 @@ jobs:
 
       - name: Build image
         run: docker build --tag pzp-ai:ci .
+
+      - name: Build frontend image
+        run: docker build --tag pzp-ai-web:ci ./web
 
       - name: Run doctor in image
         run: docker run --rm -e AI_PROVIDER=fake -e DB_URL=sqlite+aiosqlite:////tmp/pzp/bot.db -e MEMORY_DIR=/tmp/pzp/memory pzp-ai:ci pzp-bot doctor

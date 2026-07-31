@@ -1,4 +1,5 @@
 export default defineNuxtRouteMiddleware(async (to) => {
+  if (import.meta.server) return;
   const controlSession = useControlSession();
   const authenticated = await controlSession.bootstrap();
   if (authenticated) return;

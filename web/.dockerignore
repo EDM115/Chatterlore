@@ -1,0 +1,12 @@
+.env
+.env.*
+.git
+.gitignore
+.nuxt
+.output
+e2e
+node_modules
+playwright-report
+test
+test-results
+*.log

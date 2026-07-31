@@ -25,7 +25,7 @@ Read a plan completely before editing, run its drift check first, and leave its 
 | [018](018-aggregate-and-index-telemetry.md) | Additional B | Normalize telemetry scope, aggregate in SQL, and index audit queries | P3 | M | 006, 010 | DONE |
 | [019](019-stream-and-batch-bulk-transfer.md) | Additional C | Stream and batch memory imports and exports | P3 | L | 008, 013 | DONE |
 | [020](020-split-hotspots-behind-compatible-facades.md) | Additional D | Split service, repository, and router hotspots behind compatible facades | P3 | L | 001-005, 007-012, 017-019 | DONE |
-| [021](021-provider-key-pools-and-telegram-control-plane.md) | Product E | Add resilient provider key pools and a Telegram-authenticated Nuxt control plane | P1 | XL | 020 | PARTIAL — Phases 1–4 DONE; paused before Phase 5 |
+| [021](021-provider-key-pools-and-telegram-control-plane.md) | Product E | Add resilient provider key pools and a Telegram-authenticated Nuxt control plane | P1 | XL | 020 | PARTIAL — Phases 1–4 and the approved SSR/Caddy transition DONE; Phase 5 not started |
 ## Recommended execution order
 Wave A contains the independent safety fixes, gates, documentation repairs, and low-risk efficiency work: 001, 002, 003, 004, 005, 006, 011, 013, 015, 016, and 017. Plan 014 is also independent, but it is usually cheaper to execute it after an implementation batch so `PLAN.md` is reconciled once against the resulting state.
 Wave B starts after the migration drift gate exists: 007 and 009.
@@ -33,7 +33,7 @@ Wave C repairs the transactional summarization pipeline after its prerequisites:
 Wave D adds durable failure accounting and scalable bulk transfer after the pipeline and lockfile foundations: 010 and 019.
 Wave E builds incremental maintenance and queryable telemetry on the stabilized persistence model: 012 and 018.
 Wave F performs structural extraction only after the behavioral changes have settled: 020. This avoids moving defects or creating merge-heavy duplicate edits while the service, repository, and router behavior is still changing.
-Wave G is the separately requested product expansion in 021: encrypted provider-key pools, Telegram OIDC and Mini App authentication, scoped authorization, a Nuxt control plane, observability and release integration. The user approved it on 2026-07-30, Phases 1 through 4 are complete, execution is paused before Phase 5, and every later internal phase starts only after validation of the preceding phase.
+Wave G is the separately requested product expansion in 021: encrypted provider-key pools, Telegram OIDC and Mini App authentication, scoped authorization, a Nuxt control plane, observability and release integration. The user approved it on 2026-07-30, Phases 1 through 4 are complete, and the separately approved pre-Phase-5 transition replaced the static SPA boundary with protected Nuxt SSR behind Caddy plus independent bot/frontend images. Phase 5 has not started, and every later numbered phase starts only after validation of the preceding phase.
 ## Global execution rules
 - Preserve existing user changes and begin with read-only worktree inspection.
 - Use the project `.venv` and uv-managed Python; do not fall back to an outdated system Python. If the WinGet shim is broken, invoke uv from `%LOCALAPPDATA%\Microsoft\WinGet\Packages`.

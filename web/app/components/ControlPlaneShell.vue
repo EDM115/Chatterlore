@@ -1,17 +1,28 @@
 <script setup lang="ts">
 const route = useRoute();
 const controlSession = useControlSession();
+const hydrated = ref(false);
+
+onMounted(() => {
+  hydrated.value = true;
+});
+
+const authenticated = computed(
+  () => hydrated.value && controlSession.status.value === "authenticated",
+);
+const visibleUser = computed(() => (hydrated.value ? controlSession.user.value : null));
 
 const navigation = computed(() => {
-  if (controlSession.status.value === "authenticated") {
+  if (authenticated.value) {
     return [{ label: "Overview", to: "/" }];
   }
   return [{ label: "Sign in", to: "/login" }];
 });
 
 const accessLabel = computed(() => {
+  if (!hydrated.value) return "Authentication required";
   if (controlSession.hasCapability("bot.admin")) return "Bot administrator";
-  if (controlSession.status.value === "authenticated") return "Scoped administrator";
+  if (authenticated.value) return "Scoped administrator";
   return "Authentication required";
 });
 
@@ -49,9 +60,7 @@ const isCurrent = (to: string) => route.path === to;
           <strong>{{ accessLabel }}</strong>
           <small>
             {{
-              controlSession.user.value
-                ? `Telegram ${controlSession.user.value.telegram_user_id}`
-                : "Telegram-backed access"
+              visibleUser ? `Telegram ${visibleUser.telegram_user_id}` : "Telegram-backed access"
             }}
           </small>
         </span>
