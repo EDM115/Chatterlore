@@ -396,3 +396,134 @@ class AIUsage(Base):
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ControlPlaneUser(Base):
+    __tablename__ = "control_plane_users"
+    __table_args__ = (
+        Index("uq_control_plane_users_telegram_user_id", "telegram_user_id", unique=True),
+        Index("ix_control_plane_users_last_authenticated", "last_authenticated_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    telegram_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    first_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    last_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    language_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    photo_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    is_bot: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_premium: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    first_authenticated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    last_authenticated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    disabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+class ControlPlaneSession(Base):
+    __tablename__ = "control_plane_sessions"
+    __table_args__ = (
+        Index("uq_control_plane_sessions_token_hash", "token_hash", unique=True),
+        Index(
+            "ix_control_plane_sessions_user_active", "user_id", "revoked_at", "absolute_expires_at"
+        ),
+        Index("ix_control_plane_sessions_expiry", "idle_expires_at", "absolute_expires_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("control_plane_users.id", ondelete="CASCADE"), nullable=False
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    csrf_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    client_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    authenticated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    idle_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    absolute_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    step_up_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoke_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class OIDCAuthTransaction(Base):
+    __tablename__ = "oidc_auth_transactions"
+    __table_args__ = (
+        Index("uq_oidc_auth_transactions_state_hash", "state_hash", unique=True),
+        Index("ix_oidc_auth_transactions_expiry", "expires_at", "consumed_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    state_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    pkce_ciphertext: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    pkce_nonce: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    oidc_nonce: Mapped[str] = mapped_column(String(128), nullable=False)
+    redirect_uri: Mapped[str] = mapped_column(String(512), nullable=False)
+    return_to: Mapped[str] = mapped_column(String(512), nullable=False)
+    action: Mapped[str] = mapped_column(String(32), nullable=False)
+    expected_telegram_user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class BotAdminGrant(Base):
+    __tablename__ = "bot_admin_grants"
+    __table_args__ = (
+        Index("uq_bot_admin_grants_telegram_user_id", "telegram_user_id", unique=True),
+        Index("ix_bot_admin_grants_active", "revoked_at", "telegram_user_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    telegram_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    granted_by: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    granted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+class ChatAdminGrant(Base):
+    __tablename__ = "chat_admin_grants"
+    __table_args__ = (
+        Index("uq_chat_admin_grants_scope_user", "chat_id", "telegram_user_id", unique=True),
+        Index("ix_chat_admin_grants_user_active", "telegram_user_id", "revoked_at", "chat_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    telegram_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    granted_by: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    granted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+class ManagedChat(Base):
+    __tablename__ = "managed_chats"
+    __table_args__ = (
+        Index("uq_managed_chats_chat_id", "chat_id", unique=True),
+        Index("ix_managed_chats_status", "status", "updated_at"),
+        Index("ix_managed_chats_enrollment_expiry", "enrollment_expires_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    enrollment_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    enrollment_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_by: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_by: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    paused_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)

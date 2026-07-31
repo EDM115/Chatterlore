@@ -39,6 +39,9 @@ PZP AI is built around explicit learning consent, scoped retrieval and reviewabl
 
 ## Operational Metadata
 
+- Browser OIDC and Mini App authentication normalize Telegram identity into `control_plane_users`, including the Telegram user ID and profile fields Telegram returns. Server-side sessions record that user reference, client kind, authentication/last-seen/expiry/step-up timestamps and revocation reason; they never persist the raw session cookie or CSRF token.
+- One-time OIDC transactions retain a state hash, encrypted PKCE verifier, nonce, fixed callback, safe relative return target, action and expiry/consumption timestamps. Authentication audit events contain only method, outcome and bounded reason codes; they exclude `initData`, authorization codes, tokens, PKCE values and provider response bodies.
+- Managed bot-admin and chat-admin grants plus managed-chat lifecycle rows are authoritative authorization metadata. The API re-resolves them for each session request, so removing a grant or pausing a managed chat stops exposing that capability without waiting for the browser UI to refresh its own assumptions.
 - Telegram Bot API send failures and retry-after responses are logged with chat/thread/message/method metadata and without export payload text or provider secrets.
 - Runtime settings that are safe to edit are stored in SQLite with the current value, previous value, updater, timestamp and version. Secrets are not accepted as runtime settings.
 - Forget confirmations are persisted as hashed one-time challenges with expiry and consumption timestamps. Plain confirmation tokens are only shown to the admin who requested the destructive operation.

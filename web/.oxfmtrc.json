@@ -4,6 +4,7 @@
     ".output/**",
     "app/types/openapi.d.ts",
     "node_modules/**",
+    "openapi/control-plane.openapi.json",
     "playwright-report/**",
     "pnpm-lock.yaml",
     "test-results/**"

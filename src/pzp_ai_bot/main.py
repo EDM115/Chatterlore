@@ -337,6 +337,7 @@ def show_config() -> None:
         "forget_confirm_ttl_seconds": settings.forget_confirm_ttl_seconds,
         "log_level": settings.log_level,
         "bot_admins_count": len(settings.bot_admin_ids),
+        "control_plane": settings.control_plane_safe_config,
     }
     for key, value in visible.items():
         console.print(f"{key}: {value}")

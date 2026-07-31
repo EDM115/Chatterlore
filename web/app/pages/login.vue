@@ -2,18 +2,59 @@
 useSeoMeta({
   title: "Sign in · PZP AI Control Plane",
 });
+
+const route = useRoute();
+const controlSession = useControlSession();
+const returnTo = computed(() => safeReturnTo(route.query.return_to));
+const browserLoginHref = computed(
+  () => `/auth/telegram/start?return_to=${encodeURIComponent(returnTo.value)}`,
+);
+const miniAppLaunch = computed(
+  () => import.meta.client && Boolean(window.Telegram?.WebApp.initData.trim()),
+);
+
+onMounted(async () => {
+  if (await controlSession.bootstrap()) {
+    await navigateTo(returnTo.value);
+  }
+});
+
+function safeReturnTo(value: unknown): string {
+  if (
+    typeof value !== "string" ||
+    !value.startsWith("/") ||
+    value.startsWith("//") ||
+    value.includes("\\")
+  ) {
+    return "/";
+  }
+  return value;
+}
 </script>
 
 <template>
   <section class="state-page" aria-labelledby="login-title">
-    <p class="eyebrow">Authentication boundary</p>
-    <h1 id="login-title">Telegram sign-in is not connected yet.</h1>
+    <p class="eyebrow">Telegram identity</p>
+    <h1 id="login-title">
+      {{ miniAppLaunch ? "Verifying this Mini App launch…" : "Sign in with Telegram." }}
+    </h1>
     <p>
-      Browser OIDC and Mini App launch validation arrive together in Phase 3. Until then, this route
-      intentionally performs no authentication and stores no identity data.
+      {{
+        miniAppLaunch
+          ? "Your signed Telegram launch is being exchanged for the same revocable session used by the browser."
+          : "Telegram Login opens the official authorization flow and returns here without exposing credentials to this page."
+      }}
     </p>
+    <p v-if="controlSession.error.value" role="alert">{{ controlSession.error.value }}</p>
     <div class="state-actions">
-      <UButton disabled color="primary">Sign in with Telegram</UButton>
+      <a
+        v-if="!miniAppLaunch"
+        :href="browserLoginHref"
+        class="button-link"
+        data-testid="telegram-browser-login"
+      >
+        Sign in with Telegram
+      </a>
       <UButton to="/" color="neutral" variant="ghost">Return to overview</UButton>
     </div>
   </section>

@@ -7,6 +7,12 @@ from pzp_ai_bot.db.repos.challenges import (
     forget_challenge_view,
     settings_challenge_view,
 )
+from pzp_ai_bot.db.repos.control_plane import (
+    ControlPlaneAccessRepository,
+    ControlPlaneSessionRepository,
+    ControlPlaneUserRepository,
+    OIDCTransactionRepository,
+)
 from pzp_ai_bot.db.repos.embeddings import EmbeddingRepository
 from pzp_ai_bot.db.repos.events import EventRepository
 from pzp_ai_bot.db.repos.knowledge import KnowledgeRepository
@@ -43,6 +49,9 @@ __all__ = [
     "AIUsageStats",
     "CanonicalScopeSnapshotRecord",
     "CanonicalScopeSnapshotRepository",
+    "ControlPlaneAccessRepository",
+    "ControlPlaneSessionRepository",
+    "ControlPlaneUserRepository",
     "EffectiveScopeSettings",
     "EmbeddingRepository",
     "EventRepository",
@@ -55,6 +64,7 @@ __all__ = [
     "MemoryReviewRepository",
     "MessageRepository",
     "MessageScopeCounts",
+    "OIDCTransactionRepository",
     "PolicyRepository",
     "RetrievedItem",
     "RuntimeSettingRepository",

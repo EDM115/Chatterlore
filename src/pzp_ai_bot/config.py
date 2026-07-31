@@ -6,8 +6,9 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ProviderKind = Literal["fake", "openai_compatible", "local"]
@@ -41,6 +42,23 @@ class Settings(BaseSettings):
     webhook_secret: str = "change-me"  # noqa: S105
     webapp_host: str = "0.0.0.0"  # noqa: S104
     webapp_port: int = 8080
+
+    control_plane_enabled: bool = False
+    control_plane_public_origin: str = ""
+    telegram_oidc_client_id: str = ""
+    telegram_oidc_client_secret: str = ""
+    control_plane_auth_max_age_seconds: int = Field(default=300, ge=1)
+    control_plane_step_up_max_age_seconds: int = Field(default=300, ge=1)
+    control_plane_oidc_transaction_ttl_seconds: int = Field(default=600, ge=1)
+    control_plane_session_idle_seconds: int = Field(default=43_200, ge=60)
+    control_plane_session_absolute_seconds: int = Field(default=604_800, ge=60)
+    control_plane_master_keys: str = ""
+    control_plane_active_master_key_id: str = ""
+    control_plane_rate_limit_window_seconds: int = Field(default=60, ge=1)
+    control_plane_auth_start_rate_limit: int = Field(default=10, ge=1)
+    control_plane_auth_callback_rate_limit: int = Field(default=20, ge=1)
+    control_plane_mini_app_rate_limit: int = Field(default=20, ge=1)
+    control_plane_step_up_rate_limit: int = Field(default=10, ge=1)
 
     db_url: str = "sqlite+aiosqlite:///data/bot.db"
     memory_dir: Path = Path("data/memory")
@@ -77,6 +95,42 @@ class Settings(BaseSettings):
     review_before_compact: bool = False
     fake_embedding_dimensions: int = Field(default=64, ge=8)
 
+    @model_validator(mode="after")
+    def validate_control_plane_bootstrap(self) -> Settings:
+        origin = self.control_plane_public_origin.strip().rstrip("/")
+        if origin:
+            parts = urlsplit(origin)
+            if (
+                parts.scheme != "https"
+                or not parts.hostname
+                or parts.username is not None
+                or parts.password is not None
+                or parts.query
+                or parts.fragment
+                or parts.path not in {"", "/"}
+            ):
+                raise ValueError("control plane requires an HTTPS public origin without a path")
+            self.control_plane_public_origin = origin
+        if self.control_plane_session_idle_seconds > self.control_plane_session_absolute_seconds:
+            raise ValueError("control plane session idle TTL cannot exceed absolute TTL")
+        key_ids = self.control_plane_master_key_ids
+        if (
+            self.control_plane_active_master_key_id
+            and self.control_plane_active_master_key_id not in key_ids
+        ):
+            raise ValueError("active control-plane master key ID is not present in the key map")
+        if not self.control_plane_enabled:
+            return self
+        if not origin:
+            raise ValueError("control plane requires an HTTPS public origin")
+        if not self.telegram_bot_token.strip():
+            raise ValueError("control plane requires a Telegram bot token")
+        if not self.telegram_oidc_client_id.strip():
+            raise ValueError("control plane requires a Telegram OIDC client ID")
+        if not self.telegram_oidc_client_secret.strip():
+            raise ValueError("control plane requires a Telegram OIDC client secret")
+        return self
+
     @property
     def bot_admin_ids(self) -> set[int]:
         ids: set[int] = set()
@@ -96,6 +150,52 @@ class Settings(BaseSettings):
         if not self.db_url.startswith(prefix):
             return None
         return Path(self.db_url.removeprefix(prefix))
+
+    @property
+    def control_plane_callback_url(self) -> str:
+        if not self.control_plane_public_origin:
+            return ""
+        return f"{self.control_plane_public_origin}/auth/telegram/callback"
+
+    @property
+    def control_plane_master_key_map(self) -> dict[str, str]:
+        if not self.control_plane_master_keys.strip():
+            return {}
+        try:
+            payload = json.loads(self.control_plane_master_keys)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"CONTROL_PLANE_MASTER_KEYS must be JSON: {exc.msg}") from exc
+        if not isinstance(payload, dict):
+            raise ValueError("CONTROL_PLANE_MASTER_KEYS must be a JSON object")
+        keys = {
+            str(key).strip(): str(value).strip()
+            for key, value in payload.items()
+            if str(key).strip() and str(value).strip()
+        }
+        if len(keys) != len(payload):
+            raise ValueError("CONTROL_PLANE_MASTER_KEYS cannot contain empty IDs or values")
+        return keys
+
+    @property
+    def control_plane_master_key_ids(self) -> tuple[str, ...]:
+        return tuple(sorted(self.control_plane_master_key_map))
+
+    @property
+    def control_plane_safe_config(self) -> dict[str, Any]:
+        return {
+            "enabled": self.control_plane_enabled,
+            "public_origin": self.control_plane_public_origin,
+            "callback_url": self.control_plane_callback_url,
+            "oidc_client_configured": bool(
+                self.telegram_oidc_client_id and self.telegram_oidc_client_secret
+            ),
+            "master_key_ids": list(self.control_plane_master_key_ids),
+            "active_master_key_id": self.control_plane_active_master_key_id,
+            "auth_max_age_seconds": self.control_plane_auth_max_age_seconds,
+            "step_up_max_age_seconds": self.control_plane_step_up_max_age_seconds,
+            "session_idle_seconds": self.control_plane_session_idle_seconds,
+            "session_absolute_seconds": self.control_plane_session_absolute_seconds,
+        }
 
     @property
     def custom_redaction_patterns(self) -> tuple[str, ...]:

@@ -4,19 +4,11 @@ import argparse
 import json
 from pathlib import Path
 
-from fastapi import FastAPI
+from pzp_ai_bot.control_plane.app import create_control_plane_schema_app
 
 
 def control_plane_openapi_json() -> str:
-    app = FastAPI(
-        title="PZP AI Control Plane API",
-        summary="Telegram-authenticated control-plane contract",
-        version="0.1.0",
-        docs_url=None,
-        redoc_url=None,
-        openapi_url=None,
-    )
-    schema = app.openapi()
+    schema = create_control_plane_schema_app().openapi()
     return json.dumps(schema, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
 
 

@@ -22,7 +22,7 @@ uv run pytest
 
 The default `AI_PROVIDER=fake` is deterministic and does not call external AI services. Use it for local development, CI and documentation examples.
 
-The Phase 2 control-plane shell is developed separately and is not served by the production Python runtime yet:
+The control-plane client is developed separately and is not served as production static content by the Python runtime yet:
 
 ```powershell
 Set-Location web
@@ -31,7 +31,22 @@ pnpm runtime:check
 pnpm dev
 ```
 
-The development client uses same-origin `/api/control/v1` requests and proxies `/api` to `PZP_API_DEV_ORIGIN`, which defaults to `http://127.0.0.1:8000`. The current Phase 2 shell contains no authentication, privileged forms or implemented control-plane API routes; those remain gated behind later Plan 021 phases. A cold Nuxt development start can display the loading template while the initial client bundle compiles.
+The development client uses credentialed same-origin `/api/control/v1` requests and proxies `/api` to `PZP_API_DEV_ORIGIN`, which defaults to `http://127.0.0.1:8000`. Phase 3 implements browser OIDC, signed Mini App exchange, server-side sessions, logout, Mini App step-up and capability-driven navigation. The backend auth routes are attached when the webhook FastAPI application starts with `CONTROL_PLANE_ENABLED=true`; privileged settings, provider, chat, memory and operations forms remain unavailable. A cold Nuxt development start can display the loading template while the initial client bundle compiles.
+
+To configure the Phase 3 identity boundary, create a Telegram Login OIDC client in BotFather, allow the exact public origin and register the fixed callback `<CONTROL_PLANE_PUBLIC_ORIGIN>/auth/telegram/callback`. Use an HTTPS origin without a path, query or fragment:
+
+```dotenv
+CONTROL_PLANE_ENABLED=true
+CONTROL_PLANE_PUBLIC_ORIGIN=https://control.example.com
+TELEGRAM_OIDC_CLIENT_ID=
+TELEGRAM_OIDC_CLIENT_SECRET=
+CONTROL_PLANE_AUTH_MAX_AGE_SECONDS=300
+CONTROL_PLANE_STEP_UP_MAX_AGE_SECONDS=300
+CONTROL_PLANE_SESSION_IDLE_SECONDS=43200
+CONTROL_PLANE_SESSION_ABSOLUTE_SECONDS=604800
+```
+
+Enabling the control plane fails closed when the HTTPS origin, Telegram bot token, OIDC client ID or OIDC client secret is absent. `pzp-bot show-config` reports only the origin, fixed callback, configured-state booleans, key IDs and TTL metadata; it never prints the OIDC secret or master-key material. `CONTROL_PLANE_MASTER_KEYS` and `CONTROL_PLANE_ACTIVE_MASTER_KEY_ID` are parsed now so deployment configuration is stable, but provider-vault preflight and encrypted provider credentials do not become active until Plan 021 Phase 4.
 
 For an OpenAI-backed run, keep the key out of committed files and select the model plus reasoning effort explicitly:
 

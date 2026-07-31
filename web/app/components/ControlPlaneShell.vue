@@ -1,10 +1,19 @@
 <script setup lang="ts">
 const route = useRoute();
+const controlSession = useControlSession();
 
-const navigation = [
-  { label: "Overview", to: "/" },
-  { label: "Sign in", to: "/login" },
-];
+const navigation = computed(() => {
+  if (controlSession.status.value === "authenticated") {
+    return [{ label: "Overview", to: "/" }];
+  }
+  return [{ label: "Sign in", to: "/login" }];
+});
+
+const accessLabel = computed(() => {
+  if (controlSession.hasCapability("bot.admin")) return "Bot administrator";
+  if (controlSession.status.value === "authenticated") return "Scoped administrator";
+  return "Authentication required";
+});
 
 const isCurrent = (to: string) => route.path === to;
 </script>
@@ -37,8 +46,14 @@ const isCurrent = (to: string) => route.path === to;
       <div class="sidebar-note">
         <span class="status-dot" aria-hidden="true" />
         <span>
-          <strong>Foundation mode</strong>
-          <small>Authentication arrives in Phase 3</small>
+          <strong>{{ accessLabel }}</strong>
+          <small>
+            {{
+              controlSession.user.value
+                ? `Telegram ${controlSession.user.value.telegram_user_id}`
+                : "Telegram-backed access"
+            }}
+          </small>
         </span>
       </div>
     </aside>
