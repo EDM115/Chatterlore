@@ -1,4 +1,4 @@
-const TELEGRAM_WEB_APP_SCRIPT = "https://telegram.org/js/telegram-web-app.js?61";
+export const TELEGRAM_WEB_APP_SCRIPT = "https://telegram.org/js/telegram-web-app.js?63";
 
 export default defineNuxtPlugin(() => {
   const prepareTelegram = () => {

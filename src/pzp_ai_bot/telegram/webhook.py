@@ -10,6 +10,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from pzp_ai_bot.app_context import AppContext
+from pzp_ai_bot.control_plane.app import install_control_plane
 from pzp_ai_bot.telegram.commands import register_bot_commands
 from pzp_ai_bot.telegram.dispatcher import build_dispatcher
 from pzp_ai_bot.telegram.scheduler import (
@@ -57,6 +58,8 @@ def create_webhook_app(
         finally:
             await stop_task(idle_task)
             await stop_task(settings_task)
+            if context.control_plane is not None:
+                await context.control_plane.oidc.aclose()
             if owns_bot:
                 await telegram_bot.session.close()
 
@@ -85,6 +88,9 @@ def create_webhook_app(
         return JSONResponse(
             status_code=200 if healthy else 503, content={"ok": healthy, "tasks": task_health}
         )
+
+    if context.settings.control_plane_enabled:
+        install_control_plane(app, context)
 
     return app
 

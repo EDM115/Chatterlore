@@ -1,6 +1,7 @@
 import { mountSuspended } from "@nuxt/test-utils/runtime";
 import { describe, expect, it } from "vitest";
 import ControlPlaneShell from "../app/components/ControlPlaneShell.vue";
+import { TELEGRAM_WEB_APP_SCRIPT } from "../app/plugins/telegram.client";
 
 describe("ControlPlaneShell", () => {
   it("keeps the main content reachable by keyboard before navigation", async () => {
@@ -16,8 +17,12 @@ describe("ControlPlaneShell", () => {
   it("exposes distinct accessible desktop and mobile navigation", async () => {
     const wrapper = await mountSuspended(ControlPlaneShell);
 
-    expect(wrapper.get('nav[aria-label="Primary navigation"]').text()).toContain("Overview");
+    expect(wrapper.get('nav[aria-label="Primary navigation"]').text()).toContain("Sign in");
     expect(wrapper.get('nav[aria-label="Mobile navigation"]').text()).toContain("Sign in");
     expect(wrapper.get("summary").text()).toBe("Menu");
+  });
+
+  it("loads the current official Telegram Web App script revision", () => {
+    expect(TELEGRAM_WEB_APP_SCRIPT).toBe("https://telegram.org/js/telegram-web-app.js?63");
   });
 });

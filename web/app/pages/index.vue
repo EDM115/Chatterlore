@@ -1,4 +1,6 @@
 <script setup lang="ts">
+definePageMeta({ middleware: "auth" });
+
 useSeoMeta({
   title: "Overview · PZP AI Control Plane",
 });
@@ -36,7 +38,7 @@ const foundations = [
         controls early.
       </p>
     </div>
-    <UBadge color="neutral" variant="soft" size="lg">Phase 2 preview</UBadge>
+    <UBadge color="neutral" variant="soft" size="lg">Phase 3 identity</UBadge>
   </section>
 
   <section class="foundation-grid" aria-label="Control-plane foundations">
@@ -52,8 +54,8 @@ const foundations = [
       <p class="eyebrow">Next checkpoint</p>
       <h2 id="next-step-title">Authentication before administration</h2>
       <p>
-        No settings, credentials, memory or group actions are available until Telegram identity,
-        session and authorization boundaries land in the next approved phase.
+        Telegram identity, revocable sessions and live capability checks are connected. Settings,
+        credentials, memory and group controls remain unavailable until their approved phases land.
       </p>
     </div>
     <UButton to="/login" color="primary" variant="solid">View sign-in readiness</UButton>

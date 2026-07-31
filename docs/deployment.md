@@ -32,6 +32,8 @@ The FastAPI endpoint rejects requests whose `X-Telegram-Bot-Api-Secret-Token` he
 
 Webhook deployments should probe `GET /health`. It returns HTTP 200 with `pzp-idle-summarizer` and `pzp-runtime-settings-refresher` set to `true` only while both critical background task handles are running; it returns HTTP 503 with the failed task set to `false` when either loop has stopped. Ordinary iteration failures are retried with bounded exponential backoff and do not make health fail unless the task itself terminates.
 
+When `CONTROL_PLANE_ENABLED=true`, the webhook FastAPI application also installs the Phase 3 Telegram OIDC, Mini App exchange and session endpoints. The public origin must be the exact HTTPS origin used by the browser and registered with BotFather, and the reverse proxy must preserve secure cookies and route the fixed `/auth/telegram/callback` plus `/api/control/v1/auth/*` and `/api/control/v1/session` paths to this application. Phase 3 does not yet add generated Nuxt static assets to the Docker image or serve them from FastAPI, and polling mode still has no HTTP server; production control-plane deployment remains deferred until the later static-serving/runtime phase.
+
 ## Docker
 
 The Docker image uses a multi-stage `python:3.12-slim` build, pins uv 0.12.0, installs the exact production dependency set from `uv.lock` through frozen syncs, installs the project non-editably so the copied runtime environment is self-contained, runs as the non-root `pzp` user and includes a `pzp-bot doctor` healthcheck. The dependency layer copies `pyproject.toml`, `uv.lock` and `README.md` before application source so ordinary source edits reuse the locked dependency layer.

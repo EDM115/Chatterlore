@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from pzp_ai_bot.ai import ProviderRegistry, build_providers
 from pzp_ai_bot.config import Settings
+from pzp_ai_bot.control_plane.runtime import ControlPlaneRuntime, build_control_plane_runtime
 from pzp_ai_bot.db.session import create_session_factory, upgrade_schema
 from pzp_ai_bot.logging import configure_logging
 from pzp_ai_bot.memory.service import MemoryService
@@ -18,6 +19,7 @@ class AppContext:
     session_factory: async_sessionmaker
     memory: MemoryService
     admins: AdminService
+    control_plane: ControlPlaneRuntime | None = None
 
 
 async def build_context(settings: Settings, *, ensure_schema: bool = True) -> AppContext:
@@ -38,6 +40,15 @@ async def build_context(settings: Settings, *, ensure_schema: bool = True) -> Ap
     await memory.rebuild_daily_projection()
     await memory.refresh_runtime_settings()
     admins = AdminService(settings.bot_admin_ids, ttl_seconds=settings.admin_cache_ttl_seconds)
+    control_plane = (
+        build_control_plane_runtime(settings, session_factory, admins)
+        if settings.control_plane_enabled
+        else None
+    )
     return AppContext(
-        settings=settings, session_factory=session_factory, memory=memory, admins=admins
+        settings=settings,
+        session_factory=session_factory,
+        memory=memory,
+        admins=admins,
+        control_plane=control_plane,
     )

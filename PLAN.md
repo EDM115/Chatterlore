@@ -1,10 +1,10 @@
 ---
 goal: Telegram Group Memory Assistant PoC v1
-version: 0.36
+version: 0.37
 date_created: 2026-06-16
-last_updated: 2026-07-30
+last_updated: 2026-07-31
 owner: PZP-AI
-status: In progress — Plan 021 Phases 1 and 2 are complete and paused for validation before Phase 3; production deployment and elapsed-retention validation remain deferred
+status: In progress — Plan 021 Phase 3 is complete and paused for validation before Phase 4; provider vault/pools, product workflows, production deployment and elapsed-retention validation remain deferred
 tags:
   - telegram
   - ai
@@ -69,7 +69,7 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 
 - **DONE**: `pyproject.toml` defines Python 3.12 package `pzp-ai`
 - **DONE**: `uv.lock` exists and CI/Docker consume it immutably with uv 0.12.0 pinned in both build surfaces
-- **DONE**: Runtime dependencies include `aiogram`, `fastapi`, `uvicorn[standard]`, `sqlalchemy[asyncio]`, `aiosqlite`, `alembic`, `openai`, `numpy`, `typer`, `rich`, `structlog` and `orjson`
+- **DONE**: Runtime dependencies include `aiogram`, `fastapi`, `uvicorn[standard]`, `sqlalchemy[asyncio]`, `aiosqlite`, `alembic`, `openai`, `numpy`, `typer`, `rich`, `structlog`, `orjson`, `cryptography` and `PyJWT[crypto]`
 - **DONE**: Dev dependencies include `pytest`, `pytest-asyncio`, `pytest-cov`, `respx`, `freezegun`, `httpx2`, `ruff` and `ty`
 - **DONE**: Optional local embedding extra includes `sentence-transformers`
 - **DONE**: `pzp-bot` console script points to `pzp_ai_bot.main:app`
@@ -82,12 +82,13 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 
 - **DONE**: `src/pzp_ai_bot/main.py` provides the Typer CLI
 - **DONE**: `src/pzp_ai_bot/config.py` loads environment settings
-- **DONE**: `src/pzp_ai_bot/app_context.py` composes settings, DB sessions, providers, memory service and admin service
+- **DONE**: `src/pzp_ai_bot/app_context.py` composes settings, DB sessions, providers, memory service, admin service and the optional control-plane identity runtime
+- **DONE**: `src/pzp_ai_bot/control_plane/` owns Telegram Mini App/OIDC validation, encrypted one-time transactions, opaque sessions, actor/capability resolution, auth API routes, origin/CSRF checks and security headers without importing Nuxt
 - **DONE**: `src/pzp_ai_bot/ai/` defines provider protocols and fake/OpenAI/local provider implementations
 - **DONE**: `src/pzp_ai_bot/db/` defines async SQLAlchemy models and session helpers; cohesive implementations live in `db/repos/`, and `db/repositories.py` remains a stable compatibility re-export facade
 - **DONE**: `src/pzp_ai_bot/memory/` defines scopes, policy evaluation, vectors and deterministic Markdown projections; `MemoryService` remains the stable `build_context` facade while contracts, transfer, provider operations/telemetry, settings/profiles/templates, retrieval, mutation/reviews/retention and summary/compaction orchestration live in cohesive collaborator modules
 - **DONE**: `src/pzp_ai_bot/telegram/` defines admin checks, utility parsing, polling/webhook runtime and a stable root router that composes characterized command-family builders for learning, operations, settings, retrieval and memory behavior through shared authorization/safe-reply helpers
-- **DONE**: `alembic/versions/0001_initial.py` creates the initial SQLite schema, revisions 0002 through 0006 add the Phase 2-6 data surfaces, `0007_align_telegram_identifier_types.py` aligns persisted Telegram identifiers with the models' `BigInteger` declarations, `0008_message_logical_uniqueness.py` reconciles duplicate logical messages and enforces their SQLite expression index, `0009_summary_claims.py` adds persisted bounded summary-work claims, `0010_remove_cross_scope_can_learn.py` removes the unused cross-scope learning-permission column without changing query permissions, `0011_canonical_scope_snapshots.py` adds validated per-scope canonical derived-cache rows, and `0012_telemetry_scope_indexes.py` normalizes usage scope and indexes usage/event query paths.
+- **DONE**: `alembic/versions/0001_initial.py` creates the initial SQLite schema, revisions 0002 through 0006 add the Phase 2-6 data surfaces, `0007_align_telegram_identifier_types.py` aligns persisted Telegram identifiers with the models' `BigInteger` declarations, `0008_message_logical_uniqueness.py` reconciles duplicate logical messages and enforces their SQLite expression index, `0009_summary_claims.py` adds persisted bounded summary-work claims, `0010_remove_cross_scope_can_learn.py` removes the unused cross-scope learning-permission column without changing query permissions, `0011_canonical_scope_snapshots.py` adds validated per-scope canonical derived-cache rows, `0012_telemetry_scope_indexes.py` normalizes usage scope and indexes usage/event query paths, and `0013_control_plane_identity_access.py` adds indexed control-plane identity/session/OIDC/admin/managed-chat state
 - **DONE**: `docs/` contains setup, architecture, command, privacy, deployment, operations, secrets, release and test documentation
 - **DONE**: `tests/` contains offline unit/integration coverage for core behavior
 
@@ -102,7 +103,7 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 - **DONE**: `pzp-bot export-memory --format md|jsonl --scope <scope> [--out path]` keyset-pages knowledge and streams bounded chunks directly to a file or stdout; global Markdown streams the canonical file and unsupported formats or invalid scopes are rejected before opening the app context
 - **DONE**: `pzp-bot import-jsonl --file path --chat-id id [--thread-id id]` incrementally validates up to 512 MiB/100,000 rows, embeds outside transactions and commits retry-safe content/source tuples in independently audited 100-row checkpoints with precise line errors
 - **DONE**: `pzp-bot import-telegram-json --file path --chat-id id [--thread-id id]` uses pinned `ijson==3.5.1` iterators for supported Telegram Desktop and Bot API shapes, rejects unsupported shapes before business writes and imports retry-safe logical messages in independently audited 100-row checkpoints
-- **DONE**: `pzp-bot show-config` prints non-secret runtime settings, provider profiles, default system prompt, reasoning level and redacted credential-bearing database URLs
+- **DONE**: `pzp-bot show-config` prints non-secret runtime settings, provider profiles, default system prompt, reasoning level, safe control-plane configured-state/key-ID/TTL metadata and redacted credential-bearing database URLs
 - **DONE**: `pzp-bot doctor` checks configured provider profiles, missing OpenAI-compatible API keys, missing local optional dependencies, SQLite parent write access and memory directory write access
 - **DONE**: `pzp-bot audit-events --limit N [--event-type name] [--scope scope] [--format text|jsonl] [--out path]` reviews or exports recent `bot_events`
 - **DONE**: `pzp-bot runtime-settings [--reload] [--set key=value]...` views, reloads or edits validated safe database-backed runtime settings
@@ -137,7 +138,7 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 
 ### Persistence And Memory
 
-- **DONE**: SQLite tables exist for `messages`, `knowledge_items`, `embeddings`, `learning_policies`, `scope_metadata`, `scope_settings`, `memory_review_items`, `memory_profiles`, `memory_profile_scopes`, `memory_scope_permissions`, `summary_templates`, `system_prompt_templates`, `runtime_settings`, `forget_challenges`, `settings_challenges`, `canonical_scope_snapshots`, `bot_events` and `ai_usage`
+- **DONE**: SQLite tables exist for `messages`, `knowledge_items`, `embeddings`, `learning_policies`, `scope_metadata`, `scope_settings`, `memory_review_items`, `memory_profiles`, `memory_profile_scopes`, `memory_scope_permissions`, `summary_templates`, `system_prompt_templates`, `runtime_settings`, `forget_challenges`, `settings_challenges`, `canonical_scope_snapshots`, `bot_events`, `ai_usage`, `control_plane_users`, `control_plane_sessions`, `oidc_auth_transactions`, `bot_admin_grants`, `chat_admin_grants` and `managed_chats`
 - **DONE**: Raw messages are stored with Telegram IDs, chat/thread/user IDs, optional chat/topic/source-link metadata, text, normalized text, learned flag, skip reason, reply ID and timestamps
 - **DONE**: Knowledge items store kind, content, scope, source message IDs, JSON metadata and timestamps
 - **DONE**: Embeddings store target type, target ID, scope, provider, model, dimensions, vector blob and timestamp
@@ -181,6 +182,18 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 - **DONE**: Webhook `GET /health` returns HTTP 200 only while both critical task handles are running and not done, and HTTP 503 with per-task booleans when either task is dead
 - **DONE**: Telegram update handling uses structured `structlog` logging with safe chat/thread/user/message metadata, duration and error fields
 - **DONE**: Telegram commands that accept `scope=` authorize the target scope, so chat admins can operate only on the current chat while configured bot admins can operate across chats and `scope=all`
+
+### Control-Plane Identity
+
+- **DONE**: Enabled control-plane configuration requires one exact path-free HTTPS public origin, the Telegram bot token and OIDC client credentials; the callback is fixed, TTL/rate/master-key metadata is validated and `show-config` never emits OIDC or master-key material
+- **DONE**: Telegram Mini App `initData` is strictly parsed with duplicate rejection, documented HMAC validation, constant-time comparison, future/age bounds and typed human Telegram identity extraction; `initDataUnsafe` is never trusted
+- **DONE**: Telegram browser login uses discovery plus Authorization Code, S256 PKCE, state and nonce; bounded httpx token/JWKS calls and PyJWT verification stay fixed to RS256 and require the expected issuer, audience, numeric Telegram ID and time claims
+- **DONE**: One-time OIDC rows store only a state hash and AES-GCM-encrypted PKCE verifier bound to the state/fixed callback, consume atomically before callback errors are handled and reject replay, expiry, unsafe return paths, missing codes, OAuth errors and identity mismatch
+- **DONE**: Opaque server sessions persist only SHA-256 cookie/CSRF hashes with idle/absolute expiry, rotation, revocation, account-switch replacement, step-up time and cleanup; browser and Mini App entry paths upsert one shared Telegram user model
+- **DONE**: Shared authorization combines configured bot admins, active managed bot-admin grants, active delegated chat grants and concrete Telegram-native admin lookup without importing Nuxt; grants and managed-chat state are resolved afresh so removal/pause takes effect immediately
+- **DONE**: FastAPI provides browser start/callback, Mini App exchange, session, logout and Mini App step-up routes with separate rate buckets, Secure/HttpOnly/SameSite cookies, strict same-origin and CSRF enforcement, no-store/security headers, Telegram-limited CSP and content-free auth audit reasons
+- **DONE**: Nuxt keeps session and CSRF state in process memory only, performs exactly one signed Mini App exchange or regular-browser session restoration, redirects browser login through the backend OIDC route and uses capabilities only for navigation UX rather than authority
+- **PARTIAL**: Phase 3 auth endpoints are attached to enabled webhook FastAPI applications, but generated Nuxt static serving, polling-mode HTTP lifecycle and the remaining privileged API routes are deferred to later Plan 021 phases
 
 ### Documentation
 
@@ -229,9 +242,9 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 
 - **PARTIAL**: Disposable-group Telegram command, privacy/admin, learning, summarization, retrieval, settings, export and forget behavior passed live on 2026-07-30; only retention after real elapsed age remains a manual Gate C validation.
 - **PARTIAL**: Local Docker acceptance is current, but the production deployment and deployment-specific secret injection/sizing validation are explicitly deferred.
-- **PARTIAL**: Plan 021 Phases 1 and 2 are implemented: the approved contracts and reviewed pins now have an exact-pinned pnpm/Nuxt workspace, pnpm-managed Node 24.18.0, accessible responsive unprivileged shell, same-origin API development boundary, deterministic OpenAPI/type drift gate, frozen frontend CI job and generated-asset secret scan. No control-plane auth/API or key-pool production behavior has landed yet, and execution is paused before Phase 3 for user validation.
+- **PARTIAL**: Plan 021 Phases 1 through 3 are implemented: the exact-pinned Nuxt shell now shares one revocable database session model across strict signed Mini App exchange and Telegram OIDC Authorization Code/PKCE, with origin/CSRF/security-header enforcement, capability-driven navigation, content-free auth audit events and revision 0013 identity/access persistence. Provider vault/pools, privileged product workflows, production static serving and live BotFather acceptance have not landed, and execution is paused before Phase 4 for user validation.
 - **TODO**: Provider profiles support several separately keyed bootstrap profiles and restartless manual profile switching, but one profile still resolves only one key. Plan 021 specifies multiple credentials per profile, sticky healthy-key selection, bounded same-key retry, classified rotation, cooldown/hard-disable state, concurrency control, safe telemetry and deduplicated best-effort bot-admin DM alerts. Until it lands, invalid payload classification, pool exhaustion behavior, encrypted database-managed keys and automatic failover remain unimplemented.
-- **PARTIAL**: The Nuxt control-plane foundation exists and generates a responsive desktop/Mini-App-ready shell, but the current bot still has no browser OIDC flow, Mini App session exchange, FastAPI control API/static serving, managed-chat dashboard, encrypted credential vault, graphical scope administration, web query workspace, memory explorer or operational dashboard.
+- **PARTIAL**: The Nuxt control-plane identity shell and FastAPI authentication/session routes exist, but production static serving, polling-mode HTTP integration, the managed-chat dashboard, encrypted credential vault, graphical scope administration, web query workspace, memory explorer and operational dashboard remain unimplemented.
 
 ## 5. Remaining Roadmap
 
@@ -348,14 +361,14 @@ Goal: make the assistant useful to group admins and participants beyond the mini
 
 Goal: add the requested operator experience and remove each provider profile's single-key failure domain without weakening Telegram scope authorization or secret handling.
 
-Plan 021 execution checkpoint: Implementation Phases 1 and 2 (`TASK-001` through `TASK-012`) are DONE on 2026-07-30 and the project is deliberately paused before Implementation Phase 3 for user validation. The frontend foundation uses pnpm-managed Node.js `24.18.0`, pnpm `11.18.0`, Nuxt `4.5.1`, Nuxt UI `4.10.0`, TypeScript `6.0.3`, oxlint `1.76.0`, `oxlint-tsgolint` `7.0.2001` and oxfmt `0.61.0`; Alembic remains at `0012_telemetry_scope_indexes`, and `cryptography==49.0.0` plus `PyJWT[crypto]==2.13.0` remain uninstalled until their planned auth/vault phase.
+Plan 021 execution checkpoint: Implementation Phases 1 through 3 (`TASK-001` through `TASK-023`) are DONE through 2026-07-31 and the project is deliberately paused before Implementation Phase 4 for user validation. The frontend baseline remains pnpm-managed Node.js `24.18.0`, pnpm `11.18.0`, Nuxt `4.5.1`, Nuxt UI `4.10.0`, TypeScript `6.0.3`, oxlint `1.76.0`, `oxlint-tsgolint` `7.0.2001` and oxfmt `0.61.0`; Alembic is at `0013_control_plane_identity_access`, and `cryptography==49.0.0` plus `PyJWT[crypto]==2.13.0` moved forward from Phase 4 because Phase 3 requires AES-GCM-protected PKCE transactions and RS256 ID-token verification. Provider-vault preflight and envelope encryption remain Phase 4 work.
 
 | Task     | Status | Description                                                                                     | Acceptance Criteria                                                                                                                                                                                     |
 | -------- | ------ | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | TASK-068 | TODO   | Add the envelope-encrypted managed provider-secret vault and multi-key profile persistence      | Multiple credentials can be added, reordered, disabled, tested, rotated and removed without restart; plaintext is never persisted outside the bounded decrypt/reveal path                               |
 | TASK-069 | TODO   | Add sticky provider-key selection, failure classification, bounded retry/failover and DM alerts | Safe classifier tests distinguish invalid requests from key/provider failures; concurrent calls cannot corrupt state; exhausted pools fail once; sanitized alert delivery is deduplicated and non-fatal |
-| TASK-070 | TODO   | Add Telegram OIDC, Mini App `initData` validation, opaque sessions, CSRF and step-up            | Both entry modes resolve the same Telegram identity and revocable server-side session; stale/replayed/tampered auth and unauthorized secret reveal fail closed                                          |
-| TASK-071 | PARTIAL | Add the static Nuxt 4/Vue 3/Nuxt UI control plane and same-origin FastAPI API                  | The exact-pinned accessible static shell and development API boundary are DONE; authenticated navigation, FastAPI handlers and production static serving remain TODO                                    |
+| TASK-070 | DONE   | Add Telegram OIDC, Mini App `initData` validation, opaque sessions, CSRF and step-up            | Both entry modes resolve the same Telegram identity and revocable server-side session; stale/replayed/tampered auth and same-identity step-up checks fail closed                                          |
+| TASK-071 | PARTIAL | Add the static Nuxt 4/Vue 3/Nuxt UI control plane and same-origin FastAPI API                  | The exact-pinned accessible identity shell, authenticated navigation and Phase 3 FastAPI auth handlers are DONE; privileged product handlers and production static serving remain TODO                  |
 | TASK-072 | TODO   | Add bot/scoped settings, admin, managed-chat, query, memory, stats, health and audit workflows  | Bot admins receive global controls; chat admins receive only proven scoped controls; mutations are validated and audited; lists/exports are bounded and streaming                                       |
 | TASK-073 | TODO   | Integrate runtime supervision, migrations, Docker/CI/docs and complete offline/live acceptance  | Polling and webhook deployments serve the UI safely; frontend/backend/static/migration/security gates pass; real Telegram OIDC/Mini App, provider failover and backup/restore evidence is recorded      |
 
@@ -398,7 +411,9 @@ Plan 021 execution checkpoint: Implementation Phases 1 and 2 (`TASK-001` through
 - **DONE**: Plan 021 Phase 1 focused verification produced 32 passed and 5 expected failures; the fresh full branch-coverage run produced 231 passed, 1 skipped, 5 expected failures and 82.41% coverage, with one non-fatal aiosqlite worker-thread/event-loop teardown warning retained as a recurrence watch item
 - **DONE**: Plan 021 Phase 2 frontend gates pass frozen install, pnpm-managed Node 24.18.0, peer resolution, Oxfmt, type-aware Oxlint/tsgolint, Nuxt typecheck, 5 unit/component tests, 4 Playwright checks across desktop Chromium and Pixel 7, deterministic OpenAPI/type drift, static generation and an 18-asset generated-secret scan
 - **DONE**: Plan 021 Phase 2 fresh repository verification passed Ruff format/lint, `ty`, disposable empty-database Alembic upgrade/check and 235 passed, 1 skipped, 5 expected failures at 82.44% branch coverage; the earlier aiosqlite teardown warning did not recur
-- **TODO**: Plan 021 TEST-001 through TEST-024 cover provider-pool classification/concurrency/exhaustion, encrypted secret storage/reveal/rotation, OIDC/Mini App/session/CSRF/RBAC, scoped API behavior, Nuxt component/accessibility/e2e behavior, static route precedence, migrations, Docker, backup/restore and authorized live acceptance
+- **DONE**: Plan 021 Phase 3 focused tests cover fail-closed settings, revision 0013, Mini App HMAC/freshness/duplicates, fixed-RS256 OIDC/PKCE/nonce/time validation, encrypted one-time transactions, hash-only sessions/CSRF, expiry/rotation/account switching, bootstrap/managed/delegated/native authorization, immediate grant invalidation, auth API origin/CSRF/cookies/headers/rates/audit and Nuxt browser/Mini App session choice
+- **DONE**: Plan 021 Phase 3 fresh repository verification passed `uv lock --check`, Ruff format/lint, `ty`, disposable empty-database Alembic upgrade/check and the complete branch-coverage suite with 257 passed, 1 skipped, 5 expected failures and 82.88% coverage; frontend verification passed Oxfmt, type-aware Oxlint/tsgolint, raw `pnpm typecheck`, 9 unit/component tests, deterministic OpenAPI drift, six-route static generation, a 22-text-asset generated-secret scan and 6 Playwright checks across desktop Chromium and Pixel 7
+- **TODO**: Remaining Plan 021 TEST-001 through TEST-024 work covers provider-pool classification/concurrency/exhaustion, encrypted provider secret storage/reveal/rotation, scoped product API behavior, complete Nuxt page/accessibility/e2e behavior, static route precedence, Docker/backup/restore and authorized live acceptance
 
 ### Required Verification Commands
 
@@ -639,6 +654,7 @@ uv run pzp-bot webhook
 
 ## 12. Changelog
 
+- **2026-07-31 / v0.37**: Completed only Plan 021 Implementation Phase 3 before the required Phase 4 validation pause. Added fail-closed control-plane bootstrap settings, revision 0013 identity/session/OIDC/admin/managed-chat persistence, strict signed Mini App validation, bounded Telegram OIDC Authorization Code/PKCE/JWKS with fixed RS256 verification, AES-GCM-protected one-time transactions, opaque hash-only sessions/CSRF, shared live capability resolution, auth/session/step-up APIs, same-origin/CSRF/security-header/rate/audit controls and Nuxt browser/Mini App session UX using the current Web App script. Control API calls now fail within five seconds when a local backend is absent instead of leaving the SPA on its opening state, and Playwright uses the declared pnpm dev-server script plus deterministic auth stubs; the final checkpoint is 257 passed, 1 skipped, 5 expected failures and 82.88% Python coverage, 9 frontend unit/component tests, 6 desktop/mobile browser checks, six generated routes and 22 scanned text assets. Provider-vault preflight, managed provider credentials/pools, privileged product routes and production static serving remain unimplemented.
 - **2026-07-30 / v0.36**: Completed only Plan 021 Implementation Phase 2 before the required Phase 3 validation pause. Added the exact-pinned Nuxt 4/Nuxt UI client workspace with pnpm-managed Node 24.18.0, Oxc plus tsgolint gates, accessible responsive shell, Telegram client/safe-area integration, same-origin development API boundary, deterministic OpenAPI types, frozen frontend CI, Docker-context exclusions and generated-asset secret scanning; frontend gates, 4 desktop/mobile Playwright checks, Alembic drift and the 235-pass 82.44% Python checkpoint are green, while authentication, control API/static serving, migrations, vault and provider pools remain unimplemented.
 - **2026-07-30 / v0.35**: Began approved Plan 021 and completed only Implementation Phase 1 before the required user-validation pause. Recorded drift through `d501341`, migration head `0012`, current service/provider/admin/runtime/OpenAPI boundaries, strict red control-plane contracts, the Bot API 10.2/aiogram 3.30 auth and `requestChat` baseline, exact Node/Nuxt/Oxc/security-library pins and the TypeScript 6 compatibility decision; no Nuxt workspace, auth service, database migration, secret vault or provider-pool production code is claimed.
 - **2026-07-30 / v0.34**: Added review-ready Plan 021 for encrypted multi-key provider pools and a Telegram-authenticated Nuxt control plane. Recorded Option A audited full reveal for database-managed provider keys, current Telegram OIDC Authorization Code plus PKCE, signed Mini App `initData`, same-origin static Nuxt/FastAPI architecture, scoped bot/chat administration, managed-chat lifecycle, query/memory/stats/audit surfaces and explicit offline/live/deployment gates; no application implementation is claimed.
