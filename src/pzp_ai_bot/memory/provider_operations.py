@@ -43,6 +43,10 @@ class ProviderOperations:
             failure: ProviderOperationError | None = ProviderOperationError.from_exception(error)
         else:
             failure = None
+        attempt_metadata = _consume_attempt_metadata(selection.chat_provider)
+        usage_metadata = dict(metadata)
+        if attempt_metadata is not None:
+            usage_metadata.update(attempt_metadata.as_dict())
         telemetry = provider_call_telemetry(
             provider=selection.chat_provider.name,
             model=selection.chat_model,
@@ -51,7 +55,7 @@ class ProviderOperations:
             prompt_tokens=result.prompt_tokens if result is not None else None,
             completion_tokens=result.completion_tokens if result is not None else None,
             failure=failure,
-            metadata=metadata,
+            metadata=usage_metadata,
         )
         return ChatProviderExecution(result=result, failure=failure, telemetry=telemetry)
 
@@ -71,6 +75,7 @@ class ProviderOperations:
             failure: ProviderOperationError | None = ProviderOperationError.from_exception(error)
         else:
             failure = None
+        attempt_metadata = _consume_attempt_metadata(selection.embedding_provider)
         dimensions = (
             len(vectors[0])
             if vectors
@@ -84,6 +89,8 @@ class ProviderOperations:
             "prompt_version": PROMPT_VERSION,
             **metadata,
         }
+        if attempt_metadata is not None:
+            usage_metadata.update(attempt_metadata.as_dict())
         return EmbeddingGenerationResult(
             vectors=vectors,
             dimensions=dimensions,
@@ -181,6 +188,13 @@ def telemetry_scope(metadata: dict[str, Any]) -> Scope | None:
     except ValueError:
         return None
     return Scope(chat_id, thread_id)
+
+
+def _consume_attempt_metadata(provider: object) -> Any | None:
+    consume = getattr(provider, "consume_attempt_metadata", None)
+    if not callable(consume):
+        return None
+    return consume()
 
 
 __all__ = ["ProviderOperations", "provider_call_telemetry", "telemetry_scope"]

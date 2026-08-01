@@ -1,6 +1,182 @@
 {
   "components": {
     "schemas": {
+      "AdminAlertPage": {
+        "properties": {
+          "has_more": {
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminAlertSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor",
+          "has_more"
+        ],
+        "title": "AdminAlertPage",
+        "type": "object"
+      },
+      "AdminAlertSummary": {
+        "properties": {
+          "alert_type": {
+            "title": "Alert Type",
+            "type": "string"
+          },
+          "attempts": {
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "credential_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Fingerprint"
+          },
+          "credential_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Label"
+          },
+          "delivered_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivered At"
+          },
+          "error_classification": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Classification"
+          },
+          "health_epoch": {
+            "title": "Health Epoch",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "last_attempt_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Attempt At"
+          },
+          "next_attempt_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Attempt At"
+          },
+          "parent_intent_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Intent Id"
+          },
+          "profile_name": {
+            "title": "Profile Name",
+            "type": "string"
+          },
+          "recipient_telegram_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recipient Telegram Id"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "parent_intent_id",
+          "alert_type",
+          "profile_name",
+          "credential_fingerprint",
+          "credential_label",
+          "health_epoch",
+          "recipient_telegram_id",
+          "state",
+          "attempts",
+          "next_attempt_at",
+          "created_at",
+          "last_attempt_at",
+          "delivered_at",
+          "error_classification"
+        ],
+        "title": "AdminAlertSummary",
+        "type": "object"
+      },
       "ControlPlaneConflictEnvelope": {
         "properties": {
           "current": {
@@ -331,6 +507,10 @@
       },
       "ProviderCredentialMutationResponse": {
         "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
           "audit_event_id": {
             "title": "Audit Event Id",
             "type": "integer"
@@ -358,6 +538,10 @@
             ],
             "title": "Environment Variable"
           },
+          "failure_count": {
+            "title": "Failure Count",
+            "type": "integer"
+          },
           "fingerprint": {
             "anyOf": [
               {
@@ -368,6 +552,10 @@
               }
             ],
             "title": "Fingerprint"
+          },
+          "health_state": {
+            "title": "Health State",
+            "type": "string"
           },
           "id": {
             "anyOf": [
@@ -383,6 +571,17 @@
           "label": {
             "title": "Label",
             "type": "string"
+          },
+          "last_error_classification": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error Classification"
           },
           "last_failure_at": {
             "anyOf": [
@@ -439,6 +638,10 @@
             "title": "State",
             "type": "string"
           },
+          "success_count": {
+            "title": "Success Count",
+            "type": "integer"
+          },
           "version": {
             "title": "Version",
             "type": "integer"
@@ -454,11 +657,16 @@
           "fingerprint",
           "position",
           "state",
+          "health_state",
           "cooldown_until",
+          "last_error_classification",
+          "success_count",
+          "failure_count",
           "last_success_at",
           "last_failure_at",
           "version",
           "revealable",
+          "active",
           "audit_event_id"
         ],
         "title": "ProviderCredentialMutationResponse",
@@ -490,6 +698,10 @@
       },
       "ProviderCredentialSummary": {
         "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
           "cooldown_until": {
             "anyOf": [
               {
@@ -513,6 +725,10 @@
             ],
             "title": "Environment Variable"
           },
+          "failure_count": {
+            "title": "Failure Count",
+            "type": "integer"
+          },
           "fingerprint": {
             "anyOf": [
               {
@@ -523,6 +739,10 @@
               }
             ],
             "title": "Fingerprint"
+          },
+          "health_state": {
+            "title": "Health State",
+            "type": "string"
           },
           "id": {
             "anyOf": [
@@ -538,6 +758,17 @@
           "label": {
             "title": "Label",
             "type": "string"
+          },
+          "last_error_classification": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error Classification"
           },
           "last_failure_at": {
             "anyOf": [
@@ -594,6 +825,10 @@
             "title": "State",
             "type": "string"
           },
+          "success_count": {
+            "title": "Success Count",
+            "type": "integer"
+          },
           "version": {
             "title": "Version",
             "type": "integer"
@@ -609,13 +844,122 @@
           "fingerprint",
           "position",
           "state",
+          "health_state",
           "cooldown_until",
+          "last_error_classification",
+          "success_count",
+          "failure_count",
           "last_success_at",
           "last_failure_at",
           "version",
-          "revealable"
+          "revealable",
+          "active"
         ],
         "title": "ProviderCredentialSummary",
+        "type": "object"
+      },
+      "ProviderCredentialTestRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "pattern": "^(chat|embedding)$",
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "title": "ProviderCredentialTestRequest",
+        "type": "object"
+      },
+      "ProviderCredentialTestResponse": {
+        "properties": {
+          "attempted_credential_count": {
+            "title": "Attempted Credential Count",
+            "type": "integer"
+          },
+          "credential_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Fingerprint"
+          },
+          "credential_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Label"
+          },
+          "dimensions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dimensions"
+          },
+          "final_classification": {
+            "title": "Final Classification",
+            "type": "string"
+          },
+          "managed_profile_revision": {
+            "title": "Managed Profile Revision",
+            "type": "integer"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "rotation_count": {
+            "title": "Rotation Count",
+            "type": "integer"
+          },
+          "same_key_attempt_count": {
+            "title": "Same Key Attempt Count",
+            "type": "integer"
+          },
+          "warning": {
+            "title": "Warning",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "mode",
+          "model",
+          "dimensions",
+          "managed_profile_revision",
+          "credential_fingerprint",
+          "credential_label",
+          "attempted_credential_count",
+          "same_key_attempt_count",
+          "rotation_count",
+          "final_classification",
+          "warning"
+        ],
+        "title": "ProviderCredentialTestResponse",
         "type": "object"
       },
       "ProviderCredentialUpdateRequest": {
@@ -668,6 +1012,99 @@
           "version"
         ],
         "title": "ProviderCredentialUpdateRequest",
+        "type": "object"
+      },
+      "ProviderPoolSummary": {
+        "properties": {
+          "active_credential_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Credential Fingerprint"
+          },
+          "active_credential_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Credential Label"
+          },
+          "cooldown_credentials": {
+            "title": "Cooldown Credentials",
+            "type": "integer"
+          },
+          "disabled_credentials": {
+            "title": "Disabled Credentials",
+            "type": "integer"
+          },
+          "eligible_credentials": {
+            "title": "Eligible Credentials",
+            "type": "integer"
+          },
+          "health_epoch": {
+            "title": "Health Epoch",
+            "type": "integer"
+          },
+          "last_exhausted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Exhausted At"
+          },
+          "last_recovered_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Recovered At"
+          },
+          "profile_name": {
+            "title": "Profile Name",
+            "type": "string"
+          },
+          "profile_revision": {
+            "title": "Profile Revision",
+            "type": "integer"
+          },
+          "total_credentials": {
+            "title": "Total Credentials",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "profile_name",
+          "profile_revision",
+          "active_credential_fingerprint",
+          "active_credential_label",
+          "health_epoch",
+          "total_credentials",
+          "eligible_credentials",
+          "cooldown_credentials",
+          "disabled_credentials",
+          "last_exhausted_at",
+          "last_recovered_at"
+        ],
+        "title": "ProviderPoolSummary",
         "type": "object"
       },
       "ProviderProfileCreateRequest": {
@@ -1176,6 +1613,162 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/control/v1/alerts": {
+      "get": {
+        "operationId": "list_admin_alerts_api_control_v1_alerts_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAlertPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "List Admin Alerts",
+        "tags": [
+          "alerts"
+        ],
+        "x-pzp-capability": "bot_admin"
+      }
+    },
+    "/api/control/v1/alerts/{alert_id}/retry": {
+      "post": {
+        "operationId": "retry_admin_alert_api_control_v1_alerts__alert_id__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alert_id",
+            "required": true,
+            "schema": {
+              "title": "Alert Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAlertSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Retry Admin Alert",
+        "tags": [
+          "alerts"
+        ],
+        "x-pzp-capability": "bot_admin"
+      }
+    },
     "/api/control/v1/auth/logout": {
       "post": {
         "operationId": "logout_api_control_v1_auth_logout_post",
@@ -2117,6 +2710,171 @@
           "providers"
         ],
         "x-pzp-capability": "bot_admin_step_up"
+      }
+    },
+    "/api/control/v1/providers/{name}/credentials/{credential_id}/test": {
+      "post": {
+        "operationId": "test_provider_credential_api_control_v1_providers__name__credentials__credential_id__test_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "credential_id",
+            "required": true,
+            "schema": {
+              "title": "Credential Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProviderCredentialTestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderCredentialTestResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Test Provider Credential",
+        "tags": [
+          "providers"
+        ],
+        "x-pzp-capability": "bot_admin"
+      }
+    },
+    "/api/control/v1/providers/{name}/pool": {
+      "get": {
+        "operationId": "get_provider_pool_api_control_v1_providers__name__pool_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderPoolSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Get Provider Pool",
+        "tags": [
+          "providers"
+        ],
+        "x-pzp-capability": "bot_admin"
       }
     },
     "/api/control/v1/session": {

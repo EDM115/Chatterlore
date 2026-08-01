@@ -43,7 +43,7 @@ def repository_api():
     return module.ProviderCredentialRepository, module.ProviderProfileRepository
 
 
-def test_revision_0014_creates_provider_profile_credential_and_pool_schema(tmp_path: Path) -> None:
+def test_revision_0015_creates_provider_pool_and_admin_alert_schema(tmp_path: Path) -> None:
     settings = provider_settings(tmp_path)
 
     upgrade_schema(settings)
@@ -67,14 +67,22 @@ def test_revision_0014_creates_provider_profile_credential_and_pool_schema(tmp_p
             row[1] for row in connection.execute("pragma table_info(ai_provider_credentials)")
         }
 
-    assert revision == ("0014_provider_credential_pools",)
-    assert {"ai_provider_profiles", "ai_provider_credentials", "ai_provider_pool_state"} <= tables
+    assert revision == ("0015_admin_alert_outbox",)
+    assert {
+        "ai_provider_profiles",
+        "ai_provider_credentials",
+        "ai_provider_pool_state",
+        "admin_alerts",
+    } <= tables
     assert {
         "uq_ai_provider_profiles_name",
         "ix_ai_provider_credentials_profile_position",
         "ix_ai_provider_credentials_profile_state",
         "ix_ai_provider_credentials_fingerprint",
         "uq_ai_provider_pool_state_profile_id",
+        "uq_admin_alerts_dedupe_key",
+        "ix_admin_alerts_delivery_due",
+        "ix_admin_alerts_profile_created",
     } <= indexes
     assert {
         "secret_ciphertext",

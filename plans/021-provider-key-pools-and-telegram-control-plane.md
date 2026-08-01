@@ -1,10 +1,10 @@
 ---
 goal: Secure Telegram-authenticated control plane and resilient provider API-key pools
-version: 1.5
+version: 1.6
 date_created: 2026-07-30
 last_updated: 2026-08-01
 owner: PZP-AI
-status: In progress — Phase 4 and the approved SSR/Caddy deployment transition are complete; Phase 5 has not started
+status: In progress — Phase 5 is implemented and locally verified; awaiting user validation before Phase 6
 tags:
   - feature
   - security
@@ -392,17 +392,31 @@ Transition evidence:
 
 | Task     | Description                                                                                                                                                                                                                                     | Completed | Date |
 | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ---- |
-| TASK-032 | Extract the current OpenAI retry helper into a typed provider-call policy that receives an opaque credential lease and returns safe attempt metadata while preserving GPT-5 payload, redaction and telemetry behavior.                          |           |      |
-| TASK-033 | Implement the exception/status/error-code classifier exactly as specified in the classification table, including bounded `Retry-After`, insufficient-quota allowlist and invalid-request no-rotation behavior.                                  |           |      |
-| TASK-034 | Implement `CredentialPoolService` selection, stable circular order, persisted sticky active credential, eligible/cooldown filtering, one-traversal bound, ten-key maximum and compare-and-swap state transitions.                               |           |      |
-| TASK-035 | Add a per-profile in-process lock around selection/state updates while retaining SQLite version checks as correctness authority; add high-concurrency tests where many callers observe one rotation rather than disabling every key.            |           |      |
-| TASK-036 | Change `ProviderRegistry` caching so provider clients are keyed or invalidated by managed profile revision and credential ID; no cached provider may continue using a deleted/disabled/replaced credential.                                     |           |      |
-| TASK-037 | Route both chat and embedding OpenAI-compatible calls through the pool while keeping fake and local providers deterministic and keyless.                                                                                                        |           |      |
-| TASK-038 | Extend safe AI usage metadata with managed profile revision, credential fingerprint/label, attempted credential count, rotation count and final classification; exclude credential IDs from non-admin user text when they add no value.         |           |      |
-| TASK-039 | Add Alembic revision `0015_admin_alert_outbox`, repositories and deduplicated safe alert intents for cooldown, hard disable, recovery and exhaustion.                                                                                           |           |      |
-| TASK-040 | Add a non-critical supervised alert-delivery worker that resolves the current effective bot-admin set, sends sanitized DMs, respects Telegram retry-after, marks unreachable admins safely and never affects provider calls or critical health. |           |      |
-| TASK-041 | Add bot-admin APIs/UI for pool health, safe credential history, manual constant-input chat/embedding tests, alert backlog and alert retry; show explicit provider cost and local-model download warnings.                                       |           |      |
-| TASK-042 | Run classifier, sticky selection, retry, traversal, concurrency, restart persistence, cache invalidation, telemetry, outbox, DM-failure and exhaustion regressions before enabling pool use by default.                                         |           |      |
+| TASK-032 | Extract the current OpenAI retry helper into a typed provider-call policy that receives an opaque credential lease and returns safe attempt metadata while preserving GPT-5 payload, redaction and telemetry behavior.                          | DONE      | 2026-08-01 |
+| TASK-033 | Implement the exception/status/error-code classifier exactly as specified in the classification table, including bounded `Retry-After`, insufficient-quota allowlist and invalid-request no-rotation behavior.                                  | DONE      | 2026-08-01 |
+| TASK-034 | Implement `CredentialPoolService` selection, stable circular order, persisted sticky active credential, eligible/cooldown filtering, one-traversal bound, ten-key maximum and compare-and-swap state transitions.                               | DONE      | 2026-08-01 |
+| TASK-035 | Add a per-profile in-process lock around selection/state updates while retaining SQLite version checks as correctness authority; add high-concurrency tests where many callers observe one rotation rather than disabling every key.            | DONE      | 2026-08-01 |
+| TASK-036 | Change `ProviderRegistry` caching so provider clients are keyed or invalidated by managed profile revision and credential ID; no cached provider may continue using a deleted/disabled/replaced credential.                                     | DONE      | 2026-08-01 |
+| TASK-037 | Route both chat and embedding OpenAI-compatible calls through the pool while keeping fake and local providers deterministic and keyless.                                                                                                        | DONE      | 2026-08-01 |
+| TASK-038 | Extend safe AI usage metadata with managed profile revision, credential fingerprint/label, attempted credential count, rotation count and final classification; exclude credential IDs from non-admin user text when they add no value.         | DONE      | 2026-08-01 |
+| TASK-039 | Add Alembic revision `0015_admin_alert_outbox`, repositories and deduplicated safe alert intents for cooldown, hard disable, recovery and exhaustion.                                                                                           | DONE      | 2026-08-01 |
+| TASK-040 | Add a non-critical supervised alert-delivery worker that resolves the current effective bot-admin set, sends sanitized DMs, respects Telegram retry-after, marks unreachable admins safely and never affects provider calls or critical health. | DONE      | 2026-08-01 |
+| TASK-041 | Add bot-admin APIs/UI for pool health, safe credential history, manual constant-input chat/embedding tests, alert backlog and alert retry; show explicit provider cost and local-model download warnings.                                       | DONE      | 2026-08-01 |
+| TASK-042 | Run classifier, sticky selection, retry, traversal, concurrency, restart persistence, cache invalidation, telemetry, outbox, DM-failure and exhaustion regressions before enabling pool use by default.                                         | DONE      | 2026-08-01 |
+
+Phase 5 implementation evidence:
+- `ProviderCallPolicy`, `failure_classification.py`, `CredentialPoolService` and `PooledOpenAICompatibleProvider` now apply the reviewed OpenAI SDK classification table, bounded same-key retry, stable circular traversal, persisted sticky selection, cooldown/hard-disable/recovery transitions and opaque lease handling to managed chat and embedding calls.
+- Managed provider cache keys include profile revision plus credential identity/revision, environment sources persist as immutable non-revealable pool metadata whose label/order cannot be changed and which cannot be deleted through the control plane, operational enable/disable remains available, manual disable/delete clears a matching active-key pointer, manual re-enable clears automatic health disablement and AI usage carries only the reviewed safe attempt fields.
+- Revision `0015_admin_alert_outbox`, `AdminAlertService` and the supervised `pzp-admin-alert-delivery` worker provide transactional deduplicated transition intents, current-effective-admin expansion, bounded retry-after/unreachable delivery state and non-critical shutdown/health behavior.
+- FastAPI exposes bot-admin pool summary, expanded masked credential health, independently rate-limited constant-input chat/embedding tests and cursor-paginated sanitized alert list/retry contracts. The generated OpenAPI/client types are synchronized.
+- Nuxt `/providers` stays behind the neutral SSR/auth hydration gate, requires the live `bot.admin` capability, displays pool/key health and alert history, reuses the controlled reveal component and labels paid provider checks plus possible local-model downloads before any explicit action.
+
+Phase 5 verification evidence:
+- Focused backend verification reported 64 passed and 4 deliberate strict xfails across provider pool, alert outbox/delivery, control API/contract, secret service, migration/repositories, provider behavior and webhook health; classifier and pool-focused regressions additionally cover the exact SDK table, cross-instance concurrency and cooldown recovery.
+- The initial fresh external-basetemp complete offline suite reported 303 passed, 1 skipped live Telegram test and 4 deliberate strict control-plane contract xfails. Ten non-fatal warnings came from the previously observed aiosqlite worker-thread/event-loop teardown race in the broad Telegram command parametrization; no Phase 5 assertion failed. After final-audit regressions for immutable environment credentials and active-pointer cleanup passed 36 focused tests, a second fresh full suite reported the same 303 passed, 1 skipped and 4 xfailed outcome with no warnings.
+- Empty-database Alembic upgrade reached `0015_admin_alert_outbox` and `alembic check` reported `No new upgrade operations detected`; immutable uv lock, Ruff format/lint, `ty`, CLI help and fake-provider doctor gates passed.
+- Frontend verification passed Oxfmt, type-aware Oxlint/tsgolint, raw Nuxt typecheck, 12 unit/component tests, generated OpenAPI/type drift, a 2.8 MB production SSR build, a 20-text-asset secret scan, direct overview/providers SSR smoke and 14 Playwright checks across desktop Chromium and Pixel 7. The production build required the approved outside-sandbox rerun because Nitro's Windows tracer cannot `readlink` the user-profile boundary inside the sandbox.
+- Docker/Compose/Caddy, registered real Telegram OIDC/Mini App, authorized live multi-key provider failover/admin DM and backup/restore acceptance remain later Gate E release work; none is claimed by this offline Phase 5 checkpoint.
 
 ### Implementation Phase 6: Bot settings, admins and managed-chat lifecycle
 

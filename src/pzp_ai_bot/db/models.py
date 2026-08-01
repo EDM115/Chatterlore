@@ -626,3 +626,32 @@ class AIProviderPoolState(Base):
         DateTime(timezone=True), nullable=True
     )
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+class AdminAlert(Base):
+    __tablename__ = "admin_alerts"
+    __table_args__ = (
+        Index("uq_admin_alerts_dedupe_key", "dedupe_key", unique=True),
+        Index("ix_admin_alerts_delivery_due", "state", "next_attempt_at", "id"),
+        Index("ix_admin_alerts_profile_created", "profile_name", "created_at", "id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    parent_intent_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("admin_alerts.id", ondelete="CASCADE"), nullable=True
+    )
+    alert_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    profile_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    credential_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    credential_label: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    health_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
+    dedupe_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    recipient_telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    error_classification: Mapped[str | None] = mapped_column(String(64), nullable=True)

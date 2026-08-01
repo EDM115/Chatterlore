@@ -4,6 +4,40 @@
  */
 
 export interface paths {
+    "/api/control/v1/alerts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Admin Alerts */
+        get: operations["list_admin_alerts_api_control_v1_alerts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/control/v1/alerts/{alert_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry Admin Alert */
+        post: operations["retry_admin_alert_api_control_v1_alerts__alert_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/control/v1/auth/logout": {
         parameters: {
             query?: never;
@@ -145,6 +179,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/control/v1/providers/{name}/credentials/{credential_id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Provider Credential */
+        post: operations["test_provider_credential_api_control_v1_providers__name__credentials__credential_id__test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/control/v1/providers/{name}/pool": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Provider Pool */
+        get: operations["get_provider_pool_api_control_v1_providers__name__pool_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/control/v1/session": {
         parameters: {
             query?: never;
@@ -217,6 +285,51 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AdminAlertPage */
+        AdminAlertPage: {
+            /** Has More */
+            has_more: boolean;
+            /** Items */
+            items: components["schemas"]["AdminAlertSummary"][];
+            /** Next Cursor */
+            next_cursor: number | null;
+        };
+        /** AdminAlertSummary */
+        AdminAlertSummary: {
+            /** Alert Type */
+            alert_type: string;
+            /** Attempts */
+            attempts: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Credential Fingerprint */
+            credential_fingerprint: string | null;
+            /** Credential Label */
+            credential_label: string | null;
+            /** Delivered At */
+            delivered_at: string | null;
+            /** Error Classification */
+            error_classification: string | null;
+            /** Health Epoch */
+            health_epoch: number;
+            /** Id */
+            id: number;
+            /** Last Attempt At */
+            last_attempt_at: string | null;
+            /** Next Attempt At */
+            next_attempt_at: string | null;
+            /** Parent Intent Id */
+            parent_intent_id: number | null;
+            /** Profile Name */
+            profile_name: string;
+            /** Recipient Telegram Id */
+            recipient_telegram_id: number | null;
+            /** State */
+            state: string;
+        };
         /** ControlPlaneConflictEnvelope */
         ControlPlaneConflictEnvelope: {
             /** Current */
@@ -326,18 +439,26 @@ export interface components {
         };
         /** ProviderCredentialMutationResponse */
         ProviderCredentialMutationResponse: {
+            /** Active */
+            active: boolean;
             /** Audit Event Id */
             audit_event_id: number;
             /** Cooldown Until */
             cooldown_until: string | null;
             /** Environment Variable */
             environment_variable: string | null;
+            /** Failure Count */
+            failure_count: number;
             /** Fingerprint */
             fingerprint: string | null;
+            /** Health State */
+            health_state: string;
             /** Id */
             id: number | string;
             /** Label */
             label: string;
+            /** Last Error Classification */
+            last_error_classification: string | null;
             /** Last Failure At */
             last_failure_at: string | null;
             /** Last Four */
@@ -354,6 +475,8 @@ export interface components {
             source: string;
             /** State */
             state: string;
+            /** Success Count */
+            success_count: number;
             /** Version */
             version: number;
         };
@@ -371,16 +494,24 @@ export interface components {
         };
         /** ProviderCredentialSummary */
         ProviderCredentialSummary: {
+            /** Active */
+            active: boolean;
             /** Cooldown Until */
             cooldown_until: string | null;
             /** Environment Variable */
             environment_variable: string | null;
+            /** Failure Count */
+            failure_count: number;
             /** Fingerprint */
             fingerprint: string | null;
+            /** Health State */
+            health_state: string;
             /** Id */
             id: number | string;
             /** Label */
             label: string;
+            /** Last Error Classification */
+            last_error_classification: string | null;
             /** Last Failure At */
             last_failure_at: string | null;
             /** Last Four */
@@ -397,8 +528,42 @@ export interface components {
             source: string;
             /** State */
             state: string;
+            /** Success Count */
+            success_count: number;
             /** Version */
             version: number;
+        };
+        /** ProviderCredentialTestRequest */
+        ProviderCredentialTestRequest: {
+            /** Mode */
+            mode: string;
+        };
+        /** ProviderCredentialTestResponse */
+        ProviderCredentialTestResponse: {
+            /** Attempted Credential Count */
+            attempted_credential_count: number;
+            /** Credential Fingerprint */
+            credential_fingerprint: string | null;
+            /** Credential Label */
+            credential_label: string | null;
+            /** Dimensions */
+            dimensions: number | null;
+            /** Final Classification */
+            final_classification: string;
+            /** Managed Profile Revision */
+            managed_profile_revision: number;
+            /** Mode */
+            mode: string;
+            /** Model */
+            model: string;
+            /** Ok */
+            ok: boolean;
+            /** Rotation Count */
+            rotation_count: number;
+            /** Same Key Attempt Count */
+            same_key_attempt_count: number;
+            /** Warning */
+            warning: string;
         };
         /** ProviderCredentialUpdateRequest */
         ProviderCredentialUpdateRequest: {
@@ -410,6 +575,31 @@ export interface components {
             state?: string | null;
             /** Version */
             version: number;
+        };
+        /** ProviderPoolSummary */
+        ProviderPoolSummary: {
+            /** Active Credential Fingerprint */
+            active_credential_fingerprint: string | null;
+            /** Active Credential Label */
+            active_credential_label: string | null;
+            /** Cooldown Credentials */
+            cooldown_credentials: number;
+            /** Disabled Credentials */
+            disabled_credentials: number;
+            /** Eligible Credentials */
+            eligible_credentials: number;
+            /** Health Epoch */
+            health_epoch: number;
+            /** Last Exhausted At */
+            last_exhausted_at: string | null;
+            /** Last Recovered At */
+            last_recovered_at: string | null;
+            /** Profile Name */
+            profile_name: string;
+            /** Profile Revision */
+            profile_revision: number;
+            /** Total Credentials */
+            total_credentials: number;
         };
         /** ProviderProfileCreateRequest */
         ProviderProfileCreateRequest: {
@@ -592,6 +782,114 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    list_admin_alerts_api_control_v1_alerts_get: {
+        parameters: {
+            query?: {
+                cursor?: number | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminAlertPage"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    retry_admin_alert_api_control_v1_alerts__alert_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                alert_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminAlertSummary"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
     logout_api_control_v1_auth_logout_post: {
         parameters: {
             query?: never;
@@ -1324,6 +1622,127 @@ export interface operations {
             };
             /** @description Too Many Requests */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    test_provider_credential_api_control_v1_providers__name__credentials__credential_id__test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+                credential_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderCredentialTestRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderCredentialTestResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_provider_pool_api_control_v1_providers__name__pool_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderPoolSummary"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

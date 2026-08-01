@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, replace
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, cast
 from urllib.parse import urlsplit
 
@@ -13,6 +13,7 @@ from pzp_ai_bot.db.models import AIProviderCredential, AIProviderProfile
 from pzp_ai_bot.db.repos.events import EventRepository
 from pzp_ai_bot.db.repos.provider_credentials import (
     ProviderCredentialRepository,
+    ProviderPoolStateRepository,
     ProviderProfileRepository,
 )
 from pzp_ai_bot.db.repos.shared import normalize_profile_name
@@ -63,11 +64,16 @@ class ProviderCredentialSummary:
     fingerprint: str | None
     position: int
     state: str
+    health_state: str
     cooldown_until: datetime | None
+    last_error_classification: str | None
+    success_count: int
+    failure_count: int
     last_success_at: datetime | None
     last_failure_at: datetime | None
     version: int
     revealable: bool
+    active: bool
     audit_event_id: int | None = None
 
     def as_dict(self) -> dict[str, Any]:
@@ -104,6 +110,7 @@ class ProviderSecretService:
     async def refresh_registry(self) -> None:
         bootstrap = self.settings.provider_profiles
         managed: dict[str, ProviderProfile] = {}
+        revisions: dict[str, int] = {}
         async with session_scope(self.session_factory) as session:
             profiles = await ProviderProfileRepository(session).list_all()
             credentials = ProviderCredentialRepository(session)
@@ -113,22 +120,21 @@ class ProviderSecretService:
                 bootstrap_profile = bootstrap.get(stored.name)
                 api_key = bootstrap_profile.openai_api_key if bootstrap_profile else ""
                 api_key_env = bootstrap_profile.openai_api_key_env if bootstrap_profile else None
-                for credential in await credentials.list_for_profile(stored.id):
-                    if (
-                        credential.lifecycle_state == "enabled"
-                        and credential.secret_ciphertext is not None
-                    ):
-                        api_key = self.vault.decrypt(
-                            _encrypted(credential),
-                            profile_name=stored.name,
-                            credential_id=credential.id,
-                        )
-                        api_key_env = None
-                        break
+                if api_key:
+                    key_id = self.settings.control_plane_active_master_key_id
+                    await credentials.sync_environment(
+                        profile_id=stored.id,
+                        label=api_key_env or "Bootstrap credential",
+                        environment_variable=api_key_env,
+                        fingerprint=self.vault.fingerprint(api_key, key_id=key_id),
+                        master_key_id=key_id,
+                        now=datetime.now(UTC),
+                    )
                 managed[stored.name] = _runtime_profile(
                     stored, api_key=api_key, api_key_env=api_key_env
                 )
-        self.registry.replace_managed_profiles(managed)
+                revisions[stored.name] = stored.version
+        self.registry.replace_managed_profiles(managed, revisions=revisions)
 
     async def list_profiles(self) -> list[ProviderProfileSummary]:
         bootstrap = {
@@ -234,37 +240,44 @@ class ProviderSecretService:
 
     async def list_credentials(self, name: str) -> list[ProviderCredentialSummary]:
         clean = normalize_profile_name(name)
-        output: list[ProviderCredentialSummary] = []
         bootstrap = self.settings.provider_profiles.get(clean)
-        if bootstrap and bootstrap.openai_api_key:
-            key_id = self.settings.control_plane_active_master_key_id
-            output.append(
-                ProviderCredentialSummary(
-                    id=f"env:{bootstrap.openai_api_key_env or 'inline'}",
-                    profile_name=clean,
-                    label=bootstrap.openai_api_key_env or "Bootstrap credential",
-                    source="environment",
-                    environment_variable=bootstrap.openai_api_key_env,
-                    last_four=bootstrap.openai_api_key[-4:],
-                    fingerprint=self.vault.fingerprint(bootstrap.openai_api_key, key_id=key_id),
-                    position=-1,
-                    state="enabled",
-                    cooldown_until=None,
-                    last_success_at=None,
-                    last_failure_at=None,
-                    version=0,
-                    revealable=False,
-                )
-            )
         async with session_scope(self.session_factory) as session:
             profile = await ProviderProfileRepository(session).get_by_name(clean)
             if profile is None:
                 if bootstrap is None:
                     raise ValueError("provider profile was not found")
-                return output
+                if not bootstrap.openai_api_key:
+                    return []
+                key_id = self.settings.control_plane_active_master_key_id
+                return [
+                    ProviderCredentialSummary(
+                        id=f"env:{bootstrap.openai_api_key_env or 'inline'}",
+                        profile_name=clean,
+                        label=bootstrap.openai_api_key_env or "Bootstrap credential",
+                        source="environment",
+                        environment_variable=bootstrap.openai_api_key_env,
+                        last_four=None,
+                        fingerprint=self.vault.fingerprint(bootstrap.openai_api_key, key_id=key_id),
+                        position=-1,
+                        state="enabled",
+                        health_state="unknown",
+                        cooldown_until=None,
+                        last_error_classification=None,
+                        success_count=0,
+                        failure_count=0,
+                        last_success_at=None,
+                        last_failure_at=None,
+                        version=0,
+                        revealable=False,
+                        active=False,
+                    )
+                ]
             credentials = await ProviderCredentialRepository(session).list_for_profile(profile.id)
-            output.extend(_credential_summary(profile.name, item) for item in credentials)
-        return output
+            pool_state = await ProviderProfileRepository(session).get_pool_state(profile.id)
+            active_id = pool_state.active_credential_id if pool_state is not None else None
+            return [
+                _credential_summary(profile.name, item, active_id=active_id) for item in credentials
+            ]
 
     async def create_credential(
         self, name: str, *, label: str, value: str, actor_user_id: int, now: datetime
@@ -330,6 +343,14 @@ class ProviderSecretService:
     ) -> ProviderCredentialSummary:
         clean = normalize_profile_name(name)
         values = _validated_credential_updates(updates)
+        if values.get("lifecycle_state") == "enabled":
+            values.update(
+                health_state="unknown", cooldown_until=None, last_error_classification=None
+            )
+        elif values.get("lifecycle_state") == "disabled":
+            values.update(
+                health_state="disabled", cooldown_until=None, last_error_classification="manual"
+            )
         async with session_scope(self.session_factory) as session:
             profiles = ProviderProfileRepository(session)
             profile = await profiles.get_by_name(clean)
@@ -339,6 +360,8 @@ class ProviderSecretService:
             existing = await credentials.get(credential_id)
             if existing is None or existing.profile_id != profile.id:
                 raise ValueError("provider credential was not found")
+            if existing.source_kind == "environment" and {"label", "position"}.intersection(values):
+                raise ValueError("environment provider credentials are immutable")
             stored = await credentials.update(
                 credential_id,
                 expected_version=expected_version,
@@ -352,6 +375,8 @@ class ProviderSecretService:
                     "provider credential changed concurrently",
                     current_version=current.version if current else None,
                 )
+            if stored.lifecycle_state != "enabled" or stored.health_state == "disabled":
+                await _clear_active_credential(session, profile.id, stored.id)
             audit_event_id = await _audit(
                 session,
                 "credential_updated",
@@ -384,6 +409,8 @@ class ProviderSecretService:
             existing = await credentials.get(credential_id)
             if existing is None or existing.profile_id != profile.id:
                 raise ValueError("provider credential was not found")
+            if existing.source_kind == "environment":
+                raise ValueError("environment provider credentials are immutable")
             deleted = await credentials.tombstone(
                 credential_id,
                 expected_version=expected_version,
@@ -396,6 +423,7 @@ class ProviderSecretService:
                     "provider credential changed concurrently",
                     current_version=current.version if current else None,
                 )
+            await _clear_active_credential(session, profile.id, deleted.id)
             audit_event_id = await _audit(
                 session,
                 "credential_deleted",
@@ -549,7 +577,7 @@ def _bootstrap_profile_summary(profile: ProviderProfile) -> ProviderProfileSumma
 
 
 def _credential_summary(
-    profile_name: str, stored: AIProviderCredential
+    profile_name: str, stored: AIProviderCredential, *, active_id: int | None = None
 ) -> ProviderCredentialSummary:
     return ProviderCredentialSummary(
         id=stored.id,
@@ -561,13 +589,20 @@ def _credential_summary(
         fingerprint=stored.fingerprint,
         position=stored.position,
         state=stored.lifecycle_state,
+        health_state=stored.health_state,
         cooldown_until=stored.cooldown_until,
+        last_error_classification=stored.last_error_classification,
+        success_count=stored.success_count,
+        failure_count=stored.failure_count,
         last_success_at=stored.last_success_at,
         last_failure_at=stored.last_failure_at,
         version=stored.version,
         revealable=stored.source_kind == "managed"
         and stored.lifecycle_state != "deleted"
         and stored.secret_ciphertext is not None,
+        active=stored.id == active_id
+        and stored.lifecycle_state == "enabled"
+        and stored.health_state != "disabled",
     )
 
 
@@ -686,3 +721,15 @@ async def _audit(
         event_type=f"control_plane.provider.{action}", user_id=actor_user_id, payload=payload
     )
     return event.id
+
+
+async def _clear_active_credential(
+    session: AsyncSession, profile_id: int, credential_id: int
+) -> None:
+    states = ProviderPoolStateRepository(session)
+    state = await states.get(profile_id)
+    if state is None or state.active_credential_id != credential_id:
+        return
+    await states.compare_and_swap(
+        profile_id, expected_version=state.version, active_credential_id=None
+    )

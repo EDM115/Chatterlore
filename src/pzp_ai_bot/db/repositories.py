@@ -1,4 +1,5 @@
 from pzp_ai_bot.db.repos import (
+    AdminAlertRepository,
     AIUsageStats,
     CanonicalScopeSnapshotRecord,
     CanonicalScopeSnapshotRepository,
@@ -44,6 +45,7 @@ from pzp_ai_bot.db.repos import (
 
 __all__ = [
     "AIUsageStats",
+    "AdminAlertRepository",
     "CanonicalScopeSnapshotRecord",
     "CanonicalScopeSnapshotRepository",
     "ControlPlaneAccessRepository",

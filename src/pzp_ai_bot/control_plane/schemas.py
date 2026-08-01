@@ -153,11 +153,16 @@ class ProviderCredentialSummary(BaseModel):
     fingerprint: str | None
     position: int
     state: str
+    health_state: str
     cooldown_until: datetime | None
+    last_error_classification: str | None
+    success_count: int
+    failure_count: int
     last_success_at: datetime | None
     last_failure_at: datetime | None
     version: int
     revealable: bool
+    active: bool
 
 
 class ProviderCredentialMutationResponse(ProviderCredentialSummary):
@@ -168,6 +173,65 @@ class ProviderCredentialRevealResponse(BaseModel):
     credential_id: int
     value: str
     expires_at: datetime
+
+
+class ProviderPoolSummary(BaseModel):
+    profile_name: str
+    profile_revision: int
+    active_credential_fingerprint: str | None
+    active_credential_label: str | None
+    health_epoch: int
+    total_credentials: int
+    eligible_credentials: int
+    cooldown_credentials: int
+    disabled_credentials: int
+    last_exhausted_at: datetime | None
+    last_recovered_at: datetime | None
+
+
+class ProviderCredentialTestRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mode: str = Field(pattern="^(chat|embedding)$")
+
+
+class ProviderCredentialTestResponse(BaseModel):
+    ok: bool
+    mode: str
+    model: str
+    dimensions: int | None
+    managed_profile_revision: int
+    credential_fingerprint: str | None
+    credential_label: str | None
+    attempted_credential_count: int
+    same_key_attempt_count: int
+    rotation_count: int
+    final_classification: str
+    warning: str
+
+
+class AdminAlertSummary(BaseModel):
+    id: int
+    parent_intent_id: int | None
+    alert_type: str
+    profile_name: str
+    credential_fingerprint: str | None
+    credential_label: str | None
+    health_epoch: int
+    recipient_telegram_id: int | None
+    state: str
+    attempts: int
+    next_attempt_at: datetime | None
+    created_at: datetime
+    last_attempt_at: datetime | None
+    delivered_at: datetime | None
+    error_classification: str | None
+
+
+class AdminAlertPage(BaseModel):
+    items: list[AdminAlertSummary]
+    next_cursor: int | None
+    has_more: bool
 
 
 class DeleteMutationResponse(BaseModel):

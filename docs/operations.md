@@ -10,11 +10,11 @@ This runbook covers day-to-day operation for a PZP AI instance: logs, audits, ru
 
 ## Background Task Supervision
 
-- Polling and webhook runtimes supervise two critical loops named `pzp-idle-summarizer` and `pzp-runtime-settings-refresher`. An ordinary iteration exception records `background_task_iteration_failed`, waits with deterministic exponential backoff capped by the loop's normal interval, and retries instead of permanently stopping the loop.
+- Polling and webhook runtimes supervise two critical loops named `pzp-idle-summarizer` and `pzp-runtime-settings-refresher`. Control-plane-enabled runtimes also supervise the non-critical `pzp-admin-alert-delivery` loop. An ordinary iteration exception records `background_task_iteration_failed`, waits with deterministic exponential backoff capped by the loop's normal interval, and retries instead of permanently stopping the loop.
 - Failure logs include only the task name, exception type, consecutive failure count and backoff seconds. They intentionally exclude exception messages, prompts, chat content and secrets.
 - A successful iteration resets the consecutive failure count. Repeated failures should prompt operators to inspect database/provider availability for the idle summarizer or SQLite/runtime-setting validity for the settings refresher.
 - Cancellation exits immediately during shutdown. An already-dead task is drained and emits content-free `background_task_stopped_unexpectedly` metadata so its exception is not left unobserved and shutdown can continue for the other task and Telegram session.
-- Webhook `GET /health` reports both task names and returns HTTP 200 only while both handles are running and not done; it returns HTTP 503 as soon as either critical task is dead. Polling has no HTTP server, so supervise the process and structured events externally.
+- Webhook `GET /health` reports the two critical task names and returns HTTP 200 only while both handles are running and not done; it returns HTTP 503 as soon as either critical task is dead. Admin-alert delivery is intentionally excluded because Telegram DM failure must never take down provider calls or production health. Polling has no HTTP server, so supervise the process and structured events externally.
 
 ## Audit Review
 
@@ -32,6 +32,15 @@ Audit events are operational metadata, not memory exports. Treat them as sensiti
 - Add the new 32-byte base64 master key while retaining every referenced old key, restart with the expanded key map, create and verify a current database backup, then run `uv run pzp-bot secrets rewrap --to <new-id> --yes`. Rewrap computes and decrypt-verifies every replacement before issuing database updates and commits the complete batch in one transaction, so an interruption or invalid row leaves all prior wrappings authoritative.
 - Keep old key material available until status reports no credential references to that ID and the post-rotation provider smoke test succeeds. Removing a still-referenced ID makes those credentials undecryptable and provider refresh fails closed rather than silently falling back.
 - Managed credential CRUD and reveal events live under `control_plane.provider.*` with content-free metadata. A reveal event is committed before the response leaves the server; investigate unexpected reveal frequency without exporting response bodies or browser storage.
+
+## Provider Pool And Alert Recovery
+
+- Bot admins can inspect `/providers` in the control plane for each managed profile's active key, eligible/cooldown/disabled counts, health epoch, masked per-key counters/timestamps and recent sanitized alerts. Ordinary page loading is read-only and never invokes a provider or downloads a local model.
+- Chat and embedding checks are explicit constant-input actions, use the selected key rather than silently traversing the whole pool and may incur provider charges. The endpoint is independently rate-limited; a classified failure updates that key's health through the same safe state machine used by production calls.
+- Authentication, permission and allowlisted exhausted-quota failures hard-disable the key and rotate production calls. Other rate limits, exhausted transport retries, server failures, HTTP 408 and HTTP 409 place it in bounded cooldown before rotation. Invalid requests/model payloads and unknown exceptions leave key health unchanged.
+- Expired cooldown keys become eligible automatically and a later successful provider call marks the key healthy, persists it as active and emits one deduplicated recovery intent. A bot admin can also re-enable a disabled key after correcting it; re-enable clears automatic cooldown/error health so the key is eligible for a fresh test.
+- `admin_alerts` keeps both transition intents and per-current-admin deliveries. `pending`/`retry` rows are delivered by the background worker, Telegram retry-after is capped at one hour, `unreachable` recipients require an admin/account or bot-permission correction, and the control plane can manually queue an undelivered row again.
+- Pool exhaustion returns one controlled service error after one bounded traversal of at most ten eligible credentials. Check the pool summary and alert backlog, correct or add a credential, run one explicit test, then confirm normal traffic makes a healthy key sticky again.
 
 ## Markdown Projection Recovery
 

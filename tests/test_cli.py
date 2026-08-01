@@ -94,7 +94,7 @@ def test_migrate_uses_alembic_revision(monkeypatch: pytest.MonkeyPatch, tmp_path
         canonical_snapshot_columns = {
             row[1] for row in connection.execute("pragma table_info(canonical_scope_snapshots)")
         }
-    assert revision[0].startswith("0014_")
+    assert revision[0].startswith("0015_")
     assert {
         "scope_key",
         "chat_id",
@@ -164,7 +164,7 @@ def test_profile_permission_migration_preserves_query_values(
             order by source_chat_id
             """
         ).fetchall()
-    assert revision[0].startswith("0014_")
+    assert revision[0].startswith("0015_")
     assert "can_learn" not in permission_columns
     assert permissions == [(-100802, 0), (-100801, 1)]
 
@@ -217,7 +217,7 @@ def test_telemetry_scope_migration_backfills_supported_legacy_values(
             )
         }
 
-    assert revision[0].startswith("0014_")
+    assert revision[0].startswith("0015_")
     assert scopes == [(-100910, None), (-100910, 7), (None, None), (None, None), (None, None)]
     assert {
         "ix_ai_usage_scope_created_at",
@@ -310,7 +310,7 @@ def test_message_uniqueness_migration_reconciles_main_chat_duplicates(
                 ("2026-07-29 12:00:00", "2026-07-29 12:00:00"),
             )
 
-    assert revision[0].startswith("0014_")
+    assert revision[0].startswith("0015_")
     assert messages == [(10,)]
     assert embeddings == [(10, "provider-a", "model-a"), (10, "provider-b", "model-b")]
 

@@ -1,14 +1,22 @@
 from __future__ import annotations
 
-import asyncio
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any, cast
 
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
 
 from pzp_ai_bot.ai.protocols import ChatMessage, ChatResult
+from pzp_ai_bot.ai.provider_call_policy import OpaqueCredentialLease, ProviderCallPolicy
 from pzp_ai_bot.ai.redaction import redact_text
+
+
+@dataclass(frozen=True, slots=True)
+class _BootstrapCredentialLease:
+    profile_revision: int = 0
+    label: str = "bootstrap"
+    fingerprint: str = ""
 
 
 class OpenAICompatibleProvider:
@@ -28,6 +36,8 @@ class OpenAICompatibleProvider:
         retry_attempts: int = 3,
         retry_backoff_seconds: float = 0.5,
         client: Any | None = None,
+        credential_lease: OpaqueCredentialLease | None = None,
+        call_policy: ProviderCallPolicy | None = None,
     ) -> None:
         if not api_key:
             raise ValueError("OpenAI-compatible provider requires an API key")
@@ -39,6 +49,10 @@ class OpenAICompatibleProvider:
         self.redaction_custom_patterns = tuple(redaction_custom_patterns)
         self.retry_attempts = retry_attempts
         self.retry_backoff_seconds = retry_backoff_seconds
+        self.credential_lease = credential_lease or _BootstrapCredentialLease()
+        self.call_policy = call_policy or ProviderCallPolicy(
+            attempts=retry_attempts, backoff_seconds=retry_backoff_seconds
+        )
 
     async def generate(
         self,
@@ -63,11 +77,10 @@ class OpenAICompatibleProvider:
                 request["reasoning_effort"] = reasoning_effort
         else:
             request["temperature"] = temperature
-        response = await retry_provider_call(
-            lambda: self.client.chat.completions.create(**request),
-            attempts=self.retry_attempts,
-            delay=self.retry_backoff_seconds,
+        outcome = await self.call_policy.execute(
+            self.credential_lease, lambda _lease: self.client.chat.completions.create(**request)
         )
+        response = outcome.value
         content = response.choices[0].message.content or ""
         usage = response.usage
         return ChatResult(
@@ -79,11 +92,13 @@ class OpenAICompatibleProvider:
 
     async def embed(self, texts: Sequence[str]) -> list[list[float]]:
         redacted = [self._maybe_redact(text) for text in texts]
-        response = await retry_provider_call(
-            lambda: self.client.embeddings.create(model=self.embedding_model, input=redacted),
-            attempts=self.retry_attempts,
-            delay=self.retry_backoff_seconds,
+        outcome = await self.call_policy.execute(
+            self.credential_lease,
+            lambda _lease: self.client.embeddings.create(
+                model=self.embedding_model, input=redacted
+            ),
         )
+        response = outcome.value
         vectors = [item.embedding for item in response.data]
         if vectors:
             self.dimensions = len(vectors[0])
@@ -98,20 +113,3 @@ class OpenAICompatibleProvider:
 def supports_reasoning_effort(model: str) -> bool:
     normalized = model.strip().lower()
     return normalized.startswith(("gpt-5", "o1", "o3", "o4"))
-
-
-async def retry_provider_call[T](
-    call_factory: Callable[[], Awaitable[T]], *, attempts: int = 3, delay: float = 0.5
-) -> T:
-    last_error: Exception | None = None
-    for attempt in range(attempts):
-        try:
-            return await call_factory()
-        except Exception as exc:
-            last_error = exc
-            if attempt + 1 >= attempts:
-                break
-            if delay > 0:
-                await asyncio.sleep(delay * (2**attempt))
-    assert last_error is not None
-    raise last_error

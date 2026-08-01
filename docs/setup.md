@@ -31,7 +31,7 @@ pnpm runtime:check
 pnpm dev
 ```
 
-The development frontend uses credentialed same-origin `/api/control/v1` requests and proxies `/api` to `PZP_API_DEV_ORIGIN`, which defaults to `http://127.0.0.1:8000`. Nuxt SSR returns public pages and a neutral protected-route gate before hydration; authentication and privileged data still load only in the browser. Phase 4 includes browser OIDC, signed Mini App exchange, server-side sessions, capability-driven navigation, bot-admin provider/credential APIs and a reusable ephemeral credential-reveal component. The backend routes are attached when the webhook FastAPI application starts with `CONTROL_PLANE_ENABLED=true`; complete provider settings pages plus chat, memory and operations forms remain unavailable until later Plan 021 phases.
+The development frontend uses credentialed same-origin `/api/control/v1` requests and proxies `/api` to `PZP_API_DEV_ORIGIN`, which defaults to `http://127.0.0.1:8000`. Nuxt SSR returns public pages and a neutral protected-route gate before hydration; authentication and privileged data still load only in the browser. Phase 5 includes browser OIDC, signed Mini App exchange, server-side sessions, capability-driven navigation, bot-admin provider/credential APIs, controlled reveal, classified sticky key-pool failover and a protected Providers page for pool health, explicit constant-input checks and sanitized alert retry. The backend routes are attached when the webhook FastAPI application starts with `CONTROL_PLANE_ENABLED=true`; bot settings, chats, query, memory, statistics and broader operations forms remain unavailable until later Plan 021 phases.
 
 For a production-style local build, run `pnpm build`, `pnpm scan:generated` and `pnpm smoke:ssr` from `web/`. The production Compose stack keeps Nuxt and FastAPI private behind Caddy, strips credential headers before frontend requests and requires webhook configuration; see [deployment.md](deployment.md) before starting it.
 
@@ -51,6 +51,8 @@ CONTROL_PLANE_SESSION_ABSOLUTE_SECONDS=604800
 Generate each vault master key independently with `uv run python -c "import base64,secrets; print(base64.b64encode(secrets.token_bytes(32)).decode())"`, place the result in the deployment secret store as a JSON value under a non-secret key ID, and select that ID with `CONTROL_PLANE_ACTIVE_MASTER_KEY_ID`. Do not paste the generated material into source control, logs, Telegram or shell history shared with other users.
 
 Enabling the control plane fails closed when the HTTPS origin, Telegram bot token, OIDC client ID, OIDC client secret, valid master-key map or active key ID is absent. Every master-key value must be valid base64 that decodes to exactly 32 bytes. `pzp-bot show-config` reports only the origin, fixed callback, configured-state booleans, key IDs and TTL metadata; `pzp-bot secrets status` reports key-reference counts, and neither command prints OIDC, master-key or provider-secret material.
+
+`CONTROL_PLANE_MAX_CREDENTIALS_PER_PROFILE=10` bounds the total environment plus database-managed key sources for one managed profile. `CONTROL_PLANE_PROVIDER_TEST_RATE_LIMIT=5` limits explicit paid credential checks per client in the configured control-plane rate window, while `CONTROL_PLANE_ALERT_DELIVERY_INTERVAL_SECONDS=5` controls the best-effort Telegram admin-DM worker interval. Provider tests and local-model download checks never run automatically during page load.
 
 For an OpenAI-backed run, keep the key out of committed files and select the model plus reasoning effort explicitly:
 

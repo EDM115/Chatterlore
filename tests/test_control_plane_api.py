@@ -6,8 +6,11 @@ import hmac
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, cast
 from urllib.parse import parse_qs, urlencode, urlsplit
 
+from aiogram import Bot, Dispatcher
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
@@ -16,8 +19,10 @@ from pzp_ai_bot.config import Settings
 from pzp_ai_bot.control_plane.app import create_control_plane_app
 from pzp_ai_bot.control_plane.auth.identity import TelegramIdentity
 from pzp_ai_bot.db.models import BotEvent, ControlPlaneSession, ControlPlaneUser
+from pzp_ai_bot.db.repos.alerts import AdminAlertRepository
 from pzp_ai_bot.db.repos.control_plane import ControlPlaneAccessRepository
 from pzp_ai_bot.db.session import create_schema, session_scope
+from pzp_ai_bot.telegram.webhook import create_webhook_app
 
 NOW = datetime.now(UTC).replace(microsecond=0)
 ORIGIN = "https://control.example.test"
@@ -84,6 +89,20 @@ class FakeOIDCClient:
         )
 
     async def aclose(self) -> None:
+        return None
+
+
+class ControlPlaneHealthBotDouble:
+    def __init__(self) -> None:
+        self.session = SimpleNamespace(close=self.close)
+
+    async def set_my_commands(self, commands: Any) -> None:
+        return None
+
+    async def set_webhook(self, *args: Any, **kwargs: Any) -> bool:
+        return True
+
+    async def close(self) -> None:
         return None
 
 
@@ -413,6 +432,172 @@ def test_provider_credentials_are_bot_admin_only_action_bound_and_never_listed_r
             assert "secret" not in json.dumps(events[0].payload)
 
     asyncio.run(inspect_reveal_audit())
+
+
+def test_provider_pool_health_manual_checks_and_alert_history_are_bot_admin_only(
+    tmp_path: Path,
+) -> None:
+    context, app = build_test_app(tmp_path, control_plane_provider_test_rate_limit=2)
+    calls: list[tuple[str, str]] = []
+
+    def client_factory(api_key: str, _base_url: str):
+        async def chat_create(**_kwargs):
+            calls.append((api_key, "chat"))
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content="OK"))],
+                usage=SimpleNamespace(prompt_tokens=3, completion_tokens=1),
+            )
+
+        async def embedding_create(**_kwargs):
+            calls.append((api_key, "embedding"))
+            return SimpleNamespace(data=[SimpleNamespace(embedding=[0.1, 0.2, 0.3])])
+
+        return SimpleNamespace(
+            chat=SimpleNamespace(completions=SimpleNamespace(create=chat_create)),
+            embeddings=SimpleNamespace(create=embedding_create),
+        )
+
+    context.memory.provider_registry.openai_client_factory = client_factory
+
+    with TestClient(app, base_url=ORIGIN) as client:
+        login = client.post(
+            "/api/control/v1/auth/mini-app",
+            headers={"Origin": ORIGIN},
+            json={"init_data": signed_init_data(111)},
+        )
+        headers = {"Origin": ORIGIN, "X-CSRF-Token": login.json()["csrf_token"]}
+        created_profile = client.post(
+            "/api/control/v1/providers",
+            headers=headers,
+            json={
+                "name": "Primary",
+                "provider_kind": "openai_compatible",
+                "base_url": "https://api.openai.com/v1",
+                "chat_model": "gpt-5.6-terra",
+                "embedding_model": "text-embedding-3-small",
+                "chat_capable": True,
+                "embedding_capable": True,
+                "reasoning_capable": True,
+                "local": False,
+                "redact_before_ai": True,
+                "redaction_patterns": [],
+                "fake_embedding_dimensions": 64,
+            },
+        )
+        assert created_profile.status_code == 200
+        assert (
+            client.post(
+                "/api/control/v1/auth/step-up/mini-app",
+                headers=headers,
+                json={"init_data": signed_init_data(111), "action": "credential:create"},
+            ).status_code
+            == 200
+        )
+        created = client.post(
+            "/api/control/v1/providers/primary/credentials",
+            headers=headers,
+            json={"label": "Primary key", "value": "sk-manual-test-secret"},
+        )
+        assert created.status_code == 200
+        credential_id = created.json()["id"]
+
+        initial_pool = client.get("/api/control/v1/providers/primary/pool")
+        assert initial_pool.status_code == 200
+        assert initial_pool.json()["active_credential_fingerprint"] is None
+        checked = client.post(
+            f"/api/control/v1/providers/primary/credentials/{credential_id}/test",
+            headers=headers,
+            json={"mode": "chat"},
+        )
+        assert checked.status_code == 200
+        assert checked.json()["ok"] is True
+        assert checked.json()["mode"] == "chat"
+        assert checked.json()["model"] == "gpt-5.6-terra"
+        assert checked.json()["credential_label"] == "Primary key"
+        assert "usage charges" in checked.json()["warning"]
+        assert "secret" not in json.dumps(checked.json())
+        embedded = client.post(
+            f"/api/control/v1/providers/primary/credentials/{credential_id}/test",
+            headers=headers,
+            json={"mode": "embedding"},
+        )
+        assert embedded.status_code == 200
+        assert embedded.json()["dimensions"] == 3
+        assert (
+            client.post(
+                f"/api/control/v1/providers/primary/credentials/{credential_id}/test",
+                headers=headers,
+                json={"mode": "chat"},
+            ).status_code
+            == 429
+        )
+        active_pool = client.get("/api/control/v1/providers/primary/pool")
+        assert active_pool.json()["active_credential_label"] == "Primary key"
+        listed = client.get("/api/control/v1/providers/primary/credentials").json()
+        assert listed[0]["active"] is True
+        assert listed[0]["health_state"] == "healthy"
+        assert listed[0]["success_count"] == 2
+
+        async def enqueue_alert() -> int:
+            async with session_scope(context.session_factory) as database:
+                alert = await AdminAlertRepository(database).enqueue_intent(
+                    alert_type="pool_exhausted",
+                    profile_name="primary",
+                    credential_fingerprint=None,
+                    credential_label=None,
+                    health_epoch=12,
+                    payload={"classification": "exhausted", "unsafe": "sk-private"},
+                    now=NOW,
+                )
+                return alert.id
+
+        alert_id = asyncio.run(enqueue_alert())
+        alerts = client.get("/api/control/v1/alerts")
+        assert alerts.status_code == 200
+        assert alerts.json()["items"][0]["id"] == alert_id
+        assert alerts.json()["next_cursor"] is None
+        assert alerts.json()["has_more"] is False
+        assert "payload" not in alerts.json()["items"][0]
+        assert "sk-private" not in json.dumps(alerts.json())
+        retried = client.post(f"/api/control/v1/alerts/{alert_id}/retry", headers=headers)
+        assert retried.status_code == 200
+        assert retried.json()["state"] == "pending"
+
+    assert calls == [("sk-manual-test-secret", "chat"), ("sk-manual-test-secret", "embedding")]
+
+    _, unauthorized_app = build_test_app(tmp_path / "unauthorized")
+    with TestClient(unauthorized_app, base_url=ORIGIN) as client:
+        login = client.post(
+            "/api/control/v1/auth/mini-app",
+            headers={"Origin": ORIGIN},
+            json={"init_data": signed_init_data(999)},
+        )
+        assert login.status_code == 200
+        assert client.get("/api/control/v1/alerts").status_code == 403
+        assert client.get("/api/control/v1/providers/default/pool").status_code == 403
+
+
+def test_admin_alert_delivery_is_started_but_is_not_a_critical_health_dependency(
+    tmp_path: Path,
+) -> None:
+    context, _ = build_test_app(tmp_path)
+    context.settings.webhook_url = "https://control.example.test/telegram/webhook"
+    context.settings.webhook_secret = "phase-five-webhook-secret"  # noqa: S105
+    app = create_webhook_app(
+        context,
+        bot=cast(Bot, ControlPlaneHealthBotDouble()),
+        dispatcher=cast(Dispatcher, SimpleNamespace()),
+    )
+
+    with TestClient(app) as client:
+        alert_handle = app.state.background_tasks["pzp-admin-alert-delivery"]
+        assert alert_handle.healthy is True
+        cast(Any, client).portal.call(alert_handle.task.cancel)
+        cast(Any, client).portal.call(asyncio.sleep, 0)
+        response = client.get("/health")
+
+    assert response.status_code == 200
+    assert "pzp-admin-alert-delivery" not in response.json()["tasks"]
 
 
 async def _grant_bot_admin(context, user_id: int) -> None:

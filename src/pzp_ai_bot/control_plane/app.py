@@ -11,7 +11,9 @@ from fastapi import APIRouter, Body, FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 
+from pzp_ai_bot.ai.credential_pool import ProviderCallError
 from pzp_ai_bot.app_context import AppContext
+from pzp_ai_bot.db.models import AdminAlert
 from pzp_ai_bot.db.repos.events import EventRepository
 from pzp_ai_bot.db.session import session_scope
 
@@ -33,6 +35,8 @@ from .middleware import (
 )
 from .runtime import ControlPlaneRuntime
 from .schemas import (
+    AdminAlertPage,
+    AdminAlertSummary,
     ControlPlaneConflictEnvelope,
     ControlPlaneErrorEnvelope,
     ControlPlaneSessionResponse,
@@ -45,7 +49,10 @@ from .schemas import (
     ProviderCredentialMutationResponse,
     ProviderCredentialRevealResponse,
     ProviderCredentialSummary,
+    ProviderCredentialTestRequest,
+    ProviderCredentialTestResponse,
     ProviderCredentialUpdateRequest,
+    ProviderPoolSummary,
     ProviderProfileCreateRequest,
     ProviderProfileDeleteRequest,
     ProviderProfileMutationResponse,
@@ -121,6 +128,7 @@ def create_control_plane_schema_app() -> FastAPI:
     )
     app.include_router(_build_auth_router())
     app.include_router(_build_provider_router())
+    app.include_router(_build_alert_router())
     return app
 
 
@@ -134,6 +142,7 @@ def install_control_plane(app: FastAPI, context: AppContext) -> None:
     )
     app.include_router(_build_auth_router())
     app.include_router(_build_provider_router())
+    app.include_router(_build_alert_router())
     app.add_middleware(
         ControlPlaneRequestGuardMiddleware,
         settings=context.settings,
@@ -601,6 +610,19 @@ def _build_provider_router() -> APIRouter:
         except ValueError as exc:
             _raise_provider_error(exc)
 
+    @router.get(
+        "/{name}/pool",
+        response_model=ProviderPoolSummary,
+        openapi_extra={"x-pzp-capability": "bot_admin"},
+        responses=common_errors,
+    )
+    async def get_provider_pool(request: Request, name: str) -> dict[str, Any]:
+        _, runtime, _, _ = await _require_bot_admin(request)
+        try:
+            return (await runtime.credential_pool.summary(name)).as_dict()
+        except ValueError as exc:
+            _raise_provider_error(exc)
+
     @router.post(
         "/{name}/credentials",
         response_model=ProviderCredentialMutationResponse,
@@ -684,6 +706,36 @@ def _build_provider_router() -> APIRouter:
             headers={"Cache-Control": "no-store, private", "Pragma": "no-cache"},
         )
 
+    @router.post(
+        "/{name}/credentials/{credential_id}/test",
+        response_model=ProviderCredentialTestResponse,
+        openapi_extra={"x-pzp-capability": "bot_admin"},
+        responses={
+            **common_errors,
+            429: {"model": ControlPlaneErrorEnvelope},
+            503: {"model": ControlPlaneErrorEnvelope},
+        },
+    )
+    async def test_provider_credential(
+        request: Request, name: str, credential_id: int, payload: ProviderCredentialTestRequest
+    ) -> dict[str, Any]:
+        context, _, _, _ = await _require_bot_admin(request)
+        _check_rate_limit(
+            request,
+            bucket="provider_credential_test",
+            limit=context.settings.control_plane_provider_test_rate_limit,
+        )
+        try:
+            return await context.memory.provider_registry.test_managed_credential(
+                name, credential_id, mode=payload.mode
+            )
+        except ProviderCallError as exc:
+            raise ControlPlaneAPIError(
+                503, "provider_credential_test_failed", "The provider credential check failed."
+            ) from exc
+        except ValueError as exc:
+            _raise_provider_error(exc)
+
     @router.delete(
         "/{name}/credentials/{credential_id}",
         response_model=DeleteMutationResponse,
@@ -714,6 +766,53 @@ def _build_provider_router() -> APIRouter:
         except (ProviderSecretConflictError, ValueError) as exc:
             _raise_provider_error(exc)
         return DeleteMutationResponse(audit_event_id=audit_event_id, version=payload.version + 1)
+
+    return router
+
+
+def _build_alert_router() -> APIRouter:
+    router = APIRouter(prefix="/api/control/v1/alerts", tags=["alerts"])
+    common_errors: dict[int | str, dict[str, Any]] = {
+        401: {"model": ControlPlaneErrorEnvelope},
+        403: {"model": ControlPlaneErrorEnvelope},
+        422: {"model": ControlPlaneErrorEnvelope},
+    }
+
+    @router.get(
+        "",
+        response_model=AdminAlertPage,
+        openapi_extra={"x-pzp-capability": "bot_admin"},
+        responses=common_errors,
+    )
+    async def list_admin_alerts(
+        request: Request,
+        cursor: int | None = Query(default=None, ge=1),
+        limit: int = Query(default=100, ge=1, le=100),
+    ) -> dict[str, Any]:
+        _, runtime, _, _ = await _require_bot_admin(request)
+        alerts = await runtime.alerts.list_alerts(limit=limit + 1, before_id=cursor)
+        has_more = len(alerts) > limit
+        page = alerts[:limit]
+        return {
+            "items": [_alert_payload(alert) for alert in page],
+            "next_cursor": page[-1].id if has_more and page else None,
+            "has_more": has_more,
+        }
+
+    @router.post(
+        "/{alert_id}/retry",
+        response_model=AdminAlertSummary,
+        openapi_extra={"x-pzp-capability": "bot_admin"},
+        responses={**common_errors, 409: {"model": ControlPlaneErrorEnvelope}},
+    )
+    async def retry_admin_alert(request: Request, alert_id: int) -> dict[str, Any]:
+        _, runtime, _, _ = await _require_bot_admin(request)
+        alert = await runtime.alerts.retry(alert_id, now=datetime.now(UTC))
+        if alert is None:
+            raise ControlPlaneAPIError(
+                409, "admin_alert_not_retryable", "The admin alert cannot be retried."
+            )
+        return _alert_payload(alert)
 
     return router
 
@@ -800,6 +899,26 @@ def _credential_mutation_payload(credential: Any) -> dict[str, Any]:
     payload = credential.as_dict()
     payload["audit_event_id"] = int(credential.audit_event_id)
     return payload
+
+
+def _alert_payload(alert: AdminAlert) -> dict[str, Any]:
+    return {
+        "id": alert.id,
+        "parent_intent_id": alert.parent_intent_id,
+        "alert_type": alert.alert_type,
+        "profile_name": alert.profile_name,
+        "credential_fingerprint": alert.credential_fingerprint,
+        "credential_label": alert.credential_label,
+        "health_epoch": alert.health_epoch,
+        "recipient_telegram_id": alert.recipient_telegram_id,
+        "state": alert.state,
+        "attempts": alert.attempts,
+        "next_attempt_at": alert.next_attempt_at,
+        "created_at": alert.created_at,
+        "last_attempt_at": alert.last_attempt_at,
+        "delivered_at": alert.delivered_at,
+        "error_classification": alert.error_classification,
+    }
 
 
 def _check_rate_limit(request: Request, *, bucket: str, limit: int) -> None:

@@ -328,6 +328,200 @@ h2 {
   letter-spacing: 0.12em;
 }
 
+.provider-warning-grid,
+.pool-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+.provider-console,
+.alert-history {
+  margin-top: 2rem;
+  padding: clamp(1.25rem, 3vw, 2rem);
+  border: 1px solid var(--pzp-border);
+  border-radius: 0.9rem;
+  background: var(--pzp-panel);
+}
+
+.provider-toolbar,
+.section-heading,
+.credential-card header,
+.alert-list article {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.provider-toolbar {
+  flex-wrap: wrap;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--pzp-border);
+}
+
+.provider-toolbar label {
+  font-weight: 700;
+}
+
+.provider-toolbar select {
+  min-width: 12rem;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid var(--pzp-border);
+  border-radius: 0.5rem;
+  background: var(--pzp-panel-strong);
+  color: var(--pzp-text);
+}
+
+.provider-models,
+.section-heading > span,
+.credential-card small,
+.alert-list small {
+  color: var(--pzp-muted);
+  font-size: 0.8rem;
+}
+
+.pool-summary-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.pool-summary-grid article {
+  display: grid;
+  gap: 0.35rem;
+  padding: 1rem;
+  border: 1px solid var(--pzp-border);
+  border-radius: 0.65rem;
+  background: var(--pzp-panel-strong);
+}
+
+.pool-summary-grid span,
+.credential-metrics dt {
+  color: var(--pzp-muted);
+  font-size: 0.75rem;
+}
+
+.section-heading {
+  margin-top: 2rem;
+}
+
+.section-heading .eyebrow {
+  margin-bottom: 0.35rem;
+}
+
+.credential-list,
+.alert-list {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.credential-card {
+  padding: 1rem;
+  border: 1px solid var(--pzp-border);
+  border-radius: 0.7rem;
+  background: var(--pzp-panel-strong);
+}
+
+.credential-card header > div,
+.alert-list article > div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.health-pill {
+  padding: 0.25rem 0.55rem;
+  border: 1px solid var(--pzp-border);
+  border-radius: 999px;
+  color: var(--pzp-muted);
+  font-size: 0.72rem;
+  font-weight: 750;
+  text-transform: lowercase;
+}
+
+.health-pill[data-state="healthy"],
+.health-pill[data-state="delivered"],
+.health-pill[data-state="expanded"] {
+  border-color: #34d399;
+  color: #6ee7b7;
+}
+
+.health-pill[data-state="disabled"],
+.health-pill[data-state="unreachable"] {
+  border-color: #fb7185;
+  color: #fda4af;
+}
+
+.health-pill[data-state="cooldown"],
+.health-pill[data-state="retry"] {
+  border-color: #fbbf24;
+  color: #fde68a;
+}
+
+.credential-secret,
+.credential-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+  margin-top: 0.85rem;
+}
+
+.credential-secret output {
+  min-width: 12rem;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.credential-secret button {
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--pzp-border);
+  border-radius: 0.4rem;
+  background: transparent;
+  color: var(--pzp-text);
+}
+
+.credential-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+
+.credential-metrics div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.credential-metrics dd {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.test-result {
+  margin: 0.75rem 0 0;
+  color: #6ee7b7;
+  font-size: 0.82rem;
+}
+
+.alert-list article {
+  padding: 0.85rem 0;
+  border-top: 1px solid var(--pzp-border);
+}
+
+.operation-error,
+.empty-panel {
+  margin-top: 1rem;
+  padding: 0.85rem 1rem;
+  border-radius: 0.55rem;
+  background: var(--pzp-panel-strong);
+  color: var(--pzp-muted);
+}
+
+.operation-error {
+  border: 1px solid #fb7185;
+  color: #fda4af;
+}
+
 @media (max-width: 900px) {
   .shell-sidebar {
     display: none;
@@ -388,6 +582,11 @@ h2 {
   .foundation-grid {
     grid-template-columns: 1fr;
   }
+
+  .pool-summary-grid,
+  .credential-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 620px) {
@@ -402,6 +601,20 @@ h2 {
     flex-direction: column;
     gap: 0.35rem;
     padding: 1.25rem;
+  }
+
+  .provider-warning-grid,
+  .pool-summary-grid,
+  .credential-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .provider-toolbar,
+  .section-heading,
+  .credential-card header,
+  .alert-list article {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 

@@ -15,7 +15,11 @@ from pzp_ai_bot.control_plane.secrets.service import (
     ProviderSecretService,
 )
 from pzp_ai_bot.db.models import BotEvent
-from pzp_ai_bot.db.repos.provider_credentials import ProviderCredentialRepository
+from pzp_ai_bot.db.repos.provider_credentials import (
+    ProviderCredentialRepository,
+    ProviderPoolStateRepository,
+    ProviderProfileRepository,
+)
 from pzp_ai_bot.db.session import create_schema, create_session_factory, session_scope
 
 NOW = datetime(2026, 8, 1, 10, 0, tzinfo=UTC)
@@ -44,7 +48,7 @@ def service_settings(tmp_path: Path, **overrides: object) -> Settings:
 
 
 @pytest.mark.asyncio
-async def test_managed_profile_overlay_preserves_environment_fallback_and_refreshes_key(
+async def test_managed_profile_overlay_preserves_environment_fallback_without_caching_managed_key(
     tmp_path: Path,
 ) -> None:
     settings = service_settings(tmp_path)
@@ -88,13 +92,32 @@ async def test_managed_profile_overlay_preserves_environment_fallback_and_refres
     assert credential.last_four == "1234"
     assert "managed-secret" not in json.dumps(credential.as_dict())
     managed_with_key = registry.select("default")
-    assert managed_with_key.profile.openai_api_key == "managed-secret-1234"
+    assert managed_with_key.profile.openai_api_key == "environment-secret"
     assert managed_with_key is not managed_without_key
 
     summaries = await service.list_credentials("default")
     assert [summary.source for summary in summaries] == ["environment", "managed"]
     assert summaries[0].revealable is False
     assert summaries[1].revealable is True
+    environment_credential = summaries[0]
+    assert isinstance(environment_credential.id, int)
+    with pytest.raises(ValueError, match="environment provider credentials are immutable"):
+        await service.update_credential(
+            "default",
+            environment_credential.id,
+            expected_version=environment_credential.version,
+            updates={"label": "renamed bootstrap key"},
+            actor_user_id=111,
+            now=NOW,
+        )
+    with pytest.raises(ValueError, match="environment provider credentials are immutable"):
+        await service.delete_credential(
+            "default",
+            environment_credential.id,
+            expected_version=environment_credential.version,
+            actor_user_id=111,
+            now=NOW,
+        )
     assert (
         await service.reveal_credential("default", credential.id, actor_user_id=111)
         == "managed-secret-1234"
@@ -118,9 +141,8 @@ async def test_managed_profile_overlay_preserves_environment_fallback_and_refres
 async def test_versioned_mutations_limits_and_tombstone_are_safe(tmp_path: Path) -> None:
     settings = service_settings(tmp_path, control_plane_max_credentials_per_profile=1)
     await create_schema(settings)
-    service = ProviderSecretService(
-        settings, create_session_factory(settings), ProviderRegistry(settings)
-    )
+    factory = create_session_factory(settings)
+    service = ProviderSecretService(settings, factory, ProviderRegistry(settings))
     profile = await service.create_profile(
         {
             "name": "managed",
@@ -164,19 +186,95 @@ async def test_versioned_mutations_limits_and_tombstone_are_safe(tmp_path: Path)
         await service.create_credential(
             "managed", label="second", value="secret-two", actor_user_id=111, now=NOW
         )
+    async with session_scope(create_session_factory(settings)) as session:
+        automatically_disabled = await ProviderCredentialRepository(session).apply_failure(
+            credential.id,
+            expected_version=credential.version,
+            health_state="disabled",
+            classification="authentication",
+            cooldown_until=None,
+            now=NOW,
+        )
+        assert automatically_disabled is not None
+    reenabled = await service.update_credential(
+        "managed",
+        credential.id,
+        expected_version=credential.version + 1,
+        updates={"state": "enabled"},
+        actor_user_id=111,
+        now=NOW,
+    )
+    assert reenabled.state == "enabled"
+    assert reenabled.health_state == "unknown"
+    assert reenabled.last_error_classification is None
+    async with session_scope(factory) as session:
+        stored_profile = await ProviderProfileRepository(session).get_by_name("managed")
+        assert stored_profile is not None
+        states = ProviderPoolStateRepository(session)
+        pool_state = await states.get(stored_profile.id)
+        assert pool_state is not None
+        assert (
+            await states.compare_and_swap(
+                stored_profile.id,
+                expected_version=pool_state.version,
+                active_credential_id=credential.id,
+            )
+            is not None
+        )
+    assert (await service.list_credentials("managed"))[0].active is True
     disabled = await service.update_credential(
         "managed",
         credential.id,
-        expected_version=credential.version,
+        expected_version=reenabled.version,
         updates={"state": "disabled", "position": 3},
         actor_user_id=111,
         now=NOW,
     )
     assert disabled.state == "disabled"
+    assert disabled.health_state == "disabled"
+    assert disabled.last_error_classification == "manual"
     assert disabled.position == 3
-    await service.delete_credential(
-        "managed", credential.id, expected_version=disabled.version, actor_user_id=111, now=NOW
+    async with session_scope(factory) as session:
+        stored_profile = await ProviderProfileRepository(session).get_by_name("managed")
+        assert stored_profile is not None
+        pool_state = await ProviderPoolStateRepository(session).get(stored_profile.id)
+        assert pool_state is not None
+        assert pool_state.active_credential_id is None
+    reenabled_for_deletion = await service.update_credential(
+        "managed",
+        credential.id,
+        expected_version=disabled.version,
+        updates={"state": "enabled"},
+        actor_user_id=111,
+        now=NOW,
     )
+    async with session_scope(factory) as session:
+        stored_profile = await ProviderProfileRepository(session).get_by_name("managed")
+        assert stored_profile is not None
+        states = ProviderPoolStateRepository(session)
+        pool_state = await states.get(stored_profile.id)
+        assert pool_state is not None
+        assert (
+            await states.compare_and_swap(
+                stored_profile.id,
+                expected_version=pool_state.version,
+                active_credential_id=credential.id,
+            )
+            is not None
+        )
+    await service.delete_credential(
+        "managed",
+        credential.id,
+        expected_version=reenabled_for_deletion.version,
+        actor_user_id=111,
+        now=NOW,
+    )
+    async with session_scope(factory) as session:
+        stored_profile = await ProviderProfileRepository(session).get_by_name("managed")
+        assert stored_profile is not None
+        pool_state = await ProviderPoolStateRepository(session).get(stored_profile.id)
+        assert pool_state is not None
+        assert pool_state.active_credential_id is None
     with pytest.raises(ValueError, match="not found"):
         await service.reveal_credential("managed", credential.id, actor_user_id=111)
 
