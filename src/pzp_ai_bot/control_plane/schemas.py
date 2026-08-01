@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -243,3 +244,116 @@ class AdminAlertPage(BaseModel):
 class DeleteMutationResponse(BaseModel):
     audit_event_id: int
     version: int
+
+
+class BotAdminCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    telegram_user_id: int = Field(ge=1)
+
+
+class VersionedMutationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version: int = Field(ge=1)
+
+
+class BotAdminResponse(BaseModel):
+    telegram_user_id: int
+    source: str
+    version: int | None
+    granted_by: int | None
+    granted_at: datetime | None
+
+
+class RuntimeSettingsUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    updates: dict[str, Any] = Field(min_length=1, max_length=50)
+
+
+class RuntimeSettingResponse(BaseModel):
+    key: str
+    value: Any
+    default_value: Any
+    previous_value: Any
+    updated_by: int | None
+    updated_at: datetime | None
+    version: int | None
+
+
+class ManagedChatResponse(BaseModel):
+    chat_id: int
+    title: str | None
+    username: str | None
+    status: str
+    version: int
+    updated_at: datetime
+
+
+class ManagedChatStatusRequest(VersionedMutationRequest):
+    status: str = Field(pattern="^(active|paused|detached)$")
+
+
+class ChatAdminCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    telegram_user_id: int = Field(ge=1)
+
+
+class ChatAdminResponse(BaseModel):
+    chat_id: int
+    telegram_user_id: int
+    version: int
+    granted_by: int
+    granted_at: datetime
+    active: bool
+
+
+class ChatEnrollmentCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    delivery: str = Field(default="mini_app", pattern="^(mini_app|telegram_dm)$")
+
+
+class ChatEnrollmentResponse(BaseModel):
+    request_id: int
+    status: str
+    delivery: str
+    expires_at: datetime
+    prepared_button_id: str | None
+    chat_id: int | None
+    error_code: str | None
+
+
+class ScopeSettingsUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    settings: dict[str, int | str | bool | None] = Field(default_factory=dict, max_length=20)
+    learning_enabled: bool | None = None
+    allow_admins: bool | None = None
+
+
+class ScopePolicyResponse(BaseModel):
+    learning_enabled: bool
+    allow_admins: bool
+
+
+class ScopeSettingsResponse(BaseModel):
+    scope: str
+    effective: dict[str, Any]
+    inherited: dict[str, Any]
+    overrides: dict[str, Any]
+    policy: ScopePolicyResponse
+
+
+class ConfirmedChatActionRequest(VersionedMutationRequest):
+    confirmation: str = Field(min_length=1, max_length=128)
+
+
+class ChatForgetResponse(BaseModel):
+    chat_id: int
+    version: int
+    messages: int
+    knowledge_items: int
+    embeddings: int

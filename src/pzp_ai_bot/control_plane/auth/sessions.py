@@ -146,6 +146,12 @@ class ControlPlaneSessionService:
                 token_hash=_secret_hash(session_token), now=now, reason=reason
             )
 
+    async def revoke_user(self, telegram_user_id: int, *, now: datetime, reason: str) -> int:
+        async with session_scope(self.session_factory) as session:
+            return await ControlPlaneSessionRepository(session).revoke_user(
+                telegram_user_id=telegram_user_id, now=now, reason=reason
+            )
+
     async def cleanup(self, *, now: datetime) -> int:
         async with session_scope(self.session_factory) as session:
             return await ControlPlaneSessionRepository(session).cleanup(now=now)
@@ -193,6 +199,8 @@ SENSITIVE_ACTIONS = frozenset(
         "credential:reveal",
         "profile:delete",
         "bot_admin:delete",
+        "chat:forget",
+        "chat:leave",
     }
 )
 

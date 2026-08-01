@@ -530,6 +530,31 @@ class ManagedChat(Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
 
+class ManagedChatEnrollmentRequest(Base):
+    __tablename__ = "managed_chat_enrollment_requests"
+    __table_args__ = (
+        Index("uq_managed_chat_enrollment_requests_request_id", "request_id", unique=True),
+        Index(
+            "ix_managed_chat_enrollment_requests_requester_status",
+            "requested_by",
+            "status",
+            "expires_at",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    request_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    requested_by: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    prepared_button_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    delivery: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    chat_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class AIProviderProfile(Base):
     __tablename__ = "ai_provider_profiles"
     __table_args__ = (

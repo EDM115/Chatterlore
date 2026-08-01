@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -146,6 +146,13 @@ class MemoryService:
             add_embedding_usage_in_session=self._add_embedding_usage_in_session,
             compact_memory=self.compact_memory,
         )
+        self._scope_access_filter: Callable[[Scope], Awaitable[bool]] | None = None
+
+    def set_scope_access_filter(
+        self, scope_access_filter: Callable[[Scope], Awaitable[bool]] | None
+    ) -> None:
+        self._scope_access_filter = scope_access_filter
+        self._summary_service.set_scope_access_filter(scope_access_filter)
 
     async def set_learning(
         self, scope: Scope | None, enabled: bool, updated_by: int | None = None
@@ -388,6 +395,10 @@ class MemoryService:
         return self._settings_profiles.runtime_setting(key)
 
     async def ingest(self, incoming: IncomingMessage) -> IngestResult:
+        if self._scope_access_filter is not None and not await self._scope_access_filter(
+            incoming.scope
+        ):
+            return IngestResult(False, "managed_chat_inactive")
         text = normalize_text(incoming.text)
         summarized = False
         needs_compact = False
@@ -747,6 +758,9 @@ class MemoryService:
 
     async def forget(self, scope: Scope, user_id: int, confirm: str | None) -> tuple[bool, str]:
         return await self._mutation_service.forget(scope, user_id, confirm)
+
+    async def forget_confirmed(self, scope: Scope, *, user_id: int) -> dict[str, int]:
+        return await self._mutation_service.forget_confirmed(scope, user_id=user_id)
 
     async def _claim_summary_batch(
         self,

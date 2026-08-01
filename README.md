@@ -23,6 +23,7 @@ PZP AI is a Telegram memory assistant that learns from live group conversations 
 - Useful answers: `/ask` retrieves durable memory, manual notes and recent learned context, then answers with source references when needed.
 - Portable storage: SQLite keeps operational state, Markdown keeps durable memory readable, and exports are available as Markdown or JSONL.
 - Provider choice and resilience: run deterministic fake AI for development, local embeddings when you want that tradeoff, or managed OpenAI-compatible profiles with encrypted multi-key sticky failover and a bot-admin health console.
+- Graphical administration: the Telegram-authenticated SSR control plane manages reloadless safe bot defaults, bootstrap/database bot owners, delegated chat admins, group enrollment, chat/topic policy and distinct pause, detach, leave and forget actions.
 - Operationally ready: structured logs, audit events, runtime settings, database maintenance commands, Docker support and GitHub Actions CI are included.
 
 ## Quick Start
@@ -53,7 +54,7 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-The combined command is loopback-only, creates a real server-side development session for the backend-configured identity and makes no Telegram API calls while `WEBHOOK_URL` is empty. `pnpm dev:web` remains available when only the Nuxt server is wanted. See [docs/setup.md](docs/setup.md) for ports, proxy settings, optional connected Telegram mode and the production boundary.
+The combined command is loopback-only, creates a real server-side development session for the backend-configured identity and makes no Telegram API calls while `WEBHOOK_URL` is empty. Bot Settings, existing managed-chat controls and scoped policy can be exercised offline; group enrollment, target membership validation and leave need the explicitly connected Telegram mode. `pnpm dev:web` remains available when only the Nuxt server is wanted. See [docs/setup.md](docs/setup.md) for ports, proxy settings, optional connected Telegram mode and the production boundary.
 
 For a real Telegram group, create a bot with BotFather, set `TELEGRAM_BOT_TOKEN`, add the bot to a group, disable BotFather privacy mode or make the bot an admin, then run `/allow_chat` or `/allow_topic` where learning should be enabled. The complete walkthrough lives in [docs/setup.md](docs/setup.md).
 

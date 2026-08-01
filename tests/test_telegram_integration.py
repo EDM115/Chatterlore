@@ -15,8 +15,9 @@ from aiogram.types import Message as TelegramMessage
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from pzp_ai_bot.app_context import AppContext
+from pzp_ai_bot.app_context import AppContext, build_context
 from pzp_ai_bot.db.models import Message
+from pzp_ai_bot.db.repos.control_plane import ControlPlaneAccessRepository
 from pzp_ai_bot.db.repositories import EffectiveScopeSettings, MemoryProfileView
 from pzp_ai_bot.db.session import session_scope
 from pzp_ai_bot.memory.scope import Scope
@@ -102,6 +103,35 @@ class RecordingTelegramSession(BaseSession):
             for method in self.calls
             if method.__api_method__ == "sendMessage"
         ]
+
+
+class EnrollmentTelegramSession(RecordingTelegramSession):
+    async def make_request(
+        self,
+        bot: Bot,
+        method: TelegramMethod[Any],
+        timeout: int | None = None,  # noqa: ASYNC109
+    ) -> Any:
+        api_method = method.__api_method__
+        if api_method == "getChat":
+            self.calls.append(method)
+            return SimpleNamespace(
+                id=int(cast(Any, method).chat_id),
+                type="supergroup",
+                title="Shared Engineering",
+                username="shared_eng",
+            )
+        if api_method == "getMe":
+            self.calls.append(method)
+            return SimpleNamespace(id=999, is_bot=True, first_name="PZP")
+        if api_method == "getChatMember":
+            self.calls.append(method)
+            user_id = int(cast(Any, method).user_id)
+            return SimpleNamespace(
+                status="administrator" if user_id == 111 else "member",
+                user=SimpleNamespace(id=user_id, is_bot=user_id == 999),
+            )
+        return await super().make_request(bot, method, timeout)
 
 
 class AllowingAdmins:
@@ -1045,6 +1075,52 @@ async def test_ingestion_update_edges_match_scope_and_skip_rules(context: AppCon
     assert rows[2].text == "caption text"
     assert rows[2].reply_to_message_id == 2
     assert rows[6].text == "Attachment: runbook.pdf"
+
+
+@pytest.mark.asyncio
+async def test_chat_shared_update_completes_the_matching_control_plane_enrollment(
+    test_settings,
+) -> None:
+    settings = test_settings.model_copy(
+        update={
+            "control_plane_enabled": True,
+            "control_plane_public_origin": "https://control.example.test",
+            "telegram_oidc_client_id": "123456789",
+            "telegram_oidc_client_secret": "oidc-secret",
+            "control_plane_master_keys": '{"test":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}',
+            "control_plane_active_master_key_id": "test",
+        }
+    )
+    context = await build_context(settings)
+    assert context.control_plane is not None
+    now = datetime.now(UTC)
+    async with session_scope(context.session_factory) as database:
+        await ControlPlaneAccessRepository(database).add_enrollment_request(
+            request_id=77,
+            requested_by=111,
+            delivery="mini_app",
+            created_at=now,
+            expires_at=datetime(2026, 8, 2, tzinfo=UTC),
+        )
+    session = EnrollmentTelegramSession()
+    bot = Bot(context.settings.telegram_bot_token, session=session)
+    dispatcher = build_dispatcher(context)
+    payload = message_update(update_id=901, message_id=901, chat_id=111, user_id=111)
+    payload["message"]["chat"] = {"id": 111, "type": "private", "first_name": "Owner"}
+    payload["message"]["chat_shared"] = {
+        "request_id": 77,
+        "chat_id": -1006,
+        "title": "Shared Engineering",
+        "username": "shared_eng",
+    }
+
+    await feed(dispatcher, bot, payload)
+
+    chats = await context.control_plane.management.list_managed_chats()
+    assert [(chat.chat_id, chat.status, chat.title) for chat in chats] == [
+        (-1006, "active", "Shared Engineering")
+    ]
+    assert any("enrolled" in text.lower() for text in session.sent_texts())
 
 
 @pytest.mark.asyncio

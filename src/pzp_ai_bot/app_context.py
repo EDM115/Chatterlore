@@ -43,11 +43,13 @@ async def build_context(settings: Settings, *, ensure_schema: bool = True) -> Ap
     await memory.refresh_runtime_settings()
     admins = AdminService(settings.bot_admin_ids, ttl_seconds=settings.admin_cache_ttl_seconds)
     control_plane = (
-        build_control_plane_runtime(settings, session_factory, admins, provider_registry)
+        build_control_plane_runtime(settings, session_factory, admins, provider_registry, memory)
         if settings.control_plane_enabled
         else None
     )
     if control_plane is not None:
+        await control_plane.management.refresh_managed_authority()
+        memory.set_scope_access_filter(control_plane.management.allows_scope)
         await control_plane.secrets.refresh_registry()
         refreshed = provider_registry.select(settings.ai_provider_profile)
         memory.chat_provider = refreshed.chat_provider

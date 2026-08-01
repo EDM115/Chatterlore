@@ -67,7 +67,7 @@ def test_revision_0015_creates_provider_pool_and_admin_alert_schema(tmp_path: Pa
             row[1] for row in connection.execute("pragma table_info(ai_provider_credentials)")
         }
 
-    assert revision == ("0015_admin_alert_outbox",)
+    assert revision == ("0016_managed_chat_enrollment_requests",)
     assert {
         "ai_provider_profiles",
         "ai_provider_credentials",

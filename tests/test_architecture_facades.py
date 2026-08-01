@@ -33,6 +33,7 @@ EXPECTED_MEMORY_SERVICE_METHODS = {
     "export_memory",
     "export_memory_chunks",
     "forget",
+    "forget_confirmed",
     "forget_token_hash",
     "get_scope_settings",
     "import_jsonl",
@@ -63,6 +64,7 @@ EXPECTED_MEMORY_SERVICE_METHODS = {
     "set_memory_profile",
     "set_runtime_settings",
     "set_scope_metadata",
+    "set_scope_access_filter",
     "set_scope_settings",
     "set_summary_template",
     "set_system_prompt_template",
@@ -114,6 +116,7 @@ EXPECTED_REPOSITORY_EXPORTS = {
 }
 
 EXPECTED_ROUTER_HANDLER_ORDER = [
+    "complete_chat_enrollment",
     "ask",
     "memory_search",
     "help_command",

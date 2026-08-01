@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 from pathlib import Path
 from secrets import token_urlsafe
@@ -85,6 +86,12 @@ class MemorySummaryService:
         self.select_provider = select_provider
         self.reasoning_level = reasoning_level
         self.provider_operations = provider_operations
+        self.scope_access_filter: Callable[[Scope], Awaitable[bool]] | None = None
+
+    def set_scope_access_filter(
+        self, scope_access_filter: Callable[[Scope], Awaitable[bool]] | None
+    ) -> None:
+        self.scope_access_filter = scope_access_filter
 
     async def summarize_now(
         self,
@@ -100,6 +107,12 @@ class MemorySummaryService:
                 scopes = await MessageRepository(session).pending_scopes()
         else:
             scopes = [scope]
+        if self.scope_access_filter is not None:
+            scopes = [
+                pending_scope
+                for pending_scope in scopes
+                if await self.scope_access_filter(pending_scope)
+            ]
         count = 0
         dirty_scopes: set[Scope] = set()
         for pending_scope in scopes:
@@ -125,6 +138,8 @@ class MemorySummaryService:
         )
         async with session_scope(self.session_factory) as session:
             scopes = await MessageRepository(session).pending_scopes(idle_before=cutoff)
+        if self.scope_access_filter is not None:
+            scopes = [scope for scope in scopes if await self.scope_access_filter(scope)]
         count = 0
         dirty_scopes: set[Scope] = set()
         for scope in scopes:
