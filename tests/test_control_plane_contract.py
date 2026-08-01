@@ -31,6 +31,7 @@ AUTHORIZATION_MATRIX = {
     ("patch", "/api/control/v1/providers/{name}"): "bot_admin",
     ("delete", "/api/control/v1/providers/{name}"): "bot_admin_step_up",
     ("get", "/api/control/v1/providers/{name}/credentials"): "bot_admin",
+    ("get", "/api/control/v1/providers/{name}/pool"): "bot_admin",
     ("post", "/api/control/v1/providers/{name}/credentials"): "bot_admin_step_up",
     ("patch", "/api/control/v1/providers/{name}/credentials/{credential_id}"): "bot_admin",
     (
@@ -122,11 +123,16 @@ SAFE_CREDENTIAL_PROPERTIES = {
     "fingerprint",
     "position",
     "state",
+    "health_state",
     "cooldown_until",
+    "last_error_classification",
+    "success_count",
+    "failure_count",
     "last_success_at",
     "last_failure_at",
     "version",
     "revealable",
+    "active",
 }
 
 FORBIDDEN_CREDENTIAL_PROPERTIES = {

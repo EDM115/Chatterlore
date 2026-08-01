@@ -13,6 +13,7 @@ logger = structlog.get_logger(__name__)
 
 IDLE_SUMMARIZER_TASK_NAME = "pzp-idle-summarizer"
 RUNTIME_SETTINGS_REFRESHER_TASK_NAME = "pzp-runtime-settings-refresher"
+ADMIN_ALERT_DELIVERY_TASK_NAME = "pzp-admin-alert-delivery"
 
 
 @dataclass(slots=True)
@@ -71,6 +72,23 @@ async def runtime_settings_refresher_loop(
     )
 
 
+async def admin_alert_delivery_loop(
+    context: AppContext, bot: object, *, state: BackgroundTaskState | None = None
+) -> None:
+    task_state = state or BackgroundTaskState(name=ADMIN_ALERT_DELIVERY_TASK_NAME)
+
+    async def deliver() -> object:
+        if context.control_plane is None:
+            return 0
+        return await context.control_plane.alerts.deliver_pending(bot, now=datetime.now(UTC))
+
+    await _supervised_loop(
+        state=task_state,
+        interval=lambda: context.settings.control_plane_alert_delivery_interval_seconds,
+        operation=deliver,
+    )
+
+
 async def _supervised_loop(
     *,
     state: BackgroundTaskState,
@@ -120,6 +138,16 @@ def start_runtime_settings_refresher(context: AppContext) -> BackgroundTaskHandl
 def start_idle_summarizer(context: AppContext) -> BackgroundTaskHandle:
     state = BackgroundTaskState(name=IDLE_SUMMARIZER_TASK_NAME, running=True)
     task = asyncio.create_task(idle_summarizer_loop(context, state=state), name=state.name)
+    return BackgroundTaskHandle(task=task, state=state)
+
+
+def start_admin_alert_delivery(context: AppContext, bot: object) -> BackgroundTaskHandle | None:
+    if context.control_plane is None:
+        return None
+    state = BackgroundTaskState(name=ADMIN_ALERT_DELIVERY_TASK_NAME, running=True)
+    task = asyncio.create_task(
+        admin_alert_delivery_loop(context, bot, state=state), name=state.name
+    )
     return BackgroundTaskHandle(task=task, state=state)
 
 

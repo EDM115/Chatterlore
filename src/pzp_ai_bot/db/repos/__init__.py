@@ -1,3 +1,4 @@
+from pzp_ai_bot.db.repos.alerts import AdminAlertRepository
 from pzp_ai_bot.db.repos.canonical import CanonicalScopeSnapshotRepository
 from pzp_ai_bot.db.repos.challenges import (
     ForgetChallengeRepository,
@@ -51,6 +52,7 @@ from pzp_ai_bot.db.repos.shared import (
 
 __all__ = [
     "AIUsageStats",
+    "AdminAlertRepository",
     "CanonicalScopeSnapshotRecord",
     "CanonicalScopeSnapshotRepository",
     "ControlPlaneAccessRepository",

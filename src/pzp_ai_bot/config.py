@@ -62,6 +62,7 @@ class Settings(BaseSettings):
     control_plane_auth_callback_rate_limit: int = Field(default=20, ge=1)
     control_plane_mini_app_rate_limit: int = Field(default=20, ge=1)
     control_plane_step_up_rate_limit: int = Field(default=10, ge=1)
+    control_plane_provider_test_rate_limit: int = Field(default=5, ge=1)
     control_plane_max_managed_profiles: int = Field(default=32, ge=1, le=256)
     control_plane_max_credentials_per_profile: int = Field(default=10, ge=1, le=100)
     control_plane_max_secret_length: int = Field(default=16_384, ge=1, le=131_072)
@@ -78,6 +79,7 @@ class Settings(BaseSettings):
     openai_base_url: str = "https://api.openai.com/v1"
     provider_retry_attempts: int = Field(default=3, ge=1)
     provider_retry_backoff_seconds: float = Field(default=0.5, ge=0.0)
+    control_plane_alert_delivery_interval_seconds: int = Field(default=5, ge=1, le=3_600)
     log_level: str = "INFO"
 
     learning_default_enabled: bool = False

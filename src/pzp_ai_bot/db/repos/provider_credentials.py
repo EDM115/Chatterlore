@@ -23,7 +23,14 @@ _PROFILE_UPDATE_FIELDS = {
     "fake_embedding_dimensions",
     "enabled",
 }
-_CREDENTIAL_UPDATE_FIELDS = {"label", "position", "lifecycle_state"}
+_CREDENTIAL_UPDATE_FIELDS = {
+    "label",
+    "position",
+    "lifecycle_state",
+    "health_state",
+    "cooldown_until",
+    "last_error_classification",
+}
 
 
 class ProviderProfileRepository:
@@ -181,6 +188,80 @@ class ProviderCredentialRepository:
     async def get(self, credential_id: int) -> AIProviderCredential | None:
         return await self.session.get(AIProviderCredential, credential_id)
 
+    async def sync_environment(
+        self,
+        *,
+        profile_id: int,
+        label: str,
+        environment_variable: str | None,
+        fingerprint: str,
+        master_key_id: str,
+        now: datetime,
+    ) -> AIProviderCredential:
+        stored = await self.session.scalar(
+            select(AIProviderCredential).where(
+                AIProviderCredential.profile_id == profile_id,
+                AIProviderCredential.source_kind == "environment",
+                AIProviderCredential.lifecycle_state != "deleted",
+            )
+        )
+        if stored is None:
+            stored = AIProviderCredential(
+                profile_id=profile_id,
+                label=label,
+                source_kind="environment",
+                environment_variable=environment_variable,
+                secret_ciphertext=None,
+                secret_nonce=None,
+                wrapped_dek=None,
+                wrap_nonce=None,
+                master_key_id=master_key_id,
+                fingerprint=fingerprint,
+                last_four=None,
+                position=-1,
+                lifecycle_state="enabled",
+                health_state="unknown",
+                cooldown_until=None,
+                last_error_classification=None,
+                success_count=0,
+                failure_count=0,
+                last_success_at=None,
+                last_failure_at=None,
+                created_by=0,
+                created_at=now,
+                updated_by=0,
+                updated_at=now,
+                deleted_by=None,
+                deleted_at=None,
+                version=1,
+            )
+            self.session.add(stored)
+            await self.session.flush()
+            return stored
+        if (
+            stored.label == label
+            and stored.environment_variable == environment_variable
+            and stored.fingerprint == fingerprint
+            and stored.master_key_id == master_key_id
+        ):
+            return stored
+        stored.label = label
+        stored.environment_variable = environment_variable
+        stored.master_key_id = master_key_id
+        stored.fingerprint = fingerprint
+        stored.lifecycle_state = "enabled"
+        stored.health_state = "unknown"
+        stored.cooldown_until = None
+        stored.last_error_classification = None
+        stored.success_count = 0
+        stored.failure_count = 0
+        stored.last_success_at = None
+        stored.last_failure_at = None
+        stored.updated_at = now
+        stored.version += 1
+        await self.session.flush()
+        return stored
+
     async def create_provisioning(
         self, *, profile_id: int, label: str, position: int, actor_user_id: int, now: datetime
     ) -> AIProviderCredential:
@@ -312,3 +393,97 @@ class ProviderCredentialRepository:
             .where(AIProviderCredential.id == credential_id)
             .values(wrapped_dek=wrapped_dek, wrap_nonce=wrap_nonce, master_key_id=master_key_id)
         )
+
+    async def apply_failure(
+        self,
+        credential_id: int,
+        *,
+        expected_version: int,
+        health_state: str,
+        classification: str,
+        cooldown_until: datetime | None,
+        now: datetime,
+    ) -> AIProviderCredential | None:
+        statement = (
+            update(AIProviderCredential)
+            .where(
+                AIProviderCredential.id == credential_id,
+                AIProviderCredential.version == expected_version,
+                AIProviderCredential.lifecycle_state == "enabled",
+            )
+            .values(
+                health_state=health_state,
+                cooldown_until=cooldown_until,
+                last_error_classification=classification,
+                failure_count=AIProviderCredential.failure_count + 1,
+                last_failure_at=now,
+                updated_at=now,
+                version=AIProviderCredential.version + 1,
+            )
+            .returning(AIProviderCredential)
+        )
+        return (await self.session.scalars(statement)).one_or_none()
+
+    async def apply_success(
+        self, credential_id: int, *, expected_version: int, now: datetime
+    ) -> AIProviderCredential | None:
+        statement = (
+            update(AIProviderCredential)
+            .where(
+                AIProviderCredential.id == credential_id,
+                AIProviderCredential.version == expected_version,
+                AIProviderCredential.lifecycle_state == "enabled",
+            )
+            .values(
+                health_state="healthy",
+                cooldown_until=None,
+                last_error_classification=None,
+                success_count=AIProviderCredential.success_count + 1,
+                last_success_at=now,
+                updated_at=now,
+                version=AIProviderCredential.version + 1,
+            )
+            .returning(AIProviderCredential)
+        )
+        return (await self.session.scalars(statement)).one_or_none()
+
+
+class ProviderPoolStateRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def get(self, profile_id: int) -> AIProviderPoolState | None:
+        return await self.session.scalar(
+            select(AIProviderPoolState).where(AIProviderPoolState.profile_id == profile_id)
+        )
+
+    async def compare_and_swap(
+        self,
+        profile_id: int,
+        *,
+        expected_version: int,
+        active_credential_id: int | None,
+        health_epoch_delta: int = 0,
+        exhausted_at: datetime | None = None,
+        recovered_at: datetime | None = None,
+    ) -> AIProviderPoolState | None:
+        values: dict[str, Any] = {
+            "active_credential_id": active_credential_id,
+            "version": AIProviderPoolState.version + 1,
+        }
+        if health_epoch_delta:
+            values["health_epoch"] = AIProviderPoolState.health_epoch + health_epoch_delta
+        if exhausted_at is not None:
+            values["last_exhausted_at"] = exhausted_at
+        if recovered_at is not None:
+            values["last_recovered_at"] = recovered_at
+        statement = (
+            update(AIProviderPoolState)
+            .where(
+                AIProviderPoolState.profile_id == profile_id,
+                AIProviderPoolState.version == expected_version,
+            )
+            .values(**values)
+            .returning(AIProviderPoolState)
+        )
+        return (await self.session.scalars(statement)).one_or_none()

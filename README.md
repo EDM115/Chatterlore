@@ -22,7 +22,7 @@ PZP AI is a Telegram memory assistant that learns from live group conversations 
 - Admin-controlled learning: enable learning per chat/topic, allow or deny users, review proposed summaries and confirm destructive actions.
 - Useful answers: `/ask` retrieves durable memory, manual notes and recent learned context, then answers with source references when needed.
 - Portable storage: SQLite keeps operational state, Markdown keeps durable memory readable, and exports are available as Markdown or JSONL.
-- Provider choice: run deterministic fake AI for development, OpenAI-compatible providers for production, or local embeddings when you want that tradeoff.
+- Provider choice and resilience: run deterministic fake AI for development, local embeddings when you want that tradeoff, or managed OpenAI-compatible profiles with encrypted multi-key sticky failover and a bot-admin health console.
 - Operationally ready: structured logs, audit events, runtime settings, database maintenance commands, Docker support and GitHub Actions CI are included.
 
 ## Quick Start

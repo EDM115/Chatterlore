@@ -226,6 +226,10 @@ class ControlPlaneAccessRepository:
         )
         return grant_id is not None
 
+    async def active_bot_admin_ids(self) -> set[int]:
+        statement = select(BotAdminGrant.telegram_user_id).where(BotAdminGrant.revoked_at.is_(None))
+        return {int(value) for value in (await self.session.scalars(statement)).all()}
+
     async def active_chat_admin_ids(self, telegram_user_id: int) -> set[int]:
         statement = (
             select(ChatAdminGrant.chat_id)

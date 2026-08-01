@@ -14,7 +14,12 @@ const visibleUser = computed(() => (hydrated.value ? controlSession.user.value :
 
 const navigation = computed(() => {
   if (authenticated.value) {
-    return [{ label: "Overview", to: "/" }];
+    return [
+      { label: "Overview", to: "/" },
+      ...(controlSession.hasCapability("bot.admin")
+        ? [{ label: "Providers", to: "/providers" }]
+        : []),
+    ];
   }
   return [{ label: "Sign in", to: "/login" }];
 });

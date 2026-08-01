@@ -92,17 +92,20 @@ async function main() {
 
   try {
     await waitUntilReady(child);
-    const [loginResponse, protectedResponse] = await Promise.all([
+    const [loginResponse, protectedResponse, providersResponse] = await Promise.all([
       fetch(`${origin}/login`),
       fetch(`${origin}/`),
+      fetch(`${origin}/providers`),
     ]);
-    const [loginHtml, protectedHtml] = await Promise.all([
+    const [loginHtml, protectedHtml, providersHtml] = await Promise.all([
       loginResponse.text(),
       protectedResponse.text(),
+      providersResponse.text(),
     ]);
 
     requireCondition(loginResponse.status === 200, "login SSR response was not successful");
     requireCondition(protectedResponse.status === 200, "protected SSR response was not successful");
+    requireCondition(providersResponse.status === 200, "providers SSR response was not successful");
     requireCondition(
       loginHtml.includes("Sign in with Telegram."),
       "login route was not server rendered",
@@ -124,6 +127,18 @@ async function main() {
       "obsolete SPA loading HTML remains in the SSR response",
     );
     requireCondition(
+      providersHtml.includes('data-testid="auth-pending"'),
+      "providers route omitted the neutral access gate",
+    );
+    requireCondition(
+      !providersHtml.includes("Keys that fail without taking the bot down"),
+      "provider controls leaked into the SSR document",
+    );
+    requireCondition(
+      !providersHtml.includes("Primary key"),
+      "provider metadata leaked into the SSR document",
+    );
+    requireCondition(
       loginResponse.headers.get("cache-control") === "private, no-store",
       "SSR HTML is missing its private no-store policy",
     );
@@ -133,7 +148,12 @@ async function main() {
     );
     const loginNonce = requireCspNonce(loginResponse, loginHtml, "login");
     const protectedNonce = requireCspNonce(protectedResponse, protectedHtml, "protected");
+    const providersNonce = requireCspNonce(providersResponse, providersHtml, "providers");
     requireCondition(loginNonce !== protectedNonce, "SSR responses reused one script nonce");
+    requireCondition(
+      providersNonce !== loginNonce && providersNonce !== protectedNonce,
+      "providers SSR response reused a script nonce",
+    );
     for (const sentinel of sentinels) {
       requireCondition(
         !loginHtml.includes(sentinel),
@@ -143,8 +163,12 @@ async function main() {
         !protectedHtml.includes(sentinel),
         "a deployment secret leaked into protected SSR HTML",
       );
+      requireCondition(
+        !providersHtml.includes(sentinel),
+        "a deployment secret leaked into providers SSR HTML",
+      );
     }
-    console.log("SSR production smoke passed for public and protected direct routes.");
+    console.log("SSR production smoke passed for public, overview and providers direct routes.");
   } catch (error) {
     if (serverOutput.trim()) console.error(serverOutput.trim());
     throw error;

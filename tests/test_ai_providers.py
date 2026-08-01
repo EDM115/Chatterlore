@@ -4,7 +4,9 @@ import importlib
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
+import httpx
 import pytest
+from openai import APIConnectionError, BadRequestError
 from sqlalchemy import select
 from typer.testing import CliRunner
 
@@ -12,6 +14,7 @@ from pzp_ai_bot.ai.factory import ProviderRegistry, ProviderSelection
 from pzp_ai_bot.ai.local import LocalSentenceTransformerEmbeddingProvider
 from pzp_ai_bot.ai.openai_compatible import OpenAICompatibleProvider
 from pzp_ai_bot.ai.protocols import ChatMessage, ChatResult
+from pzp_ai_bot.ai.provider_call_policy import ProviderLeaseCallError
 from pzp_ai_bot.config import Settings, get_settings
 from pzp_ai_bot.db.models import AIUsage
 from pzp_ai_bot.db.session import session_scope
@@ -30,7 +33,7 @@ class FlakyCreate:
     async def __call__(self, **kwargs):
         self.calls.append(kwargs)
         if len(self.calls) == 1:
-            raise RuntimeError("temporary provider outage")
+            raise APIConnectionError(request=httpx.Request("POST", "https://provider.example.test"))
         return self.response
 
 
@@ -210,6 +213,42 @@ async def test_openai_compatible_selects_token_budget_field_by_model_family() ->
     assert legacy_call["max_tokens"] == 123
     assert "max_completion_tokens" not in legacy_call
     assert legacy_call["temperature"] == 0.2
+
+
+@pytest.mark.asyncio
+async def test_openai_compatible_does_not_retry_invalid_requests() -> None:
+    calls = 0
+    request = httpx.Request("POST", "https://provider.example.test/v1/responses")
+
+    async def invalid(**_kwargs):
+        nonlocal calls
+        calls += 1
+        response = httpx.Response(400, request=request)
+        raise BadRequestError(
+            "PRIVATE INVALID REQUEST",
+            response=response,
+            body={"error": {"message": "PRIVATE BODY"}},
+        )
+
+    provider = OpenAICompatibleProvider(
+        api_key="sk-test",
+        base_url="https://provider.example.test/v1",
+        chat_model="gpt-5.6-terra",
+        embedding_model="text-embedding-3-small",
+        retry_attempts=3,
+        retry_backoff_seconds=0,
+        client=SimpleNamespace(
+            chat=SimpleNamespace(completions=SimpleNamespace(create=invalid)),
+            embeddings=SimpleNamespace(),
+        ),
+    )
+
+    with pytest.raises(ProviderLeaseCallError) as caught:
+        await provider.generate([ChatMessage(role="user", content="safe input")])
+
+    assert calls == 1
+    assert caught.value.decision.classification.value == "invalid_request"
+    assert "PRIVATE" not in str(caught.value)
 
 
 @pytest.mark.asyncio
