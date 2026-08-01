@@ -79,6 +79,42 @@ async function stubProviderOperations(page: Page, credentials: object[] = []): P
   );
 }
 
+async function stubManagement(page: Page): Promise<void> {
+  await page.route("**/api/control/v1/bot-settings/admins", (route) =>
+    route.fulfill({
+      body: JSON.stringify([
+        {
+          telegram_user_id: 887758628,
+          source: "bootstrap",
+          version: null,
+          granted_by: null,
+          granted_at: null,
+        },
+      ]),
+      contentType: "application/json",
+    }),
+  );
+  await page.route("**/api/control/v1/bot-settings/runtime", (route) =>
+    route.fulfill({
+      body: JSON.stringify([
+        {
+          key: "retrieval_top_k",
+          value: 6,
+          default_value: 6,
+          previous_value: null,
+          updated_by: null,
+          updated_at: null,
+          version: null,
+        },
+      ]),
+      contentType: "application/json",
+    }),
+  );
+  await page.route("**/api/control/v1/chats", (route) =>
+    route.fulfill({ body: "[]", contentType: "application/json" }),
+  );
+}
+
 test("keyboard users can skip navigation and focus the main content", async ({ page }) => {
   await stubAuthenticatedSession(page);
   const browserErrors: string[] = [];
@@ -130,6 +166,66 @@ test("bot administrators can hydrate the direct provider operations route", asyn
   await expect(
     page.getByText("No credentials are configured for this managed profile."),
   ).toBeVisible();
+});
+
+test("bot administrators can hydrate bot settings and managed-chat direct routes", async ({
+  page,
+}) => {
+  await stubAuthenticatedSession(page);
+  await stubManagement(page);
+
+  await page.goto("/bot-settings");
+  await expect(
+    page.getByRole("heading", { name: "Owners and safe runtime controls." }),
+  ).toBeVisible();
+  await expect(page.getByText("Bootstrap owner", { exact: true })).toBeVisible();
+
+  await page.goto("/chats");
+  await expect(
+    page.getByRole("heading", { name: "Chats stay inside their own boundary." }),
+  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Add a Telegram group" })).toBeVisible();
+  await expect(page.getByText("No managed chats are visible")).toBeVisible();
+});
+
+test("regular browsers use the bounded bot-DM enrollment fallback", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  await page.route("**/api/control/v1/chats", (route) =>
+    route.fulfill({ body: "[]", contentType: "application/json" }),
+  );
+  await page.route("**/api/control/v1/chats/enrollment-requests", async (route) => {
+    expect(route.request().postDataJSON()).toEqual({ delivery: "telegram_dm" });
+    await route.fulfill({
+      body: JSON.stringify({
+        request_id: 88,
+        status: "pending",
+        delivery: "telegram_dm",
+        expires_at: "2099-08-01T12:02:00Z",
+        prepared_button_id: "prepared-fallback",
+        chat_id: null,
+        error_code: null,
+      }),
+      contentType: "application/json",
+    });
+  });
+  await page.route("**/api/control/v1/chats/enrollment-requests/88", (route) =>
+    route.fulfill({
+      body: JSON.stringify({
+        request_id: 88,
+        status: "completed",
+        delivery: "telegram_dm",
+        expires_at: "2099-08-01T12:02:00Z",
+        prepared_button_id: "prepared-fallback",
+        chat_id: -1001,
+        error_code: null,
+      }),
+      contentType: "application/json",
+    }),
+  );
+
+  await page.goto("/chats");
+  await page.getByTestId("enroll-chat").click();
+  await expect(page.getByText("Telegram chat -1001 enrolled.")).toBeVisible();
 });
 
 test("production browser reveal starts exact-action Telegram step-up before secret access", async ({
@@ -217,6 +313,18 @@ test.describe("server-rendered direct routes", () => {
       page.getByRole("heading", { name: "Keys that fail without taking the bot down." }),
     ).toHaveCount(0);
     await expect(page.getByText("Primary key")).toHaveCount(0);
+  });
+
+  test("new management routes keep privileged data out of server-rendered HTML", async ({
+    page,
+  }) => {
+    for (const path of ["/bot-settings", "/chats"]) {
+      const response = await page.goto(path);
+      expect(response?.status()).toBe(200);
+      await expect(page.getByTestId("auth-pending")).toContainText("Checking Telegram access");
+      await expect(page.getByText("Bootstrap owner")).toHaveCount(0);
+      await expect(page.getByText("Shared Engineering")).toHaveCount(0);
+    }
   });
 
   test("public login HTML carries the private SSR security policy", async ({ page }) => {

@@ -27,5 +27,12 @@ async def test_admin_cache_uses_configurable_ttl_and_reports_stats() -> None:
 
     stats = service.cache_stats()
     assert bot.calls == 1
-    assert stats == {"entries": 1, "expired_entries": 0, "ttl_seconds": 60, "bot_admins": 1}
+    assert stats == {
+        "entries": 1,
+        "expired_entries": 0,
+        "ttl_seconds": 60,
+        "bot_admins": 1,
+        "delegated_chat_admins": 0,
+        "active_managed_chats": 0,
+    }
     assert service.is_bot_admin(111) is True

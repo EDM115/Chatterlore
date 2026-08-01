@@ -7,7 +7,7 @@ from pathlib import Path
 from secrets import token_urlsafe
 from typing import Any, Protocol
 
-from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from pzp_ai_bot.ai.factory import ProviderSelection
 from pzp_ai_bot.db.models import KnowledgeItem
@@ -482,23 +482,41 @@ class MemoryMutationService:
                 )
                 return (False, message)
             await challenge_repo.consume(challenge.id)
-            dirty_scopes = {
-                row.scope
-                for row in await KnowledgeRepository(session).scope_counts()
-                if scope.contains(row.scope)
-            }
-            messages = await MessageRepository(session).delete_scope(scope)
-            items = await KnowledgeRepository(session).delete_scope(scope)
-            embeddings = await EmbeddingRepository(session).delete_scope(scope)
-            await EventRepository(session).add(
-                event_type="forget",
-                scope=scope,
-                user_id=user_id,
-                payload={"messages": messages, "knowledge_items": items, "embeddings": embeddings},
+            result, dirty_scopes = await self._delete_scope_in_session(
+                session, scope, user_id=user_id
             )
         await self.compact_memory(dirty_scopes=dirty_scopes)
-        detail = f"{messages} messages, {items} knowledge items, {embeddings} embeddings."
+        detail = (
+            f"{result['messages']} messages, {result['knowledge_items']} knowledge items, "
+            f"{result['embeddings']} embeddings."
+        )
         return (True, f"Forgot scope {scope.key}: {detail}")
+
+    async def forget_confirmed(self, scope: Scope, *, user_id: int) -> dict[str, int]:
+        async with session_scope(self.session_factory) as session:
+            result, dirty_scopes = await self._delete_scope_in_session(
+                session, scope, user_id=user_id
+            )
+        await self.compact_memory(dirty_scopes=dirty_scopes)
+        return result
+
+    async def _delete_scope_in_session(
+        self, session: AsyncSession, scope: Scope, *, user_id: int
+    ) -> tuple[dict[str, int], set[Scope]]:
+        dirty_scopes = {
+            row.scope
+            for row in await KnowledgeRepository(session).scope_counts()
+            if scope.contains(row.scope)
+        }
+        result = {
+            "messages": await MessageRepository(session).delete_scope(scope),
+            "knowledge_items": await KnowledgeRepository(session).delete_scope(scope),
+            "embeddings": await EmbeddingRepository(session).delete_scope(scope),
+        }
+        await EventRepository(session).add(
+            event_type="forget", scope=scope, user_id=user_id, payload=result
+        )
+        return result, dirty_scopes
 
 
 def note_metadata(

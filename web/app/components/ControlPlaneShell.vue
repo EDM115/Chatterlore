@@ -16,8 +16,12 @@ const navigation = computed(() => {
   if (authenticated.value) {
     return [
       { label: "Overview", to: "/" },
+      { label: "Chats", to: "/chats" },
       ...(controlSession.hasCapability("bot.admin")
-        ? [{ label: "Providers", to: "/providers" }]
+        ? [
+            { label: "Bot Settings", to: "/bot-settings" },
+            { label: "Providers", to: "/providers" },
+          ]
         : []),
     ];
   }

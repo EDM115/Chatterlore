@@ -13,6 +13,7 @@ from pzp_ai_bot.db.models import (
     ControlPlaneSession,
     ControlPlaneUser,
     ManagedChat,
+    ManagedChatEnrollmentRequest,
     OIDCAuthTransaction,
 )
 
@@ -203,6 +204,19 @@ class ControlPlaneSessionRepository:
         )
         return bool(_rowcount(result))
 
+    async def revoke_user(self, *, telegram_user_id: int, now: datetime, reason: str) -> int:
+        user_id = select(ControlPlaneUser.id).where(
+            ControlPlaneUser.telegram_user_id == telegram_user_id
+        )
+        result = await self.session.execute(
+            update(ControlPlaneSession)
+            .where(
+                ControlPlaneSession.user_id.in_(user_id), ControlPlaneSession.revoked_at.is_(None)
+            )
+            .values(revoked_at=now, revoke_reason=reason)
+        )
+        return _rowcount(result)
+
     async def cleanup(self, *, now: datetime) -> int:
         result = await self.session.execute(
             delete(ControlPlaneSession).where(
@@ -230,6 +244,20 @@ class ControlPlaneAccessRepository:
         statement = select(BotAdminGrant.telegram_user_id).where(BotAdminGrant.revoked_at.is_(None))
         return {int(value) for value in (await self.session.scalars(statement)).all()}
 
+    async def list_bot_admin_grants(self) -> list[BotAdminGrant]:
+        return list(
+            (
+                await self.session.scalars(
+                    select(BotAdminGrant).order_by(BotAdminGrant.telegram_user_id.asc())
+                )
+            ).all()
+        )
+
+    async def get_bot_admin_grant(self, telegram_user_id: int) -> BotAdminGrant | None:
+        return await self.session.scalar(
+            select(BotAdminGrant).where(BotAdminGrant.telegram_user_id == telegram_user_id)
+        )
+
     async def active_chat_admin_ids(self, telegram_user_id: int) -> set[int]:
         statement = (
             select(ChatAdminGrant.chat_id)
@@ -242,6 +270,48 @@ class ControlPlaneAccessRepository:
             )
         )
         return {int(value) for value in (await self.session.scalars(statement)).all()}
+
+    async def active_chat_admin_grants(self) -> list[tuple[int, int]]:
+        statement = (
+            select(ChatAdminGrant.chat_id, ChatAdminGrant.telegram_user_id)
+            .join(ManagedChat, ManagedChat.chat_id == ChatAdminGrant.chat_id)
+            .where(
+                ChatAdminGrant.revoked_at.is_(None),
+                ManagedChat.status == "active",
+                ManagedChat.removed_at.is_(None),
+            )
+        )
+        return [
+            (int(row.chat_id), int(row.telegram_user_id))
+            for row in await self.session.execute(statement)
+        ]
+
+    async def active_managed_chat_ids(self) -> set[int]:
+        statement = select(ManagedChat.chat_id).where(
+            ManagedChat.status == "active", ManagedChat.removed_at.is_(None)
+        )
+        return {int(value) for value in (await self.session.scalars(statement)).all()}
+
+    async def list_chat_admin_grants(self, chat_id: int) -> list[ChatAdminGrant]:
+        return list(
+            (
+                await self.session.scalars(
+                    select(ChatAdminGrant)
+                    .where(ChatAdminGrant.chat_id == chat_id)
+                    .order_by(ChatAdminGrant.telegram_user_id.asc())
+                )
+            ).all()
+        )
+
+    async def get_chat_admin_grant(
+        self, chat_id: int, telegram_user_id: int
+    ) -> ChatAdminGrant | None:
+        return await self.session.scalar(
+            select(ChatAdminGrant).where(
+                ChatAdminGrant.chat_id == chat_id,
+                ChatAdminGrant.telegram_user_id == telegram_user_id,
+            )
+        )
 
     async def grant_bot_admin(
         self, *, telegram_user_id: int, actor_user_id: int, now: datetime
@@ -334,7 +404,7 @@ class ControlPlaneAccessRepository:
         actor_user_id: int,
         now: datetime,
     ) -> ManagedChat:
-        if status not in {"active", "paused", "removed"}:
+        if status not in {"active", "paused", "detached"}:
             raise ValueError("managed chat status is invalid")
         managed = await self.session.scalar(
             select(ManagedChat).where(ManagedChat.chat_id == chat_id)
@@ -352,7 +422,7 @@ class ControlPlaneAccessRepository:
                 updated_by=actor_user_id,
                 updated_at=now,
                 paused_at=now if status == "paused" else None,
-                removed_at=now if status == "removed" else None,
+                removed_at=now if status == "detached" else None,
                 version=1,
             )
             self.session.add(managed)
@@ -363,10 +433,56 @@ class ControlPlaneAccessRepository:
             managed.updated_by = actor_user_id
             managed.updated_at = now
             managed.paused_at = now if status == "paused" else None
-            managed.removed_at = now if status == "removed" else None
+            managed.removed_at = now if status == "detached" else None
             managed.version += 1
         await self.session.flush()
         return managed
+
+    async def get_managed_chat(self, chat_id: int) -> ManagedChat | None:
+        return await self.session.scalar(select(ManagedChat).where(ManagedChat.chat_id == chat_id))
+
+    async def list_managed_chats(self) -> list[ManagedChat]:
+        return list(
+            (
+                await self.session.scalars(
+                    select(ManagedChat).order_by(
+                        ManagedChat.updated_at.desc(), ManagedChat.id.desc()
+                    )
+                )
+            ).all()
+        )
+
+    async def add_enrollment_request(
+        self,
+        *,
+        request_id: int,
+        requested_by: int,
+        delivery: str,
+        created_at: datetime,
+        expires_at: datetime,
+    ) -> ManagedChatEnrollmentRequest:
+        row = ManagedChatEnrollmentRequest(
+            request_id=request_id,
+            requested_by=requested_by,
+            prepared_button_id=None,
+            delivery=delivery,
+            status="pending",
+            chat_id=None,
+            error_code=None,
+            created_at=created_at,
+            expires_at=expires_at,
+            completed_at=None,
+        )
+        self.session.add(row)
+        await self.session.flush()
+        return row
+
+    async def get_enrollment_request(self, request_id: int) -> ManagedChatEnrollmentRequest | None:
+        return await self.session.scalar(
+            select(ManagedChatEnrollmentRequest).where(
+                ManagedChatEnrollmentRequest.request_id == request_id
+            )
+        )
 
 
 def _as_aware(value: datetime) -> datetime:

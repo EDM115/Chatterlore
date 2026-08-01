@@ -71,6 +71,14 @@ Audit events are operational metadata, not memory exports. Treat them as sensiti
 
 Secrets are not runtime settings. Keep provider keys, Telegram tokens and webhook secrets in environment variables or deployment secret stores.
 
+## Control-Plane Owners And Managed Chats
+
+- `BOT_ADMINS` is the immutable recovery-owner set. Database-managed bot owners take effect without restart; removing one requires fresh exact-action Telegram verification, revokes that user's live sessions and refuses to remove a bootstrap owner or the final effective owner.
+- Delegated chat-admin grants require an active managed chat and a successful Telegram `getChatMember` check proving the target is a non-bot member. Telegram-native admins and delegated admins receive only that active chat's settings/admin surface; a foreign, paused or detached chat is denied server-side even if the browser still displays stale navigation.
+- Enroll groups from `/chats`. A supported Mini App uses a short-lived prepared selection; a regular browser or older Telegram client receives the requester-bound button in the bot DM. The bot accepts the resulting `chat_shared` update only in that requester's private bot chat, then rechecks the requester's admin status, the group type and bot membership before activation.
+- Pause stops ingestion and idle summarization without deleting memory. Resume reactivates them. Detach retains memory and the bot's Telegram membership but removes the chat from scoped-admin operation. Leave calls Telegram and then detaches. Forget is independent of lifecycle state and deletes the selected chat's messages, knowledge and embeddings only after bot-owner step-up, exact confirmation text and current-version validation; Markdown projections are reconciled afterward.
+- Bot Settings edits only the safe runtime allowlist. Chats shows effective, inherited and exact override values separately for main-chat/topic scopes so an operator can distinguish a local override from a global or chat-level value.
+
 ## Retrieval Capacity
 
 - `retrieval_candidate_limit` defaults to 5,000 candidates per authorized source scope. Durable knowledge embeddings consume the quota first; only the remaining slots are filled by the most recent learned-message embeddings, so recent raw chat cannot crowd out an older durable fact.
@@ -101,4 +109,4 @@ Secrets are not runtime settings. Keep provider keys, Telegram tokens and webhoo
 ## Admin Cache
 
 - `ADMIN_CACHE_TTL_SECONDS` controls how long Telegram chat administrator lookups are cached in memory. Set it to `0` for near-immediate refresh during debugging, or keep the default `300` seconds for normal operation.
-- `AdminService.cache_stats()` exposes entry count, expired entry count, TTL and configured bot-admin count for tests and future diagnostics. `pzp-bot show-config` prints the configured TTL without exposing admin IDs and redacts credentials embedded in database URLs.
+- `AdminService.cache_stats()` exposes native-cache entry/expiry counts, TTL, effective bootstrap/managed bot-owner count, delegated-grant count and active managed-chat count for tests and future diagnostics. `pzp-bot show-config` prints the configured TTL without exposing admin IDs and redacts credentials embedded in database URLs.

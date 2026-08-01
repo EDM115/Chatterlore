@@ -14,7 +14,7 @@ from aiogram import Bot, Dispatcher
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
-from pzp_ai_bot.app_context import build_context
+from pzp_ai_bot.app_context import AppContext, build_context
 from pzp_ai_bot.config import Settings
 from pzp_ai_bot.control_plane.app import create_control_plane_app
 from pzp_ai_bot.control_plane.auth.identity import TelegramIdentity
@@ -22,6 +22,8 @@ from pzp_ai_bot.db.models import BotEvent, ControlPlaneSession, ControlPlaneUser
 from pzp_ai_bot.db.repos.alerts import AdminAlertRepository
 from pzp_ai_bot.db.repos.control_plane import ControlPlaneAccessRepository
 from pzp_ai_bot.db.session import create_schema, session_scope
+from pzp_ai_bot.memory.contracts import IncomingMessage
+from pzp_ai_bot.memory.scope import Scope
 from pzp_ai_bot.telegram.webhook import create_webhook_app
 
 NOW = datetime.now(UTC).replace(microsecond=0)
@@ -104,6 +106,28 @@ class ControlPlaneHealthBotDouble:
 
     async def close(self) -> None:
         return None
+
+
+class ControlPlaneManagementBotDouble:
+    def __init__(self) -> None:
+        self.saved_buttons: list[tuple[int, Any]] = []
+        self.sent_messages: list[tuple[int, str, Any]] = []
+        self.chat_members: dict[tuple[int, int], Any] = {}
+        self.left_chats: list[int] = []
+
+    async def save_prepared_keyboard_button(self, user_id: int, button: Any) -> Any:
+        self.saved_buttons.append((user_id, button))
+        return SimpleNamespace(id="prepared-phase6-chat")
+
+    async def send_message(self, user_id: int, text: str, reply_markup: Any) -> None:
+        self.sent_messages.append((user_id, text, reply_markup))
+
+    async def get_chat_member(self, chat_id: int, user_id: int) -> Any:
+        return self.chat_members[(chat_id, user_id)]
+
+    async def leave_chat(self, chat_id: int) -> bool:
+        self.left_chats.append(chat_id)
+        return True
 
 
 def build_test_app(tmp_path: Path, **overrides: object):
@@ -598,6 +622,293 @@ def test_admin_alert_delivery_is_started_but_is_not_a_critical_health_dependency
 
     assert response.status_code == 200
     assert "pzp-admin-alert-delivery" not in response.json()["tasks"]
+
+
+def test_phase6_bot_admin_runtime_settings_and_session_invalidation_api(tmp_path: Path) -> None:
+    _context, app = build_test_app(tmp_path)
+
+    with TestClient(app, base_url=ORIGIN) as client:
+        login = client.post(
+            "/api/control/v1/auth/mini-app",
+            headers={"Origin": ORIGIN},
+            json={"init_data": signed_init_data(111)},
+        )
+        headers = {"Origin": ORIGIN, "X-CSRF-Token": login.json()["csrf_token"]}
+        listed = client.get("/api/control/v1/bot-settings/admins")
+        assert listed.status_code == 200
+        assert listed.json() == [
+            {
+                "telegram_user_id": 111,
+                "source": "bootstrap",
+                "version": None,
+                "granted_by": None,
+                "granted_at": None,
+            }
+        ]
+        created = client.post(
+            "/api/control/v1/bot-settings/admins", headers=headers, json={"telegram_user_id": 222}
+        )
+        assert created.status_code == 200
+        assert created.json()["version"] == 1
+
+        runtime = client.get("/api/control/v1/bot-settings/runtime")
+        assert runtime.status_code == 200
+        assert all(item["key"] != "openai_api_key" for item in runtime.json())
+        changed = client.patch(
+            "/api/control/v1/bot-settings/runtime",
+            headers=headers,
+            json={"updates": {"retrieval_top_k": 11}},
+        )
+        assert changed.status_code == 200
+        assert (
+            next(item for item in changed.json() if item["key"] == "retrieval_top_k")["value"] == 11
+        )
+        unsafe = client.patch(
+            "/api/control/v1/bot-settings/runtime",
+            headers=headers,
+            json={"updates": {"openai_api_key": "never"}},
+        )
+        assert unsafe.status_code == 422
+
+        assert (
+            client.post(
+                "/api/control/v1/auth/step-up/mini-app",
+                headers=headers,
+                json={"init_data": signed_init_data(111), "action": "bot_admin:delete"},
+            ).status_code
+            == 200
+        )
+        removed = client.request(
+            "DELETE",
+            "/api/control/v1/bot-settings/admins/222",
+            headers=headers,
+            json={"version": 1},
+        )
+        assert removed.status_code == 200
+        assert removed.json()["version"] == 2
+
+
+def test_phase6_managed_chat_admin_and_scope_settings_api_enforce_chat_boundaries(
+    tmp_path: Path,
+) -> None:
+    context, app = build_test_app(tmp_path)
+    bot = ControlPlaneManagementBotDouble()
+    bot.chat_members[(-1001, 333)] = SimpleNamespace(
+        status="member", user=SimpleNamespace(id=333, is_bot=False)
+    )
+    app.state.telegram_bot = bot
+
+    async def seed() -> None:
+        assert context.control_plane is not None
+        await context.control_plane.management.enroll_chat(
+            chat_id=-1001, title="Engineering", username="eng", actor_user_id=111, now=NOW
+        )
+        await context.memory.set_learning(Scope(-1001, None), True, updated_by=111)
+        await context.memory.ingest(
+            IncomingMessage(
+                telegram_message_id=901,
+                scope=Scope(-1001, None),
+                user_id=111,
+                username="owner",
+                text="Memory retained until an explicit forget action.",
+                created_at=NOW,
+            )
+        )
+
+    asyncio.run(seed())
+
+    with TestClient(app, base_url=ORIGIN) as client:
+        login = client.post(
+            "/api/control/v1/auth/mini-app",
+            headers={"Origin": ORIGIN},
+            json={"init_data": signed_init_data(111)},
+        )
+        headers = {"Origin": ORIGIN, "X-CSRF-Token": login.json()["csrf_token"]}
+        chats = client.get("/api/control/v1/chats")
+        assert chats.status_code == 200
+        assert chats.json()[0]["chat_id"] == -1001
+        delegated = client.post(
+            "/api/control/v1/chats/-1001/admins", headers=headers, json={"telegram_user_id": 333}
+        )
+        assert delegated.status_code == 200
+        assert delegated.json()["version"] == 1
+        settings = client.patch(
+            "/api/control/v1/chats/-1001/settings?thread_id=7",
+            headers=headers,
+            json={
+                "settings": {"retrieval_top_k": 4, "reasoning_level": "high"},
+                "learning_enabled": True,
+                "allow_admins": True,
+            },
+        )
+        assert settings.status_code == 200
+        assert settings.json()["effective"]["retrieval_top_k"] == 4
+        assert settings.json()["overrides"]["reasoning_level"] == "high"
+        paused = client.patch(
+            "/api/control/v1/chats/-1001/status",
+            headers=headers,
+            json={"status": "paused", "version": 1},
+        )
+        assert paused.status_code == 200
+        assert paused.json()["status"] == "paused"
+        stale = client.patch(
+            "/api/control/v1/chats/-1001/status",
+            headers=headers,
+            json={"status": "active", "version": 1},
+        )
+        assert stale.status_code == 409
+        assert stale.json()["current"]["version"] == 2
+
+        enrollment = client.post(
+            "/api/control/v1/chats/enrollment-requests",
+            headers=headers,
+            json={"delivery": "mini_app"},
+        )
+        assert enrollment.status_code == 200
+        assert enrollment.json()["prepared_button_id"] == "prepared-phase6-chat"
+        request_id = enrollment.json()["request_id"]
+        pending = client.get(f"/api/control/v1/chats/enrollment-requests/{request_id}")
+        assert pending.status_code == 200
+        assert pending.json()["status"] == "pending"
+
+        resumed = client.patch(
+            "/api/control/v1/chats/-1001/status",
+            headers=headers,
+            json={"status": "active", "version": 2},
+        )
+        assert resumed.status_code == 200
+        assert (
+            client.post(
+                "/api/control/v1/auth/step-up/mini-app",
+                headers=headers,
+                json={"init_data": signed_init_data(111), "action": "chat:leave"},
+            ).status_code
+            == 200
+        )
+        left = client.post(
+            "/api/control/v1/chats/-1001/leave",
+            headers=headers,
+            json={"version": 3, "confirmation": "LEAVE -1001"},
+        )
+        assert left.status_code == 200
+        assert left.json()["status"] == "detached"
+        assert bot.left_chats == [-1001]
+        assert asyncio.run(context.memory.memory_status(Scope(-1001, None))).messages == 1
+
+        assert (
+            client.post(
+                "/api/control/v1/auth/step-up/mini-app",
+                headers=headers,
+                json={"init_data": signed_init_data(111), "action": "chat:forget"},
+            ).status_code
+            == 200
+        )
+        forgotten = client.post(
+            "/api/control/v1/chats/-1001/forget",
+            headers=headers,
+            json={"version": 4, "confirmation": "FORGET -1001"},
+        )
+        assert forgotten.status_code == 200
+        assert forgotten.json()["messages"] == 1
+        assert asyncio.run(context.memory.memory_status(Scope(-1001, None))).messages == 0
+
+        delegated_login = client.post(
+            "/api/control/v1/auth/mini-app",
+            headers={"Origin": ORIGIN},
+            json={"init_data": signed_init_data(333)},
+        )
+        assert delegated_login.status_code == 200
+        assert delegated_login.json()["chat_capabilities"] == {}
+        assert client.get("/api/control/v1/chats").json() == []
+
+
+async def _seed_phase6_scoped_authorization_matrix(context: AppContext) -> None:
+    async with session_scope(context.session_factory) as session:
+        repository = ControlPlaneAccessRepository(session)
+        for chat_id, title in (
+            (-1001, "Owned chat"),
+            (-1002, "Foreign chat"),
+            (-1003, "Detach chat"),
+        ):
+            await repository.upsert_managed_chat(
+                chat_id=chat_id,
+                title=title,
+                username=None,
+                status="active",
+                actor_user_id=111,
+                now=NOW,
+            )
+        await repository.grant_chat_admin(
+            chat_id=-1001, telegram_user_id=333, actor_user_id=111, now=NOW
+        )
+        await repository.grant_chat_admin(
+            chat_id=-1003, telegram_user_id=333, actor_user_id=111, now=NOW
+        )
+
+
+def test_phase6_scoped_authorization_matrix_matches_browser_and_mini_app_sessions(
+    tmp_path: Path,
+) -> None:
+    for client_kind in ("browser", "mini_app"):
+        case_path = tmp_path / client_kind
+        case_path.mkdir()
+        settings = settings_for(case_path)
+        asyncio.run(create_schema(settings))
+        context = asyncio.run(build_context(settings, ensure_schema=False))
+        app = create_control_plane_app(context, oidc_client=FakeOIDCClient(user_id=333))
+
+        asyncio.run(_seed_phase6_scoped_authorization_matrix(context))
+
+        with TestClient(app, base_url=ORIGIN) as client:
+            if client_kind == "mini_app":
+                login = client.post(
+                    "/api/control/v1/auth/mini-app",
+                    headers={"Origin": ORIGIN},
+                    json={"init_data": signed_init_data(333)},
+                )
+                assert login.status_code == 200
+                csrf = login.json()["csrf_token"]
+            else:
+                start = client.get("/auth/telegram/start", follow_redirects=False)
+                state = parse_qs(urlsplit(start.headers["location"]).query)["state"][0]
+                callback = client.get(
+                    f"/auth/telegram/callback?state={state}&code=telegram-code",
+                    follow_redirects=False,
+                )
+                assert callback.status_code == 303
+                csrf = client.get("/api/control/v1/session").json()["csrf_token"]
+            headers = {"Origin": ORIGIN, "X-CSRF-Token": csrf}
+
+            visible_chat_ids = {
+                item["chat_id"] for item in client.get("/api/control/v1/chats").json()
+            }
+            assert visible_chat_ids == {-1001, -1003}
+            assert (
+                client.get("/api/control/v1/chats/-1001/settings?thread_id=77").status_code == 200
+            )
+            assert (
+                client.get("/api/control/v1/chats/-1002/settings?thread_id=77").status_code == 403
+            )
+
+            revoked = client.request(
+                "DELETE",
+                "/api/control/v1/chats/-1001/admins/333",
+                headers=headers,
+                json={"version": 1},
+            )
+            assert revoked.status_code == 200
+            assert (
+                client.get("/api/control/v1/chats/-1001/settings?thread_id=77").status_code == 403
+            )
+
+            detached = client.patch(
+                "/api/control/v1/chats/-1003/status",
+                headers=headers,
+                json={"status": "detached", "version": 1},
+            )
+            assert detached.status_code == 200
+            assert client.get("/api/control/v1/chats/-1003/settings").status_code == 403
+            assert client.get("/api/control/v1/chats").json() == []
 
 
 async def _grant_bot_admin(context, user_id: int) -> None:
