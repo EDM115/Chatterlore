@@ -25,7 +25,7 @@ async function stubAuthenticatedSession(page: Page): Promise<void> {
   );
 }
 
-async function stubProviderOperations(page: Page): Promise<void> {
+async function stubProviderOperations(page: Page, credentials: object[] = []): Promise<void> {
   await page.route("**/api/control/v1/providers", (route) =>
     route.fulfill({
       body: JSON.stringify([
@@ -51,7 +51,7 @@ async function stubProviderOperations(page: Page): Promise<void> {
     }),
   );
   await page.route("**/api/control/v1/providers/primary/credentials", (route) =>
-    route.fulfill({ body: "[]", contentType: "application/json" }),
+    route.fulfill({ body: JSON.stringify(credentials), contentType: "application/json" }),
   );
   await page.route("**/api/control/v1/providers/primary/pool", (route) =>
     route.fulfill({
@@ -130,6 +130,58 @@ test("bot administrators can hydrate the direct provider operations route", asyn
   await expect(
     page.getByText("No credentials are configured for this managed profile."),
   ).toBeVisible();
+});
+
+test("production browser reveal starts exact-action Telegram step-up before secret access", async ({
+  page,
+}) => {
+  await stubAuthenticatedSession(page);
+  await stubProviderOperations(page, [
+    {
+      id: 42,
+      profile_name: "primary",
+      label: "Primary key",
+      source: "managed",
+      environment_variable: null,
+      last_four: "1234",
+      fingerprint: "fingerprint",
+      position: 0,
+      state: "enabled",
+      health_state: "unknown",
+      cooldown_until: null,
+      last_error_classification: null,
+      success_count: 0,
+      failure_count: 0,
+      last_success_at: null,
+      last_failure_at: null,
+      version: 1,
+      revealable: true,
+      active: false,
+    },
+  ]);
+  let stepUpUrl = "";
+  let revealRequests = 0;
+  await page.route("**/auth/telegram/step-up/start?*", (route) => {
+    stepUpUrl = route.request().url();
+    return route.fulfill({
+      body: "<!doctype html><title>Telegram step-up</title>",
+      contentType: "text/html",
+    });
+  });
+  await page.route("**/api/control/v1/providers/primary/credentials/42/reveal", (route) => {
+    revealRequests += 1;
+    return route.fulfill({ status: 500 });
+  });
+  await page.goto("/providers");
+
+  await page.getByTestId("reveal-secret").click();
+
+  await expect.poll(() => stepUpUrl).not.toBe("");
+  const requested = new URL(stepUpUrl);
+  expect(requested.pathname).toBe("/auth/telegram/step-up/start");
+  expect(requested.searchParams.get("action")).toBe("credential:reveal");
+  expect(requested.searchParams.get("return_to")).toBe("/providers");
+  expect(revealRequests).toBe(0);
 });
 
 test("anonymous browsers retain the sign-in document title", async ({ page }) => {

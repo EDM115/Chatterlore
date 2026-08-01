@@ -1,3 +1,7 @@
+const apiDevelopmentOrigin = process.env.PZP_API_DEV_ORIGIN ?? "http://127.0.0.1:8000";
+const developmentProxyTarget = (pathname: string) =>
+  new URL(pathname, apiDevelopmentOrigin).toString();
+
 export default defineNuxtConfig({
   compatibilityDate: "2026-07-30",
   ssr: true,
@@ -31,8 +35,20 @@ export default defineNuxtConfig({
   nitro: {
     preset: "node-server",
     devProxy: {
-      "/api": {
-        target: process.env.PZP_API_DEV_ORIGIN ?? "http://127.0.0.1:8000",
+      "/api/control": {
+        target: developmentProxyTarget("/api/control"),
+        changeOrigin: true,
+      },
+      "/auth": {
+        target: developmentProxyTarget("/auth"),
+        changeOrigin: true,
+      },
+      "/telegram/webhook": {
+        target: developmentProxyTarget("/telegram/webhook"),
+        changeOrigin: true,
+      },
+      "/health": {
+        target: developmentProxyTarget("/health"),
         changeOrigin: true,
       },
     },

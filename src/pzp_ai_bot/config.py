@@ -66,6 +66,9 @@ class Settings(BaseSettings):
     control_plane_max_managed_profiles: int = Field(default=32, ge=1, le=256)
     control_plane_max_credentials_per_profile: int = Field(default=10, ge=1, le=100)
     control_plane_max_secret_length: int = Field(default=16_384, ge=1, le=131_072)
+    control_plane_dev_user_id: str = ""
+    control_plane_dev_origin: str = "http://localhost:3000"
+    control_plane_dev_api_port: str = "8000"
 
     db_url: str = "sqlite+aiosqlite:///data/bot.db"
     memory_dir: Path = Path("data/memory")

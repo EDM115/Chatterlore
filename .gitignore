@@ -6,6 +6,7 @@ __pycache__/
 .coverage
 htmlcov/
 .env
+data/control-plane-dev-master-key
 data/
 *.db
 *.sqlite

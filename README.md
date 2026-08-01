@@ -27,7 +27,7 @@ PZP AI is a Telegram memory assistant that learns from live group conversations 
 
 ## Quick Start
 
-Prerequisites: Python 3.12, [uv](https://docs.astral.sh/uv/), and Docker if you want container smoke tests.
+Prerequisites: Python 3.12, [uv](https://docs.astral.sh/uv/), pnpm 11.18.0 for the Nuxt control plane, and Docker if you want container smoke tests. The frontend package asks pnpm to download and use its exact Node.js 24.18.0 runtime.
 
 ```powershell
 uv sync --extra dev --extra local
@@ -44,6 +44,16 @@ Start polling locally after you configure `.env`:
 $env:AI_PROVIDER = "fake"
 uv run pzp-bot polling
 ```
+
+To run the FastAPI control plane and Nuxt development server together without Telegram OIDC, set your numeric Telegram identity as `CONTROL_PLANE_DEV_USER_ID`, leave `WEBHOOK_URL` empty, then run the combined command from `web/`:
+
+```powershell
+Set-Location web
+pnpm install --frozen-lockfile
+pnpm dev
+```
+
+The combined command is loopback-only, creates a real server-side development session for the backend-configured identity and makes no Telegram API calls while `WEBHOOK_URL` is empty. `pnpm dev:web` remains available when only the Nuxt server is wanted. See [docs/setup.md](docs/setup.md) for ports, proxy settings, optional connected Telegram mode and the production boundary.
 
 For a real Telegram group, create a bot with BotFather, set `TELEGRAM_BOT_TOKEN`, add the bot to a group, disable BotFather privacy mode or make the bot an admin, then run `/allow_chat` or `/allow_topic` where learning should be enabled. The complete walkthrough lives in [docs/setup.md](docs/setup.md).
 

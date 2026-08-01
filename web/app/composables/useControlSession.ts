@@ -21,6 +21,12 @@ export interface ControlPlaneSession {
 
 type SessionStatus = "idle" | "loading" | "authenticated" | "anonymous" | "error";
 
+interface StepUpResponse {
+  step_up: boolean;
+  verified_at: string;
+  action: string;
+}
+
 export function useControlSession() {
   const api = useControlApi();
   const session = useState<ControlPlaneSession | null>("control-plane-session", () => null);
@@ -75,12 +81,65 @@ export function useControlSession() {
     }
   }
 
+  async function exchangeDevelopmentSession(): Promise<boolean> {
+    status.value = "loading";
+    try {
+      accept(
+        await api.request<ControlPlaneSession>("/auth/dev", {
+          method: "POST",
+        }),
+      );
+      return true;
+    } catch {
+      clear("error");
+      error.value = "The development control-plane session could not be established.";
+      return false;
+    }
+  }
+
   async function bootstrap(): Promise<boolean> {
     if (import.meta.server) return false;
     if (bootstrapped.value) return status.value === "authenticated";
     bootstrapped.value = true;
     const initData = import.meta.client ? window.Telegram?.WebApp.initData.trim() : "";
-    return initData ? await exchangeMiniApp(initData) : await refresh();
+    if (initData) return await exchangeMiniApp(initData);
+    const restored = await refresh();
+    if (restored || status.value !== "anonymous") return restored;
+    if (import.meta.dev || import.meta.test) return await exchangeDevelopmentSession();
+    return false;
+  }
+
+  async function ensureStepUp(action: string, returnTo = "/"): Promise<boolean> {
+    const initData = import.meta.client ? window.Telegram?.WebApp.initData.trim() : "";
+    try {
+      let verified: StepUpResponse;
+      if (session.value?.client_kind === "mini_app" && initData) {
+        verified = await api.request<StepUpResponse>("/auth/step-up/mini-app", {
+          body: { action, init_data: initData },
+          method: "POST",
+        });
+      } else if (import.meta.dev || import.meta.test) {
+        verified = await api.request<StepUpResponse>("/auth/dev/step-up", {
+          body: { action },
+          method: "POST",
+        });
+      } else {
+        if (import.meta.client) {
+          window.location.assign(
+            `/auth/telegram/step-up/start?action=${encodeURIComponent(action)}&return_to=${encodeURIComponent(returnTo)}`,
+          );
+        }
+        return false;
+      }
+      if (!verified.step_up || verified.action !== action) throw new Error("Step-up mismatch");
+      if (session.value) {
+        session.value = { ...session.value, step_up_at: verified.verified_at };
+      }
+      return true;
+    } catch {
+      error.value = "Fresh Telegram verification could not be completed.";
+      return false;
+    }
   }
 
   async function logout(): Promise<void> {
@@ -102,6 +161,8 @@ export function useControlSession() {
     capabilities,
     clientKind,
     error,
+    ensureStepUp,
+    exchangeDevelopmentSession,
     exchangeMiniApp,
     hasCapability,
     hasChatCapability,

@@ -13,6 +13,7 @@ from rich.console import Console
 from pzp_ai_bot.ai.factory import ProviderRegistry
 from pzp_ai_bot.app_context import AppContext, build_context
 from pzp_ai_bot.config import Settings, get_settings
+from pzp_ai_bot.control_plane.development import run_control_plane_development
 from pzp_ai_bot.control_plane.secrets.service import ProviderSecretService
 from pzp_ai_bot.db.session import create_session_factory, upgrade_schema
 from pzp_ai_bot.memory.scope import Scope, parse_scope
@@ -80,6 +81,15 @@ def webhook() -> None:
     settings = get_settings()
     context = run(build_context(settings))
     run(run_webhook(context))
+
+
+@app.command("control-plane-dev")
+def control_plane_dev() -> None:
+    """Run the loopback development control plane, optionally connected to Telegram."""
+    try:
+        run(run_control_plane_development(get_settings()))
+    except (ValueError, RuntimeError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
 
 
 @app.command("summarize-now")

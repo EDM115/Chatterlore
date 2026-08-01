@@ -4,8 +4,10 @@ import time
 from collections import defaultdict, deque
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Never
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Body, FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
@@ -42,6 +44,7 @@ from .schemas import (
     ControlPlaneSessionResponse,
     ControlPlaneUserResponse,
     DeleteMutationResponse,
+    DevelopmentStepUpRequest,
     MiniAppAuthRequest,
     MiniAppStepUpRequest,
     ProviderCredentialCreateRequest,
@@ -61,6 +64,14 @@ from .schemas import (
     StepUpResponse,
 )
 from .secrets.service import ProviderSecretConflictError
+
+CONTROL_PLANE_DEV_AUTH_PATH = "/api/control/v1/auth/dev"
+CONTROL_PLANE_DEV_STEP_UP_PATH = "/api/control/v1/auth/dev/step-up"
+
+
+@dataclass(frozen=True, slots=True)
+class DevelopmentAuthConfig:
+    telegram_user_id: int
 
 
 class ControlPlaneAPIError(Exception):
@@ -91,7 +102,10 @@ class RateLimiter:
 
 
 def create_control_plane_app(
-    context: AppContext, *, oidc_client: TelegramOIDCClient | Any | None = None
+    context: AppContext,
+    *,
+    oidc_client: TelegramOIDCClient | Any | None = None,
+    development_auth: DevelopmentAuthConfig | None = None,
 ) -> FastAPI:
     runtime = context.control_plane
     if not context.settings.control_plane_enabled or runtime is None:
@@ -113,7 +127,7 @@ def create_control_plane_app(
         redoc_url=None,
         lifespan=lifespan,
     )
-    install_control_plane(app, context)
+    install_control_plane(app, context, development_auth=development_auth)
     return app
 
 
@@ -132,7 +146,9 @@ def create_control_plane_schema_app() -> FastAPI:
     return app
 
 
-def install_control_plane(app: FastAPI, context: AppContext) -> None:
+def install_control_plane(
+    app: FastAPI, context: AppContext, *, development_auth: DevelopmentAuthConfig | None = None
+) -> None:
     if context.control_plane is None:
         raise RuntimeError("the control plane is not enabled")
     app.state.control_plane_context = context
@@ -140,13 +156,17 @@ def install_control_plane(app: FastAPI, context: AppContext) -> None:
     app.state.control_plane_rate_limiter = RateLimiter(
         window_seconds=context.settings.control_plane_rate_limit_window_seconds
     )
-    app.include_router(_build_auth_router())
+    app.include_router(_build_auth_router(development_auth))
     app.include_router(_build_provider_router())
     app.include_router(_build_alert_router())
+    public_post_paths = {"/api/control/v1/auth/mini-app"}
+    if development_auth is not None:
+        public_post_paths.add(CONTROL_PLANE_DEV_AUTH_PATH)
     app.add_middleware(
         ControlPlaneRequestGuardMiddleware,
         settings=context.settings,
         sessions=context.control_plane.sessions,
+        public_post_paths=frozenset(public_post_paths),
     )
     app.add_middleware(ControlPlaneSecurityHeadersMiddleware)
 
@@ -177,8 +197,84 @@ def install_control_plane(app: FastAPI, context: AppContext) -> None:
         )
 
 
-def _build_auth_router() -> APIRouter:
+def _build_auth_router(development_auth: DevelopmentAuthConfig | None = None) -> APIRouter:
     router = APIRouter()
+
+    if development_auth is not None:
+
+        @router.post(
+            CONTROL_PLANE_DEV_AUTH_PATH,
+            response_model=ControlPlaneSessionResponse,
+            include_in_schema=False,
+        )
+        async def development_login(request: Request) -> JSONResponse:
+            context, runtime = _services(request)
+            if await request.body():
+                raise ControlPlaneAPIError(
+                    422,
+                    "development_identity_input_rejected",
+                    "Development authentication does not accept identity input.",
+                )
+            now = datetime.now(UTC)
+            identity = _development_identity(development_auth.telegram_user_id, now=now)
+            issued = await runtime.sessions.issue(
+                identity,
+                client_kind="browser",
+                now=now,
+                replace_session_token=request.cookies.get(SESSION_COOKIE_NAME),
+            )
+            actor = await runtime.authorization.resolve(identity.telegram_user_id)
+            response = JSONResponse(
+                _session_payload_from_issue(
+                    identity=identity, client_kind="browser", issued=issued, actor=actor
+                )
+            )
+            _set_session_cookie(response, issued, context)
+            await _audit(
+                context,
+                method="development",
+                outcome="success",
+                reason="authenticated",
+                user_id=identity.telegram_user_id,
+            )
+            return response
+
+        @router.post(
+            CONTROL_PLANE_DEV_STEP_UP_PATH, response_model=StepUpResponse, include_in_schema=False
+        )
+        async def development_step_up(
+            request: Request, payload: DevelopmentStepUpRequest
+        ) -> StepUpResponse:
+            context, runtime = _services(request)
+            token = _session_token(request)
+            authenticated = await _authenticate(runtime, token)
+            if authenticated.identity.telegram_user_id != development_auth.telegram_user_id:
+                await _audit(
+                    context,
+                    method="development",
+                    outcome="rejected",
+                    reason="identity_mismatch",
+                    user_id=authenticated.identity.telegram_user_id,
+                )
+                raise ControlPlaneAPIError(
+                    403,
+                    "development_identity_mismatch",
+                    "Development identity does not match the active session.",
+                )
+            if payload.action not in SENSITIVE_ACTIONS:
+                raise ControlPlaneAPIError(
+                    400, "step_up_action_invalid", "The requested step-up action is invalid."
+                )
+            verified_at = datetime.now(UTC)
+            await runtime.sessions.mark_step_up(token, now=verified_at, action=payload.action)
+            await _audit(
+                context,
+                method="development",
+                outcome="success",
+                reason=f"step_up:{payload.action}",
+                user_id=authenticated.identity.telegram_user_id,
+            )
+            return StepUpResponse(step_up=True, verified_at=verified_at, action=payload.action)
 
     @router.get(
         "/auth/telegram/start",
@@ -426,7 +522,11 @@ def _build_auth_router() -> APIRouter:
         )
         response = Response(status_code=204)
         response.delete_cookie(
-            SESSION_COOKIE_NAME, path="/", secure=True, httponly=True, samesite="lax"
+            SESSION_COOKIE_NAME,
+            path="/",
+            secure=_session_cookie_secure(context),
+            httponly=True,
+            samesite="lax",
         )
         return response
 
@@ -937,9 +1037,29 @@ def _set_session_cookie(response: Response, issued: IssuedSession, context: AppC
         max_age=context.settings.control_plane_session_absolute_seconds,
         expires=issued.absolute_expires_at,
         path="/",
-        secure=True,
+        secure=_session_cookie_secure(context),
         httponly=True,
         samesite="lax",
+    )
+
+
+def _session_cookie_secure(context: AppContext) -> bool:
+    return urlsplit(context.settings.control_plane_public_origin).scheme == "https"
+
+
+def _development_identity(telegram_user_id: int, *, now: datetime):
+    from .auth.identity import TelegramIdentity
+
+    return TelegramIdentity(
+        telegram_user_id=telegram_user_id,
+        first_name="Development administrator",
+        last_name=None,
+        username="pzp_control_plane_dev",
+        language_code="en",
+        photo_url=None,
+        is_bot=False,
+        is_premium=None,
+        authenticated_at=now,
     )
 
 

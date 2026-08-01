@@ -28,6 +28,7 @@ export function useSensitiveReveal() {
   async function reveal(profileName: string, credentialId: number): Promise<void> {
     clear();
     try {
+      if (!(await session.ensureStepUp("credential:reveal", route.fullPath))) return;
       const response = await api.request<CredentialRevealResponse>(
         `/providers/${encodeURIComponent(profileName)}/credentials/${credentialId}/reveal`,
         { method: "POST" },

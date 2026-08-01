@@ -1,10 +1,10 @@
 ---
 goal: Secure Telegram-authenticated control plane and resilient provider API-key pools
-version: 1.6
+version: 1.8
 date_created: 2026-07-30
 last_updated: 2026-08-01
 owner: PZP-AI
-status: In progress — Phase 5 is implemented and locally verified; awaiting user validation before Phase 6
+status: In progress — Phase 5 and the combined loopback development workflow are validated; Phase 6 is ready and not started
 tags:
   - feature
   - security
@@ -417,6 +417,10 @@ Phase 5 verification evidence:
 - Empty-database Alembic upgrade reached `0015_admin_alert_outbox` and `alembic check` reported `No new upgrade operations detected`; immutable uv lock, Ruff format/lint, `ty`, CLI help and fake-provider doctor gates passed.
 - Frontend verification passed Oxfmt, type-aware Oxlint/tsgolint, raw Nuxt typecheck, 12 unit/component tests, generated OpenAPI/type drift, a 2.8 MB production SSR build, a 20-text-asset secret scan, direct overview/providers SSR smoke and 14 Playwright checks across desktop Chromium and Pixel 7. The production build required the approved outside-sandbox rerun because Nitro's Windows tracer cannot `readlink` the user-profile boundary inside the sandbox.
 - Docker/Compose/Caddy, registered real Telegram OIDC/Mini App, authorized live multi-key provider failover/admin DM and backup/restore acceptance remain later Gate E release work; none is claimed by this offline Phase 5 checkpoint.
+- The user validated the Phase 5 product behavior and authorized a follow-on combined development workflow. `pnpm dev` now coordinates a dedicated uv-run loopback FastAPI runtime and Nuxt, uses one backend-configured mock Telegram UID with real sessions/capabilities/CSRF/exact-action step-up, stays Telegram-offline when `WEBHOOK_URL` is empty and permits connected Telegram behavior only after complete HTTPS/token/secret validation.
+- Windows development children use persistent PowerShell 7 wrapper roots plus bounded whole-tree cleanup; Nuxt development preserves all mounted backend prefixes for `/api/control`, `/auth`, `/telegram/webhook` and `/health` without intercepting Nuxt UI's internal icon API. Production OpenAPI, normal webhook applications and generated Nuxt output retain no development-auth surface.
+- Final development-workflow verification passed Ruff format/lint and `ty`, a fresh full offline Python suite with 343 passed/1 skipped/4 strict xfails, Oxfmt, type-aware Oxlint/tsgolint, raw Nuxt typecheck, 27 unit/component tests, OpenAPI drift, a 2.8 MB production build, a complete 227-text-asset scan, direct SSR smoke and all 16 desktop/mobile Playwright checks. A real disposable loopback Chromium smoke proved automatic UID 887758628 login, normal capability/API loading, exact-action development step-up, prefixed proxy delivery, local Nuxt icon handling and two-port process-tree cleanup; no Telegram or OpenAI call was enabled.
+- A real `pnpm dev` run from `web/` then exposed a configuration-boundary defect: Pydantic loaded `CONTROL_PLANE_DEV_USER_ID`, `CONTROL_PLANE_DEV_ORIGIN` and `CONTROL_PLANE_DEV_API_PORT` from the root `.env`, but the development builder read only `os.environ`, where dotenv values are not exported. The three development-only fields now flow through `Settings`, remain unused by normal polling/webhook startup and have a real dotenv regression; 52 focused development/CLI tests, full Ruff format/lint, `ty` and a bounded offline `pnpm dev` smoke passed, including proxied health and bot-admin session issuance from the root-dotenv UID.
 
 ### Implementation Phase 6: Bot settings, admins and managed-chat lifecycle
 
@@ -485,7 +489,7 @@ Phase 5 verification evidence:
 
 | Task     | Description                                                                                                                                                                                                                                                                                                                                   | Completed | Date |
 | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ---- |
-| TASK-076 | Run focused Python tests after every backend phase, frontend unit/component tests after every page family and full Python/frontend static gates before Docker acceptance.                                                                                                                                                                     |           |      |
+| TASK-076 | Run focused Python tests after every backend phase, frontend unit/component tests after every page family and full Python/frontend static gates before Docker acceptance.                                                                                                                                                                     | PARTIAL   | 2026-08-01 |
 | TASK-077 | Run fresh empty-database upgrade through revisions 0013-0015, downgrade/re-upgrade tests where supported, `alembic check`, seeded legacy-database upgrade and encrypted-credential restore with required/missing master keys.                                                                                                                 |           |      |
 | TASK-078 | Run adversarial auth/authorization tests for forged/stale/future/replayed Mini App data, OIDC state/code/nonce replay, wrong issuer/audience/algorithm/key, CSRF, cross-origin requests, cookie flags, session fixation/account switch and revoked admins.                                                                                    |           |      |
 | TASK-079 | Run adversarial vault/pool tests for ciphertext/wrapped-key/AAD tampering, wrong/rotated master keys, reveal logging/cache leakage, ten-key exhaustion, invalid-request non-rotation, quota/rate/transport/server classification, concurrent rotation and alert failure.                                                                      |           |      |
@@ -493,7 +497,7 @@ Phase 5 verification evidence:
 | TASK-081 | Run bot/frontend image builds plus the Caddy/webhook/Nuxt SSR Compose stack with doctor, migration, reserved-route/header-removal, readiness, non-root filesystem, TLS, independent replacement and restart-persistent sessions/pool state; keep polling a separate bot-only smoke.                                                   |           |      |
 | TASK-082 | Run live Telegram acceptance with the real Main Mini App/menu button, fresh Mini App login, regular-browser OIDC, account switch, scoped/native/delegated admin denial/allow, `requestChat` or fallback enrollment and sanitized DM alert delivery where Telegram permits.                                                                    |           |      |
 | TASK-083 | Run live provider acceptance with two disposable keys in one profile: healthy stickiness, forced safe authentication failure, rotation, DM alert, manual recovery and continued chat/embedding behavior using `gpt-5.6-terra` at `medium` reasoning plus the configured OpenAI embedding model; revoke disposable credentials after the test. |           |      |
-| TASK-084 | Update all canonical docs, `PLAN.md` status/version/changelog, this plan and `plans/README.md` with exact test/live/deployment evidence; mark DONE only when every done criterion and release gate below is satisfied.                                                                                                                        |           |      |
+| TASK-084 | Update all canonical docs, `PLAN.md` status/version/changelog, this plan and `plans/README.md` with exact test/live/deployment evidence; mark DONE only when every done criterion and release gate below is satisfied.                                                                                                                        | PARTIAL   | 2026-08-01 |
 
 ## 3. Alternatives
 

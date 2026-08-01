@@ -31,6 +31,12 @@ class MiniAppStepUpRequest(MiniAppAuthRequest):
     action: str = Field(default="generic", min_length=1, max_length=64)
 
 
+class DevelopmentStepUpRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action: str = Field(min_length=1, max_length=64)
+
+
 class ControlPlaneUserResponse(BaseModel):
     telegram_user_id: int
     first_name: str

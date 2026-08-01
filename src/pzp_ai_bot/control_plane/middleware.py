@@ -18,11 +18,17 @@ CSRF_HEADER_NAME = "x-csrf-token"
 
 class ControlPlaneRequestGuardMiddleware:
     def __init__(
-        self, app: ASGIApp, *, settings: Settings, sessions: ControlPlaneSessionService
+        self,
+        app: ASGIApp,
+        *,
+        settings: Settings,
+        sessions: ControlPlaneSessionService,
+        public_post_paths: frozenset[str] | None = None,
     ) -> None:
         self.app = app
         self.settings = settings
         self.sessions = sessions
+        self.public_post_paths = public_post_paths or frozenset({"/api/control/v1/auth/mini-app"})
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -42,7 +48,7 @@ class ControlPlaneRequestGuardMiddleware:
                     message="Request origin is not allowed.",
                 )
                 return
-            if path != "/api/control/v1/auth/mini-app":
+            if path not in self.public_post_paths:
                 session_token = request.cookies.get(SESSION_COOKIE_NAME, "")
                 csrf_token = request.headers.get(CSRF_HEADER_NAME, "")
                 if (

@@ -50,4 +50,16 @@ describe("scanGeneratedAssets", () => {
       scanGeneratedAssets(root, { environment: {}, envFiles: [envFile] }),
     ).rejects.toThrow("environment or server-only value");
   });
+
+  it("rejects development authentication markers from production output", async () => {
+    const root = await mkdtemp(join(tmpdir(), "pzp-development-assets-"));
+    await writeFile(
+      join(root, "server.mjs"),
+      'const key="CONTROL_PLANE_DEV_USER_ID"; fetch("/api/control/v1/auth/dev/step-up")',
+    );
+
+    await expect(scanGeneratedAssets(root, { environment: {}, envFiles: [] })).rejects.toThrow(
+      "development-only marker",
+    );
+  });
 });
