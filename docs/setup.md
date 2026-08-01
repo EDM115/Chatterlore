@@ -22,18 +22,38 @@ uv run pytest
 
 The default `AI_PROVIDER=fake` is deterministic and does not call external AI services. Use it for local development, CI and documentation examples.
 
-The control-plane frontend is developed separately and is deployed as its own Nuxt SSR Node service rather than being copied into the Python runtime:
+The control-plane frontend is deployed as its own Nuxt SSR Node service rather than being copied into the Python runtime. Install its frozen dependencies from `web/`:
 
 ```powershell
 Set-Location web
 pnpm install --frozen-lockfile
 pnpm runtime:check
-pnpm dev
 ```
 
-The development frontend uses credentialed same-origin `/api/control/v1` requests and proxies `/api` to `PZP_API_DEV_ORIGIN`, which defaults to `http://127.0.0.1:8000`. Nuxt SSR returns public pages and a neutral protected-route gate before hydration; authentication and privileged data still load only in the browser. Phase 5 includes browser OIDC, signed Mini App exchange, server-side sessions, capability-driven navigation, bot-admin provider/credential APIs, controlled reveal, classified sticky key-pool failover and a protected Providers page for pool health, explicit constant-input checks and sanitized alert retry. The backend routes are attached when the webhook FastAPI application starts with `CONTROL_PLANE_ENABLED=true`; bot settings, chats, query, memory, statistics and broader operations forms remain unavailable until later Plan 021 phases.
+The backend always loads settings from the repository-root `.env`; Nuxt receives neither backend credentials nor the development Telegram identity. Configure the dedicated loopback development command in that root file:
 
-For a production-style local build, run `pnpm build`, `pnpm scan:generated` and `pnpm smoke:ssr` from `web/`. The production Compose stack keeps Nuxt and FastAPI private behind Caddy, strips credential headers before frontend requests and requires webhook configuration; see [deployment.md](deployment.md) before starting it.
+```dotenv
+CONTROL_PLANE_DEV_USER_ID=887758628
+CONTROL_PLANE_DEV_ORIGIN=http://localhost:3000
+CONTROL_PLANE_DEV_API_PORT=8000
+WEBHOOK_URL=
+```
+
+`CONTROL_PLANE_DEV_USER_ID` is required only by `pzp-bot control-plane-dev` and must be a positive numeric Telegram user ID. The origin defaults to `http://localhost:3000` and must be an exact `http` or `https` loopback origin using `localhost`, `127.0.0.1` or `::1`; the API port defaults to `8000`. These values are loaded by `Settings` so the dedicated command receives them from the repository-root `.env`, but normal polling/webhook startup does not act on them and their presence does not relax production control-plane validation.
+
+Use one of the following local modes:
+
+- `pnpm dev` starts `uv run pzp-bot control-plane-dev` from the repository root and `pnpm dev:web` from `web/`, prefixes both process streams and shuts the sibling down if either exits. With empty `WEBHOOK_URL`, it is the recommended offline combined mode: it starts the database, critical background tasks, health and control-plane APIs, but creates no Telegram `Bot` or dispatcher, exposes no Telegram webhook route and sends no admin-alert DMs even when a bot token exists.
+- `pnpm dev:web` starts only Nuxt. It is useful for frontend work with a separately managed API or mocked requests; protected pages cannot obtain a real session unless a compatible backend is reachable.
+- `uv run pzp-bot control-plane-dev` starts only the loopback FastAPI development runtime when the frontend is managed separately.
+
+Nuxt development proxies `/api/control`, `/auth`, `/telegram/webhook` and `/health` to `PZP_API_DEV_ORIGIN`, which defaults to `http://127.0.0.1:8000`. Each target preserves its mounted prefix so FastAPI receives the original path, while Nuxt's own `/api/_nuxt_icon` endpoint remains local. If `CONTROL_PLANE_DEV_API_PORT` changes, set `PZP_API_DEV_ORIGIN` to the matching backend origin before starting Nuxt. On the first exact session `401`, the development frontend posts an empty request to the development login endpoint; the backend selects the configured UID, persists a normal browser session and grants only the capabilities resolved for that identity. Sensitive actions still require an exact-action development step-up before the underlying request. No UID is accepted from browser request data.
+
+To opt into real Telegram connectivity during combined development, configure a complete non-placeholder `TELEGRAM_BOT_TOKEN`, HTTPS `WEBHOOK_URL` and `WEBHOOK_SECRET`. Connected mode deliberately registers commands, calls `setWebhook`, exposes `/telegram/webhook` and starts best-effort bot-admin DM alert delivery. The webhook must be publicly reachable over HTTPS even though the browser origin remains loopback HTTP, and enabling it changes this bot's Telegram update delivery mode. An incomplete connected configuration fails before any Telegram call.
+
+The protected SSR shell includes browser OIDC, signed Mini App exchange, server-side sessions, capability-driven navigation, bot-admin provider/credential APIs, controlled reveal, classified sticky key-pool failover and a Providers page for pool health, explicit constant-input checks and sanitized alert retry. Bot settings, chats, query, memory, statistics and broader operations forms remain unavailable until later Plan 021 phases.
+
+For a production-style local build, run `pnpm build`, `pnpm scan:generated`, `pnpm smoke:ssr` and then `pnpm start` from `web/`. Production output contains neither development-auth route nor UID-setting markers, never auto-logs in and does not start Python. The production Compose stack keeps Nuxt and FastAPI private behind Caddy, strips credential headers before frontend requests and requires real webhook/OIDC configuration; see [deployment.md](deployment.md) before starting it.
 
 To configure the Phase 3 identity boundary, create a Telegram Login OIDC client in BotFather, allow the exact public origin and register the fixed callback `<CONTROL_PLANE_PUBLIC_ORIGIN>/auth/telegram/callback`. Use an HTTPS origin without a path, query or fragment:
 

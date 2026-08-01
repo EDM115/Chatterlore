@@ -130,10 +130,13 @@ async function loadSelectedProfile() {
     return;
   }
   const profileName = encodeURIComponent(selectedProfileName.value);
-  [credentials.value, pool.value] = await Promise.all([
-    api.request<CredentialSummary[]>(`/providers/${profileName}/credentials`),
-    api.request<PoolSummary>(`/providers/${profileName}/pool`),
-  ]);
+  credentials.value = await api.request<CredentialSummary[]>(
+    `/providers/${profileName}/credentials`,
+  );
+  pool.value =
+    selectedProfile.value?.source === "managed"
+      ? await api.request<PoolSummary>(`/providers/${profileName}/pool`)
+      : null;
 }
 
 async function loadAlerts() {
@@ -218,7 +221,7 @@ function formatTimestamp(value: string | null): string {
 
     <section v-if="profiles.length" class="provider-console" aria-labelledby="pool-title">
       <div class="provider-toolbar">
-        <label for="provider-profile">Managed profile</label>
+        <label for="provider-profile">Provider profile</label>
         <select id="provider-profile" v-model="selectedProfileName" @change="loadSelectedProfile">
           <option v-for="profile in profiles" :key="profile.name" :value="profile.name">
             {{ profile.name }}
@@ -228,6 +231,11 @@ function formatTimestamp(value: string | null): string {
           >{{ selectedProfile.chat_model }} · {{ selectedProfile.embedding_model }}</span
         >
       </div>
+
+      <p v-if="selectedProfile?.source !== 'managed'" class="empty-panel">
+        Environment bootstrap profiles stay deployment-managed. Create a managed overlay to enable
+        pool health and rotation.
+      </p>
 
       <div v-if="pool" class="pool-summary-grid">
         <article>
@@ -320,7 +328,12 @@ function formatTimestamp(value: string | null): string {
           </p>
         </article>
       </div>
-      <p v-else class="empty-panel">No credentials are configured for this managed profile.</p>
+      <p v-else-if="selectedProfile?.source === 'managed'" class="empty-panel">
+        No credentials are configured for this managed profile.
+      </p>
+      <p v-else class="empty-panel">
+        No credentials are configured for this environment bootstrap profile.
+      </p>
     </section>
 
     <section class="alert-history" aria-labelledby="alerts-title">

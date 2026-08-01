@@ -34,6 +34,14 @@ Webhook deployments should probe `GET /health`. It returns HTTP 200 with `pzp-id
 
 When `CONTROL_PLANE_ENABLED=true`, the webhook FastAPI application also installs the Telegram OIDC, Mini App exchange, session and privileged provider endpoints. The public origin must be the exact HTTPS origin used by the browser and registered with BotFather. Caddy routes `/api`, `/auth`, `/telegram/webhook` and `/health` directly to FastAPI, including each descendant path, and sends every other route to Nuxt SSR. Reserved backend paths never fall through to frontend HTML.
 
+## Combined Loopback Development
+
+From `web/`, `pnpm dev` coordinates a dedicated loopback FastAPI development runtime and the Nuxt development server. This is not the production webhook topology: mock authentication exists only in the dedicated `pzp-bot control-plane-dev` command, HTTP is accepted only for an exact loopback browser origin, and the normal webhook application retains its exact HTTPS/OIDC/master-key bootstrap checks.
+
+With `CONTROL_PLANE_DEV_USER_ID` set and `WEBHOOK_URL` empty, the combined runtime performs no Telegram API operation even when `TELEGRAM_BOT_TOKEN` is present. It does not register a webhook route or start admin-alert delivery, while the database, critical background tasks, `/health` and control-plane APIs remain available. Configure a complete HTTPS `WEBHOOK_URL`, non-placeholder `WEBHOOK_SECRET` and bot token only when real connected development is intentional; startup then registers commands, calls `setWebhook`, receives webhook updates and enables admin-alert DMs. This changes Telegram's delivery mode and requires a publicly reachable HTTPS webhook.
+
+`pnpm dev:web` runs Nuxt alone, while `pnpm build` followed by `pnpm start` runs only the production Nuxt output. Neither production command starts Python or enables mock authentication. The production deployment remains the Caddy/Nuxt/FastAPI Compose topology below.
+
 ## Docker
 
 The bot image uses a multi-stage `python:3.12-slim` build, pins uv 0.12.0, installs the exact production dependency set from `uv.lock` through frozen syncs, installs the project non-editably so the copied runtime environment is self-contained, runs as the non-root `pzp` user and includes a `pzp-bot doctor` image healthcheck. The dependency layer copies `pyproject.toml`, `uv.lock` and `README.md` before application source so ordinary source edits reuse the locked dependency layer.

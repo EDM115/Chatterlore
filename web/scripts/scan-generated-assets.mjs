@@ -27,6 +27,11 @@ const SERVER_ONLY_KEYS = [
   "TELEGRAM_OIDC_CLIENT_SECRET",
   "WEBHOOK_SECRET",
 ];
+const DEVELOPMENT_ONLY_MARKERS = [
+  "CONTROL_PLANE_DEV_USER_ID",
+  "/api/control/v1/auth/dev",
+  "/api/control/v1/auth/dev/step-up",
+];
 
 const SECRET_KEY_PATTERN = /(?:API[_-]?KEY|MASTER[_-]?KEY|PASSWORD|SECRET|TOKEN|WEBHOOK)/i;
 const STATIC_SECRET_PATTERNS = [
@@ -128,6 +133,9 @@ export async function scanGeneratedAssets(
     for (const key of SERVER_ONLY_KEYS) {
       if (content.includes(key)) leaks.push(`${displayPath}: server-only configuration key`);
     }
+    for (const marker of DEVELOPMENT_ONLY_MARKERS) {
+      if (content.includes(marker)) leaks.push(`${displayPath}: development-only marker`);
+    }
     for (const secret of secretValues) {
       if (content.includes(secret)) {
         leaks.push(`${displayPath}: environment or server-only value`);
@@ -148,7 +156,7 @@ export async function scanGeneratedAssets(
 async function main() {
   const scriptDir = dirname(fileURLToPath(import.meta.url));
   const repositoryRoot = resolve(scriptDir, "..", "..");
-  const outputRoot = process.argv[2] ?? resolve(scriptDir, "..", ".output", "public");
+  const outputRoot = process.argv[2] ?? resolve(scriptDir, "..", ".output");
   const result = await scanGeneratedAssets(outputRoot, {
     envFiles: [resolve(repositoryRoot, ".env"), resolve(scriptDir, "..", ".env")],
   });

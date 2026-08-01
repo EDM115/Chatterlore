@@ -167,4 +167,39 @@ describe("providers page", () => {
       ),
     );
   });
+
+  it("shows an environment bootstrap profile without requesting managed pool state", async () => {
+    const request = vi.fn(async (input: string) => {
+      if (input.endsWith("/providers")) {
+        return [
+          {
+            name: "default",
+            provider_kind: "fake",
+            base_url: "https://api.openai.com/v1",
+            chat_model: "fake-chat",
+            embedding_model: "fake-embedding",
+            chat_capable: true,
+            embedding_capable: true,
+            local: false,
+            enabled: true,
+            source: "environment",
+          },
+        ];
+      }
+      if (input.endsWith("/providers/default/credentials")) return [];
+      if (input.includes("/alerts?limit=")) {
+        return { items: [], next_cursor: null, has_more: false };
+      }
+      throw new Error(`Unexpected request: ${input}`);
+    });
+    vi.stubGlobal("$fetch", request);
+
+    const wrapper = await mountSuspended(ProvidersPage);
+    await vi.waitFor(() => expect(wrapper.text()).toContain("Environment bootstrap profiles"));
+
+    expect(wrapper.text()).not.toContain("Provider operations could not be loaded.");
+    expect(request.mock.calls.flatMap((call) => call).join(" ")).not.toContain(
+      "/providers/default/pool",
+    );
+  });
 });

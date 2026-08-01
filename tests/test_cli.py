@@ -14,7 +14,7 @@ from typer.testing import CliRunner
 import pzp_ai_bot.main as main_module
 from pzp_ai_bot.ai.factory import ProviderRegistry
 from pzp_ai_bot.app_context import build_context
-from pzp_ai_bot.config import get_settings
+from pzp_ai_bot.config import Settings, get_settings
 from pzp_ai_bot.control_plane.secrets.service import ProviderSecretService
 from pzp_ai_bot.db.repos.provider_credentials import ProviderCredentialRepository
 from pzp_ai_bot.db.session import create_session_factory, session_scope, upgrade_schema
@@ -38,7 +38,44 @@ def configure_cli_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     monkeypatch.setenv("MEMORY_DIR", str(tmp_path / "memory"))
     monkeypatch.setenv("AI_PROVIDER", "fake")
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123:fake")
+    monkeypatch.setenv("CONTROL_PLANE_ENABLED", "false")
     return db_path
+
+
+def test_control_plane_dev_command_builds_the_dedicated_runtime(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    configure_cli_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("CONTROL_PLANE_DEV_USER_ID", "887758628")
+    calls: list[Settings] = []
+
+    async def run_development(settings: Settings) -> None:
+        calls.append(settings)
+
+    monkeypatch.setattr(
+        main_module, "run_control_plane_development", run_development, raising=False
+    )
+
+    result = runner.invoke(app, ["control-plane-dev"])
+
+    assert result.exit_code == 0, result.output
+    assert len(calls) == 1
+    assert calls[0].control_plane_enabled is False
+    assert "887758628" not in result.output
+    assert "123:fake" not in result.output
+
+
+def test_control_plane_dev_command_reports_missing_uid_without_secrets(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    configure_cli_env(monkeypatch, tmp_path)
+    monkeypatch.delenv("CONTROL_PLANE_DEV_USER_ID", raising=False)
+
+    result = runner.invoke(app, ["control-plane-dev"])
+
+    assert result.exit_code != 0
+    assert "CONTROL_PLANE_DEV_USER_ID" in result.output
+    assert "123:fake" not in result.output
 
 
 def seed_cli_message(scope: Scope, text: str, *, message_id: int = 1) -> None:
@@ -410,6 +447,7 @@ def test_cli_redacts_database_url_credentials(
     monkeypatch.setenv("MEMORY_DIR", str(tmp_path / "memory"))
     monkeypatch.setenv("AI_PROVIDER", "fake")
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123:fake")
+    monkeypatch.setenv("CONTROL_PLANE_ENABLED", "false")
     monkeypatch.setattr(main_module, "upgrade_schema", lambda settings: None)
 
     show_config = runner.invoke(app, ["show-config"])

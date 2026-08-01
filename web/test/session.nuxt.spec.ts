@@ -1,4 +1,4 @@
-import { clearNuxtState } from "#app";
+import { clearNuxtState, useState } from "#app";
 import { mountSuspended } from "@nuxt/test-utils/runtime";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineComponent } from "vue";
@@ -87,6 +87,99 @@ describe("useControlSession", () => {
       timeout: 5_000,
     });
     expect(wrapper.vm.clientKind).toBe("mini_app");
+  });
+
+  it("uses development login only after an exact anonymous session response", async () => {
+    const request = vi
+      .fn()
+      .mockRejectedValueOnce({ response: { status: 401 } })
+      .mockResolvedValueOnce(sessionPayload);
+    vi.stubGlobal("$fetch", request);
+    const wrapper = await mountSuspended(Harness);
+
+    expect(await wrapper.vm.bootstrap()).toBe(true);
+
+    expect(request).toHaveBeenNthCalledWith(1, "/api/control/v1/session", {
+      credentials: "include",
+      headers: {},
+      method: "GET",
+      timeout: 5_000,
+    });
+    expect(request).toHaveBeenNthCalledWith(2, "/api/control/v1/auth/dev", {
+      credentials: "include",
+      headers: {},
+      method: "POST",
+      timeout: 5_000,
+    });
+    expect(wrapper.vm.status).toBe("authenticated");
+  });
+
+  it("does not hide a non-authentication session failure behind development login", async () => {
+    const request = vi.fn().mockRejectedValue({ response: { status: 503 } });
+    vi.stubGlobal("$fetch", request);
+    const wrapper = await mountSuspended(Harness);
+
+    expect(await wrapper.vm.bootstrap()).toBe(false);
+
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(wrapper.vm.status).toBe("error");
+    expect(wrapper.vm.error).toBe("The control-plane session could not be loaded.");
+  });
+
+  it("marks the exact sensitive action through development step-up", async () => {
+    useState("control-plane-session", () => null).value = sessionPayload;
+    useState("control-plane-csrf", () => null).value = "csrf-token";
+    const request = vi.fn().mockResolvedValue({
+      step_up: true,
+      verified_at: "2026-08-01T12:00:00Z",
+      action: "credential:reveal",
+    });
+    vi.stubGlobal("$fetch", request);
+    const wrapper = await mountSuspended(Harness);
+
+    expect(await wrapper.vm.ensureStepUp("credential:reveal", "/providers")).toBe(true);
+
+    expect(request).toHaveBeenCalledWith("/api/control/v1/auth/dev/step-up", {
+      body: { action: "credential:reveal" },
+      credentials: "include",
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": "csrf-token" },
+      method: "POST",
+      timeout: 5_000,
+    });
+    expect(wrapper.vm.session.step_up_at).toBe("2026-08-01T12:00:00Z");
+  });
+
+  it("keeps signed Mini App step-up ahead of the development shortcut", async () => {
+    window.Telegram = {
+      WebApp: {
+        initData: "signed-init-data",
+        colorScheme: "dark",
+        ready: vi.fn(),
+        expand: vi.fn(),
+      },
+    };
+    useState("control-plane-session", () => null).value = {
+      ...sessionPayload,
+      client_kind: "mini_app",
+    };
+    useState("control-plane-csrf", () => null).value = "csrf-token";
+    const request = vi.fn().mockResolvedValue({
+      step_up: true,
+      verified_at: "2026-08-01T12:00:00Z",
+      action: "credential:reveal",
+    });
+    vi.stubGlobal("$fetch", request);
+    const wrapper = await mountSuspended(Harness);
+
+    expect(await wrapper.vm.ensureStepUp("credential:reveal", "/providers")).toBe(true);
+
+    expect(request).toHaveBeenCalledWith("/api/control/v1/auth/step-up/mini-app", {
+      body: { action: "credential:reveal", init_data: "signed-init-data" },
+      credentials: "include",
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": "csrf-token" },
+      method: "POST",
+      timeout: 5_000,
+    });
   });
 });
 

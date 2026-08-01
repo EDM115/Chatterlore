@@ -1,11 +1,19 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 
 import pytest
 
 from pzp_ai_bot.app_context import AppContext, build_context
 from pzp_ai_bot.config import Settings
+
+
+@pytest.fixture(scope="session", autouse=True)
+def isolate_settings_from_repository_dotenv() -> Iterator[None]:
+    original_env_file = Settings.model_config.get("env_file")
+    Settings.model_config["env_file"] = None
+    yield
+    Settings.model_config["env_file"] = original_env_file
 
 
 @pytest.fixture
@@ -18,6 +26,7 @@ def test_settings(tmp_path) -> Settings:
         db_url=f"sqlite+aiosqlite:///{tmp_path / 'bot.db'}",
         memory_dir=tmp_path / "memory",
         ai_provider="fake",
+        control_plane_enabled=False,
         learning_default_enabled=False,
         summary_batch_size=2,
     )

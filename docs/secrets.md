@@ -14,6 +14,7 @@ PZP AI expects secrets to come from environment variables, untracked env files o
 - Plaintext provider credentials are decrypted only while creating the concrete client for an opaque operation lease. The managed registry cache is keyed by profile and credential revisions, contains no separately retained raw-key field and is cleared after every profile/credential mutation.
 - Bot-admin profile/credential APIs never return a managed key except from the isolated `POST .../reveal` operation. Create, reveal and delete require fresh Telegram verification bound to that exact action. Reveal responses are private/no-store, are audited before return and remain in the Nuxt component only until the 30-second timer or an earlier navigation, identity, visibility, failure or unmount boundary.
 - Manual bot-admin credential tests use a fixed non-sensitive chat or embedding input, are independently rate-limited and can incur provider charges. Results expose only the model, dimensions where relevant and safe attempt metadata; raw provider errors and response bodies never enter API responses, audit rows or admin alerts.
+- The dedicated loopback development command reuses a complete configured `CONTROL_PLANE_MASTER_KEYS` keyring when present. Otherwise it creates `data/control-plane-dev-master-key`, an explicitly ignored stable base64-encoded 32-byte key, so managed credentials created locally remain decryptable across restarts. This colocated key is development convenience protection, not production secret isolation; malformed or unreadable existing material fails closed and is never replaced automatically.
 
 ## Rotation
 
@@ -27,6 +28,7 @@ PZP AI expects secrets to come from environment variables, untracked env files o
 ## Deployment Notes
 
 - For Compose or container platforms, prefer an untracked env file or platform secret injection over baking secrets into images.
+- Production must supply externally managed `CONTROL_PLANE_MASTER_KEYS` and `CONTROL_PLANE_ACTIVE_MASTER_KEY_ID`; never copy the colocated development key into a deployment. Mock development login takes the identity only from backend `CONTROL_PLANE_DEV_USER_ID`, accepts no UID request body and still requires exact-action step-up for sensitive operations. The development auth routes and setting-name markers are excluded from production OpenAPI and Nuxt output.
 - The Compose bot service is the only application container that receives `.env` and backend secrets. Caddy receives only `CONTROL_PLANE_PUBLIC_ORIGIN`, Nuxt receives only non-secret Node listener settings, and Caddy removes `Cookie`, `Authorization` and `X-CSRF-Token` before proxying frontend requests; never add bot, OIDC, vault, provider, database or webhook secrets to the frontend build arguments or environment.
 - Do not pass secrets through `/runtime_settings`; editable runtime settings intentionally reject secret-bearing keys.
 - Do not paste provider keys into Telegram groups or bot DMs. Bot conversations are not an encrypted application secret store, and deleting a command message would not guarantee removal from Telegram infrastructure or every update consumer.

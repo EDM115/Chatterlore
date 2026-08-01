@@ -10,7 +10,7 @@ const foundations = [
     eyebrow: "Identity",
     title: "Telegram-native access",
     description:
-      "Browser OIDC and signed Mini App launches will resolve to one revocable server-side session.",
+      "Browser OIDC and signed Mini App launches resolve to one revocable server-side session.",
   },
   {
     eyebrow: "Authorization",
@@ -22,7 +22,7 @@ const foundations = [
     eyebrow: "Providers",
     title: "Resilience without exposure",
     description:
-      "Managed credential pools will rotate safely while bootstrap secrets stay deployment-only.",
+      "Managed credential pools rotate safely while bootstrap secrets stay deployment-only.",
   },
 ];
 </script>
@@ -31,15 +31,14 @@ const foundations = [
   <ProtectedPageGate>
     <section class="page-introduction" aria-labelledby="overview-title">
       <div>
-        <p class="eyebrow">Plan 021 · Foundation</p>
+        <p class="eyebrow">Plan 021 · Through Phase 5</p>
         <h1 id="overview-title">Private operations, one clear surface.</h1>
         <p class="page-lede">
-          The control-plane shell is ready for its authenticated API. This phase establishes the
-          responsive Nuxt workspace and its reproducible security gates without exposing privileged
-          controls early.
+          Telegram identity, revocable sessions and provider resilience now share one responsive
+          control-plane surface while FastAPI remains the sole authorization and secret authority.
         </p>
       </div>
-      <UBadge color="neutral" variant="soft" size="lg">Phase 3 identity</UBadge>
+      <UBadge color="neutral" variant="soft" size="lg">Phase 5 provider resilience</UBadge>
     </section>
 
     <section class="foundation-grid" aria-label="Control-plane foundations">
@@ -53,14 +52,13 @@ const foundations = [
     <section class="next-step-panel" aria-labelledby="next-step-title">
       <div>
         <p class="eyebrow">Next checkpoint</p>
-        <h2 id="next-step-title">Authentication before administration</h2>
+        <h2 id="next-step-title">Scoped administration next</h2>
         <p>
-          Telegram identity, revocable sessions and live capability checks are connected. Settings,
-          credentials, memory and group controls remain unavailable until their approved phases
-          land.
+          Phase 6 adds bot settings, administrator grants and managed-chat lifecycle. Query, memory,
+          statistics, audit and broader operations remain in their reviewed later phases.
         </p>
       </div>
-      <UButton to="/login" color="primary" variant="solid">View sign-in readiness</UButton>
+      <UButton to="/providers" color="primary" variant="solid">Review provider resilience</UButton>
     </section>
   </ProtectedPageGate>
 </template>
