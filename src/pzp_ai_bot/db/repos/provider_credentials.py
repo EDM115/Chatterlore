@@ -351,6 +351,57 @@ class ProviderCredentialRepository:
         )
         return (await self.session.scalars(statement)).one_or_none()
 
+    async def replace_secret(
+        self,
+        credential_id: int,
+        *,
+        expected_version: int,
+        ciphertext: bytes,
+        secret_nonce: bytes,
+        wrapped_dek: bytes,
+        wrap_nonce: bytes,
+        master_key_id: str,
+        fingerprint: str,
+        last_four: str,
+        label: str | None,
+        actor_user_id: int,
+        now: datetime,
+    ) -> AIProviderCredential | None:
+        values: dict[str, Any] = {
+            "secret_ciphertext": ciphertext,
+            "secret_nonce": secret_nonce,
+            "wrapped_dek": wrapped_dek,
+            "wrap_nonce": wrap_nonce,
+            "master_key_id": master_key_id,
+            "fingerprint": fingerprint,
+            "last_four": last_four,
+            "lifecycle_state": "enabled",
+            "health_state": "unknown",
+            "cooldown_until": None,
+            "last_error_classification": None,
+            "success_count": 0,
+            "failure_count": 0,
+            "last_success_at": None,
+            "last_failure_at": None,
+            "updated_by": actor_user_id,
+            "updated_at": now,
+            "version": AIProviderCredential.version + 1,
+        }
+        if label is not None:
+            values["label"] = label
+        statement = (
+            update(AIProviderCredential)
+            .where(
+                AIProviderCredential.id == credential_id,
+                AIProviderCredential.version == expected_version,
+                AIProviderCredential.source_kind == "managed",
+                AIProviderCredential.lifecycle_state != "deleted",
+            )
+            .values(**values)
+            .returning(AIProviderCredential)
+        )
+        return (await self.session.scalars(statement)).one_or_none()
+
     async def tombstone(
         self, credential_id: int, *, expected_version: int, actor_user_id: int, now: datetime
     ) -> AIProviderCredential | None:

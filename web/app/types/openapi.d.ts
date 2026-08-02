@@ -575,6 +575,23 @@ export interface paths {
         patch: operations["update_provider_credential_api_control_v1_providers__name__credentials__credential_id__patch"];
         trace?: never;
     };
+    "/api/control/v1/providers/{name}/credentials/{credential_id}/replace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Replace Provider Credential */
+        post: operations["replace_provider_credential_api_control_v1_providers__name__credentials__credential_id__replace_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/control/v1/providers/{name}/credentials/{credential_id}/reveal": {
         parameters: {
             query?: never;
@@ -1367,6 +1384,15 @@ export interface components {
             state: string;
             /** Success Count */
             success_count: number;
+            /** Version */
+            version: number;
+        };
+        /** ProviderCredentialReplaceRequest */
+        ProviderCredentialReplaceRequest: {
+            /** Label */
+            label?: string | null;
+            /** Value */
+            value: string;
             /** Version */
             version: number;
         };
@@ -4623,6 +4649,78 @@ export interface operations {
             };
             /** @description Unprocessable Entity */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    replace_provider_credential_api_control_v1_providers__name__credentials__credential_id__replace_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+                credential_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderCredentialReplaceRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderCredentialMutationResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneConflictEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

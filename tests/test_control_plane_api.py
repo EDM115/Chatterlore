@@ -622,6 +622,11 @@ def test_admin_alert_delivery_is_started_but_is_not_a_critical_health_dependency
 
     assert response.status_code == 200
     assert "pzp-admin-alert-delivery" not in response.json()["tasks"]
+    assert response.json()["control_plane"]["alert_worker"] == {
+        "configured": True,
+        "running": False,
+        "critical": False,
+    }
 
 
 def test_phase6_bot_admin_runtime_settings_and_session_invalidation_api(tmp_path: Path) -> None:

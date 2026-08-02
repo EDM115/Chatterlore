@@ -1,10 +1,10 @@
 ---
 goal: Secure Telegram-authenticated control plane and resilient provider API-key pools
-version: 1.10
+version: 1.11
 date_created: 2026-07-30
 last_updated: 2026-08-02
 owner: PZP-AI
-status: In progress — Phase 7 is implemented and locally validated; Phase 8 is ready and not started
+status: In progress — Phases 1–9 are implemented and locally validated; Phase 10 live and deployment acceptance remains
 tags:
   - feature
   - security
@@ -479,8 +479,8 @@ Phase 7 implementation evidence:
 Phase 7 verification evidence:
 - Focused Phase 7 plus adjacent memory/provider/control-plane/operations selections passed. The final post-hardening fresh external-basetemp offline suite reported 370 passed, 1 skipped live Telegram test and 4 deliberate strict control-plane contract xfails; the public `MemoryService` facade inventory includes all six intentional Phase 7 additions, the enrollment regression now uses a relative expiry instead of a date-dependent midnight, directory scanning stops lazily at its configured cap and projection status does not repair missing files.
 - Immutable uv lock, whole-repository Ruff format/lint, `ty`, packaged CLI help and fake-provider doctor gates pass. A fresh disposable SQLite database upgrades through unchanged head `0016_managed_chat_enrollment_requests`, and `alembic check` exits cleanly with no model/history drift.
-- Frontend verification passes Oxfmt, type-aware Oxlint/tsgolint, raw `pnpm typecheck`, 30 unit/component tests, synchronized deterministic OpenAPI/client types, a 2.89 MB production SSR build, a complete 236-text-asset secret scan, direct production SSR smoke and all 22 existing desktop/mobile Chromium checks. No Phase 8 product screen is claimed merely because its backend contract is now generated.
-- Docker/Compose/Caddy/TLS and live BotFather OIDC/Mini App/provider/Telegram acceptance were not rerun for this backend/API phase and remain Gate E release work. Phase 8 is the next implementation slice and must build the requested query, memory, stats, audit and operations UI over these contracts without moving business behavior into Nuxt.
+- Frontend verification at the Phase 7 checkpoint passed Oxfmt, type-aware Oxlint/tsgolint, raw `pnpm typecheck`, 30 unit/component tests, synchronized deterministic OpenAPI/client types, a 2.89 MB production SSR build, a complete 236-text-asset secret scan, direct production SSR smoke and all 22 then-existing desktop/mobile Chromium checks. That checkpoint intentionally did not claim a Phase 8 product screen merely because its backend contract had been generated.
+- Docker/Compose/Caddy/TLS and live BotFather OIDC/Mini App/provider/Telegram acceptance were not rerun for this backend/API phase and remain Gate E release work. The following Phase 8 implementation records the requested query, memory, stats, audit and operations UI over these contracts without moving business behavior into Nuxt.
 
 ### Implementation Phase 8: Complete Nuxt control-plane experience
 
@@ -488,15 +488,26 @@ Phase 7 verification evidence:
 
 | Task     | Description                                                                                                                                                                                                                                                   | Completed | Date |
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ---- |
-| TASK-060 | Build Dashboard with health, uptime, version/schema, memory/database size, provider/local-model status, chat/admin/message/knowledge/review/AI/alert metrics and safe lightweight trends.                                                                     |           |      |
-| TASK-061 | Build Bot Settings with safe runtime defaults, approved model/reasoning allowlists, inherited values, version conflict handling and bot-admin management.                                                                                                     |           |      |
-| TASK-062 | Build Providers with profile create/edit, capability display, ordered key pool, masked metadata, health history, test, enable/disable, replace, controlled reveal, copy, delete and exhaustion guidance.                                                      |           |      |
-| TASK-063 | Build Chats with active/paused/detached filters, enrollment, status counts, delegated admins, learning policy, scope settings, topic navigation and distinct lifecycle/forget actions.                                                                        |           |      |
-| TASK-064 | Build Query workspace with selected chat/topic, memory profile, Search/Ask modes, local/provider/model/reasoning controls, unsupported-combination guidance, progress/cancel behavior, source references and no hidden-reasoning display.                     |           |      |
-| TASK-065 | Build Memory Explorer with filters, pagination, item/review detail, explicit raw-source access, refresh/delete/approve/reject actions and browser-safe streamed export downloads.                                                                             |           |      |
-| TASK-066 | Build Stats, Audit and Operations views with scoped filters, safe event detail, diagnostics actions, alert delivery state and clear distinction between cached status and a live paid/download-triggering check.                                              |           |      |
-| TASK-067 | Integrate Telegram BackButton, SettingsButton, theme colors, safe-area/content-safe-area, closing confirmation for dirty forms, responsive navigation and feature-detected `requestChat`; keep normal-browser controls fully usable without Telegram globals. |           |      |
-| TASK-068 | Add accessible loading/empty/error/401/403/409/429 states, focus management, keyboard navigation, reduced-motion support, sensitive-value masking and automatic session-expiry recovery across every page.                                                    |           |      |
+| TASK-060 | Build Dashboard with health, uptime, version/schema, memory/database size, provider/local-model status, chat/admin/message/knowledge/review/AI/alert metrics and safe lightweight trends.                                                                     | DONE      | 2026-08-02 |
+| TASK-061 | Build Bot Settings with safe runtime defaults, approved model/reasoning allowlists, inherited values, version conflict handling and bot-admin management.                                                                                                     | DONE      | 2026-08-02 |
+| TASK-062 | Build Providers with profile create/edit, capability display, ordered key pool, masked metadata, health history, test, enable/disable, replace, controlled reveal, copy, delete and exhaustion guidance.                                                      | DONE      | 2026-08-02 |
+| TASK-063 | Build Chats with active/paused/detached filters, enrollment, status counts, delegated admins, learning policy, scope settings, topic navigation and distinct lifecycle/forget actions.                                                                        | DONE      | 2026-08-02 |
+| TASK-064 | Build Query workspace with selected chat/topic, memory profile, Search/Ask modes, local/provider/model/reasoning controls, unsupported-combination guidance, progress/cancel behavior, source references and no hidden-reasoning display.                     | DONE      | 2026-08-02 |
+| TASK-065 | Build Memory Explorer with filters, pagination, item/review detail, explicit raw-source access, refresh/delete/approve/reject actions and browser-safe streamed export downloads.                                                                             | DONE      | 2026-08-02 |
+| TASK-066 | Build Stats, Audit and Operations views with scoped filters, safe event detail, diagnostics actions, alert delivery state and clear distinction between cached status and a live paid/download-triggering check.                                              | DONE      | 2026-08-02 |
+| TASK-067 | Integrate Telegram BackButton, SettingsButton, theme colors, safe-area/content-safe-area, closing confirmation for dirty forms, responsive navigation and feature-detected `requestChat`; keep normal-browser controls fully usable without Telegram globals. | DONE      | 2026-08-02 |
+| TASK-068 | Add accessible loading/empty/error/401/403/409/429 states, focus management, keyboard navigation, reduced-motion support, sensitive-value masking and automatic session-expiry recovery across every page.                                                    | DONE      | 2026-08-02 |
+
+Phase 8 implementation evidence:
+- The SSR control plane now provides the complete Dashboard, Bot Settings, Providers, Chats, Query, Memory, Stats, Audit and Operations page family. Query keeps retrieval and chat selections explicit, presents source references without hidden reasoning, and supports cancellation; Memory keeps raw-source access explicit and audited and uses private streamed export links rather than browser-side materialization.
+- Provider administration now covers managed-profile creation/editing, capability and pool state, credential ordering/state/test/reveal/copy/delete and in-place secret replacement. `POST /api/control/v1/providers/{name}/credentials/{credential_id}/replace` performs one optimistic, versioned replacement that preserves the credential row and authenticated-data identity, rotates the encrypted payload/fingerprint/last-four, resets health/cooldown/error/counters and writes only secret-safe audit metadata.
+- `useControlFeedback` centralizes safe status-aware 401/403/409/422/429 feedback, automatic expired-session recovery and focus behavior. The shell and Telegram plugin provide responsive navigation, theme and safe-area integration, BackButton/SettingsButton lifecycle, dirty-form closing confirmation and normal-browser fallbacks without moving authorization or business behavior into Nuxt.
+
+Phase 8 verification evidence:
+- The final frontend checkpoint passes Oxfmt, type-aware Oxlint/tsgolint, raw `pnpm typecheck`, deterministic OpenAPI/client drift, 15 Vitest files with 50 unit/component tests, a 3.22 MB Nuxt SSR production build, a complete 256-text-asset environment/secret scan and direct production SSR smoke for public and protected routes.
+- Playwright covers 30 desktop/mobile Chromium checks including direct protected-route hydration, neutral secret-free SSR HTML, keyboard focus, expired-session recovery, Query-to-Memory source/export behavior and an injected Telegram SDK with route chrome plus dirty-form protection. The injected-SDK test stubs the external Telegram script so a live network response cannot replace the deterministic mock during slower mobile execution.
+- The matching backend/API checkpoint passes the complete 377-test collection with 372 passed, 1 live Telegram skip and 4 deliberate strict contract xfails, plus immutable lock, Ruff format/lint, `ty`, packaged CLI/doctor/show-config, fresh revision-0016 upgrade, clean Alembic model/history drift and synchronized OpenAPI export checks.
+- Docker/Compose/Caddy/TLS, real BotFather OIDC/Mini App/requestChat, live two-key provider rotation/DM delivery and backup/restore remain Phase 10 release evidence rather than Phase 8 implementation claims.
 
 ### Implementation Phase 9: Runtime, Docker, CI and deployment integration
 
@@ -506,11 +517,16 @@ Phase 7 verification evidence:
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ---- |
 | TASK-069 | Keep webhook composition as the single FastAPI HTTP backend for auth/control API, Telegram webhook and health routes; do not mount Nuxt output or a history fallback in the Python process.                                                           | DONE      | 2026-08-01 |
 | TASK-070 | Keep polling as a separate bot-only local/manual runtime and prevent production Compose from starting it beside the webhook process against the same Telegram bot and SQLite database.                                                                | DONE      | 2026-08-01 |
-| TASK-071 | Extend health/doctor/show-config with safe control-plane, OIDC, master-key, session-store, provider-pool and alert-worker checks; never perform paid provider calls in health or reveal configuration values.                                      | PARTIAL   | 2026-08-01 |
+| TASK-071 | Extend health/doctor/show-config with safe control-plane, OIDC, master-key, session-store, provider-pool and alert-worker checks; never perform paid provider calls in health or reveal configuration values.                                      | DONE      | 2026-08-02 |
 | TASK-072 | Add an independent Node 24/pnpm frozen multi-stage Nuxt SSR image that copies only `.output`, runs as the non-root Node user and retains the independently buildable uv-frozen non-root bot image.                                                  | DONE      | 2026-08-01 |
 | TASK-073 | Add exact-pinned Caddy plus private bot/frontend Compose services, persistent SQLite/memory/Caddy state, webhook runtime settings and no secrets in the frontend or proxy environment; only Caddy publishes host ports.                             | DONE      | 2026-08-01 |
 | TASK-074 | Expand CI into Python quality, frontend quality and independent image-build gates, including frozen uv/pnpm locks, OpenAPI client drift, Nuxt SSR build, browser-asset secret scan, production SSR smoke and migration upgrade/check.              | DONE      | 2026-08-01 |
 | TASK-075 | Document Caddy HTTPS, exact public origin/callback, BotFather Web Login allowed URLs, Main Mini App/menu URL, CSP/frame behavior, secure cookies, independent replacement, backup/master-key recovery and single-writer routing.                   | DONE      | 2026-08-01 |
+
+Phase 9 final implementation evidence:
+- Safe config reports only whether master keys are configured, the database session-store mode, provider-pool enablement/capacity and alert-worker enablement. `doctor` adds control-plane, OIDC, master-key, database-session-store, provider-pool and alert-worker checks without calling a provider or exposing a configured value.
+- Webhook `/health` retains its existing critical database/scheduler result and adds a safe control-plane readiness object; alert-worker readiness is visible but intentionally non-critical so an admin-DM delivery problem cannot take the ingestion webhook out of service.
+- Focused config/CLI/webhook/contract tests and the same full Python/static/package/migration checkpoint above cover TASK-071. Phase 9's deployment artifacts remain implemented, while their live Docker/Caddy/TLS behavior is deliberately still Phase 10 acceptance.
 
 ### Implementation Phase 10: Verification, live acceptance and roadmap closure
 
@@ -518,15 +534,15 @@ Phase 7 verification evidence:
 
 | Task     | Description                                                                                                                                                                                                                                                                                                                                   | Completed | Date |
 | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ---- |
-| TASK-076 | Run focused Python tests after every backend phase, frontend unit/component tests after every page family and full Python/frontend static gates before Docker acceptance.                                                                                                                                                                     | PARTIAL   | 2026-08-01 |
+| TASK-076 | Run focused Python tests after every backend phase, frontend unit/component tests after every page family and full Python/frontend static gates before Docker acceptance.                                                                                                                                                                     | PARTIAL   | 2026-08-02 |
 | TASK-077 | Run fresh empty-database upgrade through revisions 0013-0015, downgrade/re-upgrade tests where supported, `alembic check`, seeded legacy-database upgrade and encrypted-credential restore with required/missing master keys.                                                                                                                 |           |      |
 | TASK-078 | Run adversarial auth/authorization tests for forged/stale/future/replayed Mini App data, OIDC state/code/nonce replay, wrong issuer/audience/algorithm/key, CSRF, cross-origin requests, cookie flags, session fixation/account switch and revoked admins.                                                                                    |           |      |
 | TASK-079 | Run adversarial vault/pool tests for ciphertext/wrapped-key/AAD tampering, wrong/rotated master keys, reveal logging/cache leakage, ten-key exhaustion, invalid-request non-rotation, quota/rate/transport/server classification, concurrent rotation and alert failure.                                                                      |           |      |
-| TASK-080 | Run Playwright at desktop/mobile widths for regular browser OIDC stubs, injected Mini App SDK/initData, bot-admin/scoped-admin navigation, settings conflicts, credential reveal auto-clear, managed-chat lifecycle, query, memory and exports.                                                                                               |           |      |
+| TASK-080 | Run Playwright at desktop/mobile widths for regular browser OIDC stubs, injected Mini App SDK/initData, bot-admin/scoped-admin navigation, settings conflicts, credential reveal auto-clear, managed-chat lifecycle, query, memory and exports.                                                                                               | PARTIAL   | 2026-08-02 |
 | TASK-081 | Run bot/frontend image builds plus the Caddy/webhook/Nuxt SSR Compose stack with doctor, migration, reserved-route/header-removal, readiness, non-root filesystem, TLS, independent replacement and restart-persistent sessions/pool state; keep polling a separate bot-only smoke.                                                   |           |      |
 | TASK-082 | Run live Telegram acceptance with the real Main Mini App/menu button, fresh Mini App login, regular-browser OIDC, account switch, scoped/native/delegated admin denial/allow, `requestChat` or fallback enrollment and sanitized DM alert delivery where Telegram permits.                                                                    |           |      |
 | TASK-083 | Run live provider acceptance with two disposable keys in one profile: healthy stickiness, forced safe authentication failure, rotation, DM alert, manual recovery and continued chat/embedding behavior using `gpt-5.6-terra` at `medium` reasoning plus the configured OpenAI embedding model; revoke disposable credentials after the test. |           |      |
-| TASK-084 | Update all canonical docs, `PLAN.md` status/version/changelog, this plan and `plans/README.md` with exact test/live/deployment evidence; mark DONE only when every done criterion and release gate below is satisfied.                                                                                                                        | PARTIAL   | 2026-08-01 |
+| TASK-084 | Update all canonical docs, `PLAN.md` status/version/changelog, this plan and `plans/README.md` with exact test/live/deployment evidence; mark DONE only when every done criterion and release gate below is satisfied.                                                                                                                        | PARTIAL   | 2026-08-02 |
 
 ## 3. Alternatives
 
@@ -571,8 +587,8 @@ Phase 7 verification evidence:
 - **FILE-014**: `alembic/versions/0013_control_plane_identity_access.py`, `0014_provider_credential_pools.py`, `0015_admin_alert_outbox.py`, `0016_managed_chat_enrollment_requests.py` — schema revisions and indexes.
 - **FILE-015**: `src/pzp_ai_bot/main.py` — secret status/rewrap commands and safe control-plane doctor/config output.
 - **FILE-016**: `web/nuxt.config.ts`, `web/app.vue`, `web/app.config.ts`, `web/app/assets/css/main.css`, `web/server/middleware/security-headers.ts` — Nuxt SSR build, Nuxt UI theme, Mini App/browser shell and document-security boundary.
-- **FILE-017**: `web/app/plugins/telegram.client.ts`, `web/app/composables/useApi.ts`, `useSession.ts`, `useCapabilities.ts`, `useSensitiveReveal.ts` and route middleware — auth bootstrap, same-origin API/CSRF, capability navigation and reveal lifecycle.
-- **FILE-018**: `web/app/pages/index.vue`, `bot/settings.vue`, `providers/*.vue`, `chats/*.vue`, `query.vue`, `memory.vue`, `stats.vue`, `audit.vue`, `operations.vue`, `login.vue` — requested control-plane pages.
+- **FILE-017**: `web/app/plugins/telegram.client.ts`, `web/app/composables/useControlApi.ts`, `useControlSession.ts`, `useControlFeedback.ts`, `useSensitiveReveal.ts` and route middleware — auth bootstrap, same-origin API/CSRF, capability navigation, shared feedback and reveal lifecycle.
+- **FILE-018**: `web/app/pages/index.vue`, `bot-settings.vue`, `providers.vue`, `chats.vue`, `query.vue`, `memory.vue`, `stats.vue`, `audit.vue`, `operations.vue`, `login.vue` — requested control-plane pages.
 - **FILE-019**: `web/app/components/` — focused dashboard, setting, provider-key, chat, query, memory, stats and confirmation components.
 - **FILE-020**: `web/app/types/openapi.d.ts` and schema-generation scripts — generated backend contract.
 - **FILE-021**: `tests/test_control_plane_auth.py`, `test_control_plane_authorization.py`, `test_control_plane_api.py` — Python auth/RBAC/API contract tests.
@@ -621,13 +637,13 @@ Phase 7 verification evidence:
 ### Done criteria
 
 - [ ] One Nuxt control plane works in Telegram and normal browsers through separate validated auth inputs and one revocable session/RBAC model.
-- [ ] Bot admins can manage and controlled-reveal encrypted database provider keys without restart; bootstrap secrets remain non-revealable.
-- [ ] Provider profiles rotate through healthy keys with the exact bounded classifier/state/concurrency/telemetry contract and sanitized non-fatal DM alerts.
-- [ ] Bot/global and chat/topic settings/admin permissions preserve existing precedence and scope boundaries with optimistic concurrency.
-- [ ] Managed chats have distinct enrollment, active, pause, detach, leave and forget behavior.
-- [ ] Query, stats, memory, exports, audit and operations pages are bounded, authorized and source-backed.
+- [x] Bot admins can manage and controlled-reveal encrypted database provider keys without restart; bootstrap secrets remain non-revealable.
+- [x] Provider profiles rotate through healthy keys with the exact bounded classifier/state/concurrency/telemetry contract and sanitized non-fatal DM alerts.
+- [x] Bot/global and chat/topic settings/admin permissions preserve existing precedence and scope boundaries with optimistic concurrency.
+- [x] Managed chats have distinct enrollment, active, pause, detach, leave and forget behavior.
+- [x] Query, stats, memory, exports, audit and operations pages are bounded, authorized and source-backed.
 - [ ] Polling and production webhook/Caddy/Nuxt SSR operation, Docker, CI, migrations, docs and live acceptance gates pass with no secret leakage.
-- [ ] `PLAN.md`, `plans/README.md` and this plan distinguish DONE, PARTIAL and TODO using reproduced evidence.
+- [x] `PLAN.md`, `plans/README.md` and this plan distinguish DONE, PARTIAL and TODO using reproduced evidence.
 
 ## 7. Risks & Assumptions
 

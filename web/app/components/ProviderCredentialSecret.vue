@@ -23,8 +23,8 @@ async function reveal() {
   error.value = null;
   try {
     await sensitive.reveal(props.credential.profile_name, numericCredentialId.value);
-  } catch {
-    error.value = "The credential could not be revealed.";
+  } catch (caught) {
+    error.value = controlErrorMessage(caught, "The credential could not be revealed.");
   }
 }
 
@@ -32,8 +32,8 @@ async function copy() {
   error.value = null;
   try {
     if (!(await sensitive.copy())) error.value = "The credential is not currently revealed.";
-  } catch {
-    error.value = "The credential could not be copied.";
+  } catch (caught) {
+    error.value = controlErrorMessage(caught, "The credential could not be copied.");
   }
 }
 </script>

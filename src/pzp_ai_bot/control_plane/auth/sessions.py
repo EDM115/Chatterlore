@@ -196,6 +196,7 @@ SENSITIVE_ACTIONS = frozenset(
     {
         "credential:create",
         "credential:delete",
+        "credential:replace",
         "credential:reveal",
         "profile:delete",
         "bot_admin:delete",

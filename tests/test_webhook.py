@@ -65,6 +65,14 @@ def test_health_reports_running_critical_background_tasks(context: AppContext) -
     assert response.json() == {
         "ok": True,
         "tasks": {"pzp-idle-summarizer": True, "pzp-runtime-settings-refresher": True},
+        "control_plane": {
+            "enabled": False,
+            "oidc_configured": False,
+            "master_keys_configured": False,
+            "session_store": "database",
+            "provider_pools_enabled": False,
+            "alert_worker": {"configured": False, "running": False, "critical": False},
+        },
     }
 
 
@@ -83,4 +91,12 @@ def test_health_returns_503_when_critical_background_task_is_dead(context: AppCo
     assert response.json() == {
         "ok": False,
         "tasks": {"pzp-idle-summarizer": False, "pzp-runtime-settings-refresher": True},
+        "control_plane": {
+            "enabled": False,
+            "oidc_configured": False,
+            "master_keys_configured": False,
+            "session_store": "database",
+            "provider_pools_enabled": False,
+            "alert_worker": {"configured": False, "running": False, "critical": False},
+        },
     }

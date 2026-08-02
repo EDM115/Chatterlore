@@ -402,6 +402,68 @@ class ProviderSecretService:
         await self.refresh_registry()
         return result
 
+    async def replace_credential(
+        self,
+        name: str,
+        credential_id: int,
+        *,
+        expected_version: int,
+        value: str,
+        label: str | None,
+        actor_user_id: int,
+        now: datetime,
+    ) -> ProviderCredentialSummary:
+        clean = normalize_profile_name(name)
+        if not value or len(value) > self.settings.control_plane_max_secret_length:
+            raise ValueError("provider credential value is invalid")
+        safe_label = _normalize_label(label) if label is not None else None
+        async with session_scope(self.session_factory) as session:
+            profile = await ProviderProfileRepository(session).get_by_name(clean)
+            if profile is None:
+                raise ValueError("managed provider profile was not found")
+            credentials = ProviderCredentialRepository(session)
+            existing = await credentials.get(credential_id)
+            if existing is None or existing.profile_id != profile.id:
+                raise ValueError("provider credential was not found")
+            if existing.source_kind != "managed":
+                raise ValueError("environment provider credentials are immutable")
+            encrypted = self.vault.encrypt(
+                value, profile_name=profile.name, credential_id=existing.id
+            )
+            stored = await credentials.replace_secret(
+                credential_id,
+                expected_version=expected_version,
+                ciphertext=encrypted.ciphertext,
+                secret_nonce=encrypted.secret_nonce,
+                wrapped_dek=encrypted.wrapped_dek,
+                wrap_nonce=encrypted.wrap_nonce,
+                master_key_id=encrypted.master_key_id,
+                fingerprint=encrypted.fingerprint,
+                last_four=encrypted.last_four,
+                label=safe_label,
+                actor_user_id=actor_user_id,
+                now=now,
+            )
+            if stored is None:
+                current = await credentials.get(credential_id)
+                raise ProviderSecretConflictError(
+                    "provider credential changed concurrently",
+                    current_version=current.version if current else None,
+                )
+            audit_event_id = await _audit(
+                session,
+                "credential_replaced",
+                actor_user_id,
+                {
+                    "profile": clean,
+                    "credential_id": stored.id,
+                    "credential_version": stored.version,
+                },
+            )
+            result = replace(_credential_summary(clean, stored), audit_event_id=audit_event_id)
+        await self.refresh_registry()
+        return result
+
     async def delete_credential(
         self,
         name: str,

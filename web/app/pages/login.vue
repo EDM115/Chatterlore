@@ -5,6 +5,7 @@ useSeoMeta({
 
 const route = useRoute();
 const controlSession = useControlSession();
+const sessionExpired = computed(() => route.query.expired === "1");
 const returnTo = computed(() => safeReturnTo(route.query.return_to));
 const browserLoginHref = computed(
   () => `/auth/telegram/start?return_to=${encodeURIComponent(returnTo.value)}`,
@@ -35,6 +36,10 @@ function safeReturnTo(value: unknown): string {
 <template>
   <section class="state-page" aria-labelledby="login-title">
     <p class="eyebrow">Telegram identity</p>
+    <div v-if="sessionExpired" class="operation-error" role="alert">
+      <strong>Your Telegram session expired.</strong>
+      <span>Sign in again to continue. No protected data was retained in this page.</span>
+    </div>
     <h1 id="login-title">
       {{ miniAppLaunch ? "Verifying this Mini App launch…" : "Sign in with Telegram." }}
     </h1>

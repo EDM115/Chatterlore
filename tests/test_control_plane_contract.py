@@ -36,6 +36,10 @@ AUTHORIZATION_MATRIX = {
     ("patch", "/api/control/v1/providers/{name}/credentials/{credential_id}"): "bot_admin",
     (
         "post",
+        "/api/control/v1/providers/{name}/credentials/{credential_id}/replace",
+    ): "bot_admin_step_up",
+    (
+        "post",
         "/api/control/v1/providers/{name}/credentials/{credential_id}/reveal",
     ): "bot_admin_step_up",
     ("post", "/api/control/v1/providers/{name}/credentials/{credential_id}/test"): "bot_admin",

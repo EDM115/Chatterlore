@@ -1,9 +1,18 @@
 <script setup lang="ts">
-definePageMeta({ middleware: "auth" });
+import type { components } from "../types/openapi";
+import { syncTelegramClosingConfirmation } from "../plugins/telegram.client";
 
+definePageMeta({ middleware: "auth" });
 useSeoMeta({ title: "Providers · PZP AI Control Plane" });
 
-interface ProviderProfile {
+type ProviderProfile = components["schemas"]["ProviderProfileResponse"];
+type CredentialSummary = components["schemas"]["ProviderCredentialSummary"];
+type PoolSummary = components["schemas"]["ProviderPoolSummary"];
+type CredentialTestResult = components["schemas"]["ProviderCredentialTestResponse"];
+type AdminAlertPage = components["schemas"]["AdminAlertPage"];
+type AdminAlert = components["schemas"]["AdminAlertSummary"];
+
+interface ProfileDraft {
   name: string;
   provider_kind: string;
   base_url: string;
@@ -11,77 +20,31 @@ interface ProviderProfile {
   embedding_model: string;
   chat_capable: boolean;
   embedding_capable: boolean;
+  reasoning_capable: boolean;
   local: boolean;
-  enabled: boolean;
-  source: string;
+  redact_before_ai: boolean;
+  fake_embedding_dimensions: number;
 }
 
-interface CredentialSummary {
-  id: number | string;
-  profile_name: string;
+interface CredentialDraft {
   label: string;
-  source: string;
-  environment_variable: string | null;
-  last_four: string | null;
-  fingerprint: string | null;
   position: number;
   state: string;
-  health_state: string;
-  cooldown_until: string | null;
-  last_error_classification: string | null;
-  success_count: number;
-  failure_count: number;
-  last_success_at: string | null;
-  last_failure_at: string | null;
-  version: number;
-  revealable: boolean;
-  active: boolean;
 }
 
-interface PoolSummary {
-  profile_name: string;
-  profile_revision: number;
-  active_credential_fingerprint: string | null;
-  active_credential_label: string | null;
-  health_epoch: number;
-  total_credentials: number;
-  eligible_credentials: number;
-  cooldown_credentials: number;
-  disabled_credentials: number;
-  last_exhausted_at: string | null;
-  last_recovered_at: string | null;
-}
-
-interface CredentialTestResult {
-  ok: boolean;
-  mode: "chat" | "embedding";
-  model: string;
-  dimensions: number | null;
-  final_classification: string;
-  warning: string;
-}
-
-interface AdminAlert {
-  id: number;
-  alert_type: string;
-  profile_name: string;
-  credential_fingerprint: string | null;
-  credential_label: string | null;
-  health_epoch: number;
-  recipient_telegram_id: number | null;
-  state: string;
-  attempts: number;
-  next_attempt_at: string | null;
-  created_at: string;
-  delivered_at: string | null;
-  error_classification: string | null;
-}
-
-interface AdminAlertPage {
-  items: AdminAlert[];
-  next_cursor: number | null;
-  has_more: boolean;
-}
+const defaultProfileDraft = (): ProfileDraft => ({
+  name: "",
+  provider_kind: "openai_compatible",
+  base_url: "",
+  chat_model: "gpt-5.6-terra",
+  embedding_model: "text-embedding-3-small",
+  chat_capable: true,
+  embedding_capable: true,
+  reasoning_capable: true,
+  local: false,
+  redact_before_ai: true,
+  fake_embedding_dimensions: 64,
+});
 
 const api = useControlApi();
 const controlSession = useControlSession();
@@ -90,13 +53,31 @@ const selectedProfileName = ref("");
 const credentials = ref<CredentialSummary[]>([]);
 const pool = ref<PoolSummary | null>(null);
 const alerts = ref<AdminAlert[]>([]);
+const newProfile = ref<ProfileDraft>(defaultProfileDraft());
+const profileEdit = ref<ProfileDraft | null>(null);
+const profileEditBaseline = ref("");
+const newCredentialLabel = ref("");
+const newCredentialValue = ref("");
+const credentialDrafts = ref<Record<number, CredentialDraft>>({});
+const replacementLabels = ref<Record<number, string>>({});
+const replacementValues = ref<Record<number, string>>({});
+const pendingDelete = ref<string | null>(null);
 const loading = ref(false);
 const error = ref<string | null>(null);
+const notice = ref<string | null>(null);
 const activeOperation = ref<string | null>(null);
 const testResults = ref<Record<number, CredentialTestResult>>({});
 
 const selectedProfile = computed(
   () => profiles.value.find((profile) => profile.name === selectedProfileName.value) ?? null,
+);
+const dirty = computed(
+  () =>
+    newProfile.value.name.trim() !== "" ||
+    newCredentialLabel.value.trim() !== "" ||
+    newCredentialValue.value !== "" ||
+    Object.values(replacementValues.value).some(Boolean) ||
+    Boolean(profileEdit.value && JSON.stringify(profileEdit.value) !== profileEditBaseline.value),
 );
 
 onMounted(async () => {
@@ -106,42 +87,289 @@ onMounted(async () => {
   }
   await refreshPage();
 });
+watch(dirty, (value) => syncTelegramClosingConfirmation(window.Telegram?.WebApp, value));
+onBeforeUnmount(() => syncTelegramClosingConfirmation(window.Telegram?.WebApp, false));
 
 async function refreshPage() {
   loading.value = true;
   error.value = null;
   try {
     profiles.value = await api.request<ProviderProfile[]>("/providers");
-    if (!profiles.value.some((profile) => profile.name === selectedProfileName.value)) {
+    if (!profiles.value.some((profile) => profile.name === selectedProfileName.value))
       selectedProfileName.value = profiles.value[0]?.name ?? "";
-    }
     await Promise.all([loadSelectedProfile(), loadAlerts()]);
-  } catch {
-    error.value = "Provider operations could not be loaded.";
+  } catch (caught) {
+    error.value = controlErrorMessage(caught, "Provider operations could not be loaded.");
   } finally {
     loading.value = false;
   }
 }
 
 async function loadSelectedProfile() {
-  if (!selectedProfileName.value) {
+  const profile = selectedProfile.value;
+  syncProfileDraft(profile);
+  if (!profile) {
     credentials.value = [];
     pool.value = null;
     return;
   }
-  const profileName = encodeURIComponent(selectedProfileName.value);
+  const profileName = encodeURIComponent(profile.name);
   credentials.value = await api.request<CredentialSummary[]>(
     `/providers/${profileName}/credentials`,
   );
+  credentialDrafts.value = Object.fromEntries(
+    credentials.value
+      .filter((item): item is CredentialSummary & { id: number } => typeof item.id === "number")
+      .map((item) => [item.id, { label: item.label, position: item.position, state: item.state }]),
+  );
+  replacementLabels.value = Object.fromEntries(
+    credentials.value
+      .filter((item): item is CredentialSummary & { id: number } => typeof item.id === "number")
+      .map((item) => [item.id, item.label]),
+  );
   pool.value =
-    selectedProfile.value?.source === "managed"
+    profile.source === "managed"
       ? await api.request<PoolSummary>(`/providers/${profileName}/pool`)
       : null;
+}
+
+function syncProfileDraft(profile: ProviderProfile | null) {
+  if (!profile || profile.source !== "managed") {
+    profileEdit.value = null;
+    profileEditBaseline.value = "";
+    return;
+  }
+  profileEdit.value = {
+    name: profile.name,
+    provider_kind: profile.provider_kind,
+    base_url: profile.base_url,
+    chat_model: profile.chat_model,
+    embedding_model: profile.embedding_model,
+    chat_capable: profile.chat_capable,
+    embedding_capable: profile.embedding_capable,
+    reasoning_capable: profile.reasoning_capable,
+    local: profile.local,
+    redact_before_ai: profile.redact_before_ai,
+    fake_embedding_dimensions: profile.fake_embedding_dimensions,
+  };
+  profileEditBaseline.value = JSON.stringify(profileEdit.value);
 }
 
 async function loadAlerts() {
   const page = await api.request<AdminAlertPage>("/alerts?limit=25");
   alerts.value = page.items;
+}
+
+async function createProfile() {
+  const payload = {
+    ...newProfile.value,
+    name: newProfile.value.name.trim(),
+    base_url: newProfile.value.base_url.trim(),
+    redaction_patterns: [] as string[],
+  };
+  if (!payload.name) {
+    error.value = "Enter a managed profile name.";
+    return;
+  }
+  if (!payload.base_url) {
+    error.value = "Enter the provider base URL.";
+    return;
+  }
+  activeOperation.value = "profile:create";
+  error.value = null;
+  try {
+    const created = await api.request<ProviderProfile>("/providers", {
+      method: "POST",
+      body: payload,
+    });
+    profiles.value = [
+      ...profiles.value.filter((profile) => profile.name !== created.name),
+      created,
+    ].sort((left, right) => left.name.localeCompare(right.name));
+    selectedProfileName.value = created.name;
+    newProfile.value = defaultProfileDraft();
+    await loadSelectedProfile();
+    notice.value = `${created.name} is ready for an ordered credential pool.`;
+  } catch (caught) {
+    error.value = controlErrorMessage(caught, "The managed profile could not be created.");
+  } finally {
+    activeOperation.value = null;
+  }
+}
+
+async function saveProfile() {
+  const profile = selectedProfile.value;
+  if (!profile || !profileEdit.value) return;
+  activeOperation.value = "profile:update";
+  error.value = null;
+  try {
+    const draft = profileEdit.value;
+    const updated = await api.request<ProviderProfile>(
+      `/providers/${encodeURIComponent(profile.name)}`,
+      {
+        method: "PATCH",
+        body: {
+          version: profile.version,
+          provider_kind: draft.provider_kind,
+          base_url: draft.base_url,
+          chat_model: draft.chat_model,
+          embedding_model: draft.embedding_model,
+          chat_capable: draft.chat_capable,
+          embedding_capable: draft.embedding_capable,
+          reasoning_capable: draft.reasoning_capable,
+          local: draft.local,
+          redact_before_ai: draft.redact_before_ai,
+          fake_embedding_dimensions: draft.fake_embedding_dimensions,
+        },
+      },
+    );
+    replaceProfile(updated);
+    syncProfileDraft(updated);
+    notice.value = `${updated.name} updated without a bot restart.`;
+  } catch (caught) {
+    error.value = controlErrorMessage(caught, "The provider profile could not be updated.");
+  } finally {
+    activeOperation.value = null;
+  }
+}
+
+async function toggleProfile() {
+  const profile = selectedProfile.value;
+  if (!profile || profile.source !== "managed") return;
+  activeOperation.value = "profile:toggle";
+  try {
+    const updated = await api.request<ProviderProfile>(
+      `/providers/${encodeURIComponent(profile.name)}`,
+      { method: "PATCH", body: { version: profile.version, enabled: !profile.enabled } },
+    );
+    replaceProfile(updated);
+    syncProfileDraft(updated);
+  } catch (caught) {
+    error.value = controlErrorMessage(caught, "The provider profile state could not be changed.");
+  } finally {
+    activeOperation.value = null;
+  }
+}
+
+async function deleteProfile() {
+  const profile = selectedProfile.value;
+  if (!profile || profile.source !== "managed") return;
+  if (!(await controlSession.ensureStepUp("profile:delete", "/providers"))) return;
+  activeOperation.value = "profile:delete";
+  try {
+    await api.request(`/providers/${encodeURIComponent(profile.name)}`, {
+      method: "DELETE",
+      body: { version: profile.version },
+    });
+    profiles.value = profiles.value.filter((candidate) => candidate.name !== profile.name);
+    selectedProfileName.value = profiles.value[0]?.name ?? "";
+    pendingDelete.value = null;
+    await loadSelectedProfile();
+  } catch (caught) {
+    error.value = controlErrorMessage(caught, "The provider profile could not be deleted.");
+  } finally {
+    activeOperation.value = null;
+  }
+}
+
+async function createCredential() {
+  const profile = selectedProfile.value;
+  if (!profile || profile.source !== "managed") return;
+  if (!(await controlSession.ensureStepUp("credential:create", "/providers"))) return;
+  activeOperation.value = "credential:create";
+  error.value = null;
+  try {
+    await api.request(`/providers/${encodeURIComponent(profile.name)}/credentials`, {
+      method: "POST",
+      body: { label: newCredentialLabel.value.trim(), value: newCredentialValue.value },
+    });
+    newCredentialLabel.value = "";
+    newCredentialValue.value = "";
+    await loadSelectedProfile();
+    notice.value = "Credential encrypted and added to the pool.";
+  } catch (caught) {
+    error.value = controlErrorMessage(caught, "The provider credential could not be created.");
+  } finally {
+    activeOperation.value = null;
+  }
+}
+
+async function updateCredential(credential: CredentialSummary) {
+  if (typeof credential.id !== "number") return;
+  const draft = credentialDrafts.value[credential.id];
+  if (!draft) return;
+  activeOperation.value = `credential:update:${credential.id}`;
+  try {
+    await api.request(
+      `/providers/${encodeURIComponent(credential.profile_name)}/credentials/${credential.id}`,
+      {
+        method: "PATCH",
+        body: {
+          version: credential.version,
+          label: draft.label,
+          position: draft.position,
+          state: draft.state,
+        },
+      },
+    );
+    await loadSelectedProfile();
+  } catch (caught) {
+    error.value = controlErrorMessage(
+      caught,
+      "The credential order or state could not be updated.",
+    );
+  } finally {
+    activeOperation.value = null;
+  }
+}
+
+async function replaceCredential(credential: CredentialSummary) {
+  if (typeof credential.id !== "number") return;
+  const value = replacementValues.value[credential.id] ?? "";
+  if (!value) {
+    error.value = "Enter the replacement credential value.";
+    return;
+  }
+  if (!(await controlSession.ensureStepUp("credential:replace", "/providers"))) return;
+  activeOperation.value = `credential:replace:${credential.id}`;
+  try {
+    await api.request(
+      `/providers/${encodeURIComponent(credential.profile_name)}/credentials/${credential.id}/replace`,
+      {
+        method: "POST",
+        body: {
+          version: credential.version,
+          label: replacementLabels.value[credential.id] ?? credential.label,
+          value,
+        },
+      },
+    );
+    replacementValues.value[credential.id] = "";
+    await loadSelectedProfile();
+    notice.value = `${credential.label} was atomically re-encrypted and its health history reset.`;
+  } catch (caught) {
+    error.value = controlErrorMessage(caught, "The credential could not be replaced.");
+  } finally {
+    activeOperation.value = null;
+  }
+}
+
+async function deleteCredential(credential: CredentialSummary) {
+  if (typeof credential.id !== "number") return;
+  if (!(await controlSession.ensureStepUp("credential:delete", "/providers"))) return;
+  activeOperation.value = `credential:delete:${credential.id}`;
+  try {
+    await api.request(
+      `/providers/${encodeURIComponent(credential.profile_name)}/credentials/${credential.id}`,
+      { method: "DELETE", body: { version: credential.version } },
+    );
+    pendingDelete.value = null;
+    await loadSelectedProfile();
+  } catch (caught) {
+    error.value = controlErrorMessage(caught, "The credential could not be deleted.");
+  } finally {
+    activeOperation.value = null;
+  }
 }
 
 async function runCredentialTest(credential: CredentialSummary, mode: "chat" | "embedding") {
@@ -156,8 +384,11 @@ async function runCredentialTest(credential: CredentialSummary, mode: "chat" | "
     );
     testResults.value = { ...testResults.value, [credential.id]: result };
     await loadSelectedProfile();
-  } catch {
-    error.value = "The manual provider check failed. Credential health has been refreshed.";
+  } catch (caught) {
+    error.value = controlErrorMessage(
+      caught,
+      "The manual provider check failed. Credential health has been refreshed.",
+    );
     await loadSelectedProfile();
   } finally {
     activeOperation.value = null;
@@ -166,15 +397,20 @@ async function runCredentialTest(credential: CredentialSummary, mode: "chat" | "
 
 async function retryAlert(alertId: number) {
   activeOperation.value = `alert:${alertId}`;
-  error.value = null;
   try {
     await api.request(`/alerts/${alertId}/retry`, { method: "POST" });
     await loadAlerts();
-  } catch {
-    error.value = "The alert could not be queued for retry.";
+  } catch (caught) {
+    error.value = controlErrorMessage(caught, "The alert could not be queued for retry.");
   } finally {
     activeOperation.value = null;
   }
+}
+
+function replaceProfile(updated: ProviderProfile) {
+  profiles.value = profiles.value.map((profile) =>
+    profile.name === updated.name ? updated : profile,
+  );
 }
 
 function formatTimestamp(value: string | null): string {
@@ -193,49 +429,140 @@ function formatTimestamp(value: string | null): string {
         <p class="eyebrow">Provider resilience</p>
         <h1 id="providers-title">Keys that fail without taking the bot down.</h1>
         <p class="page-lede">
-          Inspect the active key, health transitions and sanitized delivery backlog. Manual checks
-          use constant inputs and never display the credential value.
+          Manage profiles and ordered encrypted key pools without a restart. Plaintext is accepted
+          or revealed only through explicit, short-lived, audited actions.
         </p>
       </div>
       <UButton color="neutral" variant="soft" :loading="loading" @click="refreshPage"
         >Refresh</UButton
       >
     </section>
-
-    <div class="provider-warning-grid" aria-label="Manual operation warnings">
+    <div class="provider-warning-grid">
       <UAlert
         color="warning"
         variant="soft"
         title="Provider operations may incur usage charges"
-        description="Chat and embedding tests run only when you explicitly select them, using a fixed non-sensitive input."
-      />
-      <UAlert
+        description="Chat and embedding tests run only when explicitly selected, using a fixed non-sensitive input."
+      /><UAlert
         color="info"
         variant="soft"
         title="Local model checks may download model files"
-        description="No local readiness check runs on page load. A later explicit local check may download the configured model."
+        description="No local readiness check runs on this page; use the explicit Operations control."
       />
     </div>
-
     <p v-if="error" class="operation-error" role="alert">{{ error }}</p>
+    <p v-if="notice" class="operation-notice" aria-live="polite">{{ notice }}</p>
+
+    <section class="provider-console" aria-labelledby="create-profile-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Managed configuration</p>
+          <h2 id="create-profile-title">Create managed profile</h2>
+        </div>
+        <span>Database-backed · reloadless</span>
+      </div>
+      <form class="profile-form" @submit.prevent="createProfile">
+        <label
+          >Name<input
+            v-model="newProfile.name"
+            data-testid="new-profile-name"
+            autocomplete="off" /></label
+        ><label
+          >Provider<select v-model="newProfile.provider_kind">
+            <option value="openai_compatible">OpenAI compatible</option>
+            <option value="fake">Fake</option>
+            <option value="local">Local embedding</option>
+          </select></label
+        ><label
+          >Base URL<input
+            v-model="newProfile.base_url"
+            data-testid="new-profile-base-url"
+            type="url"
+            placeholder="https://provider.example/v1"
+            required /></label
+        ><label>Chat model<input v-model="newProfile.chat_model" /></label
+        ><label>Embedding model<input v-model="newProfile.embedding_model" /></label
+        ><label><input v-model="newProfile.chat_capable" type="checkbox" /> Chat</label
+        ><label><input v-model="newProfile.embedding_capable" type="checkbox" /> Embedding</label
+        ><label><input v-model="newProfile.reasoning_capable" type="checkbox" /> Reasoning</label
+        ><UButton
+          data-testid="create-profile"
+          type="button"
+          :loading="activeOperation === 'profile:create'"
+          @click="createProfile"
+          >Create profile</UButton
+        >
+      </form>
+    </section>
 
     <section v-if="profiles.length" class="provider-console" aria-labelledby="pool-title">
       <div class="provider-toolbar">
-        <label for="provider-profile">Provider profile</label>
-        <select id="provider-profile" v-model="selectedProfileName" @change="loadSelectedProfile">
+        <label for="provider-profile">Provider profile</label
+        ><select id="provider-profile" v-model="selectedProfileName" @change="loadSelectedProfile">
           <option v-for="profile in profiles" :key="profile.name" :value="profile.name">
             {{ profile.name }}
-          </option>
-        </select>
-        <span v-if="selectedProfile" class="provider-models"
+          </option></select
+        ><span v-if="selectedProfile" class="provider-models"
           >{{ selectedProfile.chat_model }} · {{ selectedProfile.embedding_model }}</span
+        ><span
+          v-if="selectedProfile"
+          class="health-pill"
+          :data-state="selectedProfile.enabled ? 'healthy' : 'disabled'"
+          >{{ selectedProfile.enabled ? "enabled" : "disabled" }}</span
         >
       </div>
-
       <p v-if="selectedProfile?.source !== 'managed'" class="empty-panel">
-        Environment bootstrap profiles stay deployment-managed. Create a managed overlay to enable
-        pool health and rotation.
+        Environment bootstrap profiles stay deployment-managed and immutable. Create a managed
+        overlay to enable pool mutation.
       </p>
+      <form
+        v-if="selectedProfile?.source === 'managed' && profileEdit"
+        class="profile-form edit-profile"
+        @submit.prevent="saveProfile"
+      >
+        <label>Base URL<input v-model="profileEdit.base_url" /></label
+        ><label>Chat model<input v-model="profileEdit.chat_model" /></label
+        ><label>Embedding model<input v-model="profileEdit.embedding_model" /></label
+        ><label><input v-model="profileEdit.chat_capable" type="checkbox" /> Chat</label
+        ><label><input v-model="profileEdit.embedding_capable" type="checkbox" /> Embedding</label
+        ><label><input v-model="profileEdit.reasoning_capable" type="checkbox" /> Reasoning</label>
+        <div class="state-actions">
+          <UButton
+            type="button"
+            :loading="activeOperation === 'profile:update'"
+            @click="saveProfile"
+            >Save profile</UButton
+          ><UButton
+            type="button"
+            color="warning"
+            variant="soft"
+            :loading="activeOperation === 'profile:toggle'"
+            @click="toggleProfile"
+            >{{ selectedProfile.enabled ? "Disable" : "Enable" }}</UButton
+          ><UButton
+            type="button"
+            color="error"
+            variant="soft"
+            @click="pendingDelete = `profile:${selectedProfile.name}`"
+            >Delete profile</UButton
+          >
+        </div>
+      </form>
+      <div
+        v-if="pendingDelete === `profile:${selectedProfile?.name}`"
+        class="confirmation-panel"
+        role="alertdialog"
+      >
+        <strong>Delete profile {{ selectedProfile?.name }} and its managed credentials?</strong>
+        <div class="state-actions">
+          <UButton
+            color="error"
+            :loading="activeOperation === 'profile:delete'"
+            @click="deleteProfile"
+            >Confirm profile deletion</UButton
+          ><UButton color="neutral" variant="ghost" @click="pendingDelete = null">Cancel</UButton>
+        </div>
+      </div>
 
       <div v-if="pool" class="pool-summary-grid">
         <article>
@@ -258,11 +585,47 @@ function formatTimestamp(value: string | null): string {
           <span>Last recovery</span><strong>{{ formatTimestamp(pool.last_recovered_at) }}</strong>
         </article>
       </div>
+      <p
+        v-if="pool && pool.total_credentials > 0 && pool.eligible_credentials === 0"
+        class="operation-error"
+      >
+        This pool is exhausted. Add or re-enable a healthy key; the bot will return one bounded
+        provider-unavailable response meanwhile.
+      </p>
+
+      <form
+        v-if="selectedProfile?.source === 'managed'"
+        class="credential-create-form"
+        @submit.prevent="createCredential"
+      >
+        <div>
+          <p class="eyebrow">Encrypted pool entry</p>
+          <h2>Add credential</h2>
+        </div>
+        <label
+          >Label<input
+            v-model="newCredentialLabel"
+            data-testid="new-credential-label"
+            autocomplete="off" /></label
+        ><label
+          >Secret value<input
+            v-model="newCredentialValue"
+            data-testid="new-credential-value"
+            type="password"
+            autocomplete="new-password" /></label
+        ><UButton
+          data-testid="create-credential"
+          type="button"
+          :loading="activeOperation === 'credential:create'"
+          @click="createCredential"
+          >Encrypt and add</UButton
+        >
+      </form>
 
       <div class="section-heading">
         <div>
           <p class="eyebrow">Ordered pool</p>
-          <h2 id="pool-title">Credential health</h2>
+          <h2 id="pool-title">Credential health and controls</h2>
         </div>
         <span>{{ credentials.length }} configured</span>
       </div>
@@ -272,7 +635,8 @@ function formatTimestamp(value: string | null): string {
             <div>
               <strong>{{ credential.label }}</strong
               ><small
-                >{{ credential.source }} · {{ credential.fingerprint ?? "no fingerprint" }}</small
+                >{{ credential.source }} · {{ credential.fingerprint ?? "no fingerprint" }} ·
+                position {{ credential.position }}</small
               >
             </div>
             <span class="health-pill" :data-state="credential.health_state"
@@ -298,34 +662,90 @@ function formatTimestamp(value: string | null): string {
               <dd>{{ formatTimestamp(credential.last_failure_at) }}</dd>
             </div>
           </dl>
-          <div v-if="typeof credential.id === 'number'" class="credential-actions">
-            <UButton
-              :data-testid="`test-chat-${credential.id}`"
-              size="sm"
-              color="primary"
-              variant="soft"
-              :loading="activeOperation === `chat:${credential.id}`"
-              @click="runCredentialTest(credential, 'chat')"
-              >Test chat</UButton
-            >
-            <UButton
-              :data-testid="`test-embedding-${credential.id}`"
-              size="sm"
-              color="neutral"
-              variant="soft"
-              :loading="activeOperation === `embedding:${credential.id}`"
-              @click="runCredentialTest(credential, 'embedding')"
-              >Test embedding</UButton
-            >
-          </div>
-          <p
-            v-if="typeof credential.id === 'number' && testResults[credential.id]"
-            class="test-result"
-            aria-live="polite"
+          <template v-if="typeof credential.id === 'number' && credentialDrafts[credential.id]"
+            ><div class="credential-edit-grid">
+              <label>Label<input v-model="credentialDrafts[credential.id]!.label" /></label
+              ><label
+                >Position<input
+                  v-model.number="credentialDrafts[credential.id]!.position"
+                  type="number"
+                  min="0" /></label
+              ><label
+                >State<select v-model="credentialDrafts[credential.id]!.state">
+                  <option value="enabled">Enabled</option>
+                  <option value="disabled">Disabled</option>
+                </select></label
+              ><UButton
+                size="sm"
+                color="neutral"
+                variant="soft"
+                :loading="activeOperation === `credential:update:${credential.id}`"
+                @click="updateCredential(credential)"
+                >Save order/state</UButton
+              >
+            </div>
+            <div class="credential-replace-grid">
+              <label
+                >Replacement label<input
+                  v-model="replacementLabels[credential.id]"
+                  :data-testid="`replace-credential-label-${credential.id}`" /></label
+              ><label
+                >Replacement secret<input
+                  v-model="replacementValues[credential.id]"
+                  :data-testid="`replace-credential-value-${credential.id}`"
+                  type="password"
+                  autocomplete="new-password" /></label
+              ><UButton
+                :data-testid="`replace-credential-${credential.id}`"
+                size="sm"
+                color="warning"
+                variant="soft"
+                :loading="activeOperation === `credential:replace:${credential.id}`"
+                @click="replaceCredential(credential)"
+                >Replace atomically</UButton
+              >
+            </div>
+            <div class="credential-actions">
+              <UButton
+                :data-testid="`test-chat-${credential.id}`"
+                size="sm"
+                :loading="activeOperation === `chat:${credential.id}`"
+                @click="runCredentialTest(credential, 'chat')"
+                >Test chat</UButton
+              ><UButton
+                :data-testid="`test-embedding-${credential.id}`"
+                size="sm"
+                color="neutral"
+                variant="soft"
+                :loading="activeOperation === `embedding:${credential.id}`"
+                @click="runCredentialTest(credential, 'embedding')"
+                >Test embedding</UButton
+              ><UButton
+                size="sm"
+                color="error"
+                variant="soft"
+                @click="pendingDelete = `credential:${credential.id}`"
+                >Delete</UButton
+              >
+            </div>
+            <p v-if="testResults[credential.id]" class="test-result">
+              {{ testResults[credential.id]?.model }} passed ·
+              {{ testResults[credential.id]?.final_classification }}
+            </p>
+            <div v-if="pendingDelete === `credential:${credential.id}`" class="confirmation-panel">
+              <strong>Delete {{ credential.label }}?</strong>
+              <div class="state-actions">
+                <UButton
+                  color="error"
+                  :loading="activeOperation === `credential:delete:${credential.id}`"
+                  @click="deleteCredential(credential)"
+                  >Confirm credential deletion</UButton
+                ><UButton color="neutral" variant="ghost" @click="pendingDelete = null"
+                  >Cancel</UButton
+                >
+              </div>
+            </div></template
           >
-            {{ testResults[Number(credential.id)]?.model }} passed ·
-            {{ testResults[Number(credential.id)]?.final_classification }}
-          </p>
         </article>
       </div>
       <p v-else-if="selectedProfile?.source === 'managed'" class="empty-panel">
@@ -353,8 +773,8 @@ function formatTimestamp(value: string | null): string {
               {{ formatTimestamp(alert.created_at) }}</small
             >
           </div>
-          <span class="health-pill" :data-state="alert.state">{{ alert.state }}</span>
-          <UButton
+          <span class="health-pill" :data-state="alert.state">{{ alert.state }}</span
+          ><UButton
             v-if="alert.state !== 'delivered'"
             :data-testid="`retry-alert-${alert.id}`"
             size="xs"
