@@ -38,6 +38,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/control/v1/audit/ai-usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Audit Ai Usage */
+        get: operations["audit_ai_usage_api_control_v1_audit_ai_usage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/control/v1/audit/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Audit Events */
+        get: operations["audit_events_api_control_v1_audit_events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/control/v1/auth/logout": {
         parameters: {
             query?: never;
@@ -297,6 +331,177 @@ export interface paths {
         patch: operations["update_managed_chat_status_api_control_v1_chats__chat_id__status_patch"];
         trace?: never;
     };
+    "/api/control/v1/memory/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Export Memory */
+        get: operations["export_memory_api_control_v1_memory_export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/control/v1/memory/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Memory Items */
+        get: operations["list_memory_items_api_control_v1_memory_items_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/control/v1/memory/items/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Memory Item */
+        get: operations["get_memory_item_api_control_v1_memory_items__item_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Memory Item */
+        delete: operations["delete_memory_item_api_control_v1_memory_items__item_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/control/v1/memory/items/{item_id}/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refresh Memory Item */
+        post: operations["refresh_memory_item_api_control_v1_memory_items__item_id__refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/control/v1/memory/items/{item_id}/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Get Memory Item Sources */
+        post: operations["get_memory_item_sources_api_control_v1_memory_items__item_id__sources_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/control/v1/memory/reviews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Memory Reviews */
+        get: operations["list_memory_reviews_api_control_v1_memory_reviews_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/control/v1/memory/reviews/{review_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve Memory Review */
+        post: operations["approve_memory_review_api_control_v1_memory_reviews__review_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/control/v1/memory/reviews/{review_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject Memory Review */
+        post: operations["reject_memory_review_api_control_v1_memory_reviews__review_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/control/v1/operations/checks/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run Operation Check */
+        post: operations["run_operation_check_api_control_v1_operations_checks__name__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/control/v1/operations/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Operations Health */
+        get: operations["operations_health_api_control_v1_operations_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/control/v1/providers": {
         parameters: {
             query?: never;
@@ -421,6 +626,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/control/v1/query/ask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Query Ask */
+        post: operations["query_ask_api_control_v1_query_ask_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/control/v1/query/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Query Catalog */
+        get: operations["query_catalog_api_control_v1_query_catalog_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/control/v1/query/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Query Search */
+        post: operations["query_search_api_control_v1_query_search_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/control/v1/session": {
         parameters: {
             query?: never;
@@ -430,6 +686,40 @@ export interface paths {
         };
         /** Get Session */
         get: operations["get_session_api_control_v1_session_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/control/v1/stats/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Stats Overview */
+        get: operations["stats_overview_api_control_v1_stats_overview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/control/v1/stats/timeseries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Stats Timeseries */
+        get: operations["stats_timeseries_api_control_v1_stats_timeseries_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -493,6 +783,41 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AIUsagePage */
+        AIUsagePage: {
+            /** Has More */
+            has_more: boolean;
+            /** Items */
+            items: components["schemas"]["AIUsageResponse"][];
+            /** Next Cursor */
+            next_cursor: number | null;
+        };
+        /** AIUsageResponse */
+        AIUsageResponse: {
+            /** Completion Tokens */
+            completion_tokens: number | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Error */
+            error: string | null;
+            /** Id */
+            id: number;
+            /** Latency Ms */
+            latency_ms: number | null;
+            /** Model */
+            model: string;
+            /** Operation */
+            operation: string;
+            /** Prompt Tokens */
+            prompt_tokens: number | null;
+            /** Provider */
+            provider: string;
+            /** Scope */
+            scope: string | null;
+        };
         /** AdminAlertPage */
         AdminAlertPage: {
             /** Has More */
@@ -537,6 +862,35 @@ export interface components {
             recipient_telegram_id: number | null;
             /** State */
             state: string;
+        };
+        /** AuditEventPage */
+        AuditEventPage: {
+            /** Has More */
+            has_more: boolean;
+            /** Items */
+            items: components["schemas"]["AuditEventResponse"][];
+            /** Next Cursor */
+            next_cursor: number | null;
+        };
+        /** AuditEventResponse */
+        AuditEventResponse: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Event Type */
+            event_type: string;
+            /** Id */
+            id: number;
+            /** Payload */
+            payload: {
+                [key: string]: unknown;
+            };
+            /** Scope */
+            scope: string | null;
+            /** User Id */
+            user_id: number | null;
         };
         /** BotAdminCreateRequest */
         BotAdminCreateRequest: {
@@ -732,6 +1086,128 @@ export interface components {
             /** Version */
             version: number;
         };
+        /** MemoryItemPage */
+        MemoryItemPage: {
+            /** Has More */
+            has_more: boolean;
+            /** Items */
+            items: components["schemas"]["MemoryItemResponse"][];
+            /** Next Cursor */
+            next_cursor: number | null;
+        };
+        /** MemoryItemRefreshRequest */
+        MemoryItemRefreshRequest: {
+            /**
+             * Mode
+             * @default embed
+             */
+            mode: string;
+        };
+        /** MemoryItemRefreshResponse */
+        MemoryItemRefreshResponse: {
+            /** Embeddings Refreshed */
+            embeddings_refreshed: number;
+            /** Id */
+            id: number;
+            /** Kind */
+            kind: string;
+            /** Mode */
+            mode: string;
+            /** Scope */
+            scope: string;
+            /** Summarized */
+            summarized: boolean;
+        };
+        /** MemoryItemResponse */
+        MemoryItemResponse: {
+            /** Content */
+            content: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: number;
+            /** Kind */
+            kind: string;
+            /** Metadata */
+            metadata: {
+                [key: string]: unknown;
+            };
+            /** Scope */
+            scope: string;
+            /** Source Message Ids */
+            source_message_ids: number[];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** MemoryRawSourceResponse */
+        MemoryRawSourceResponse: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Message Permalink */
+            message_permalink: string | null;
+            /** Telegram Message Id */
+            telegram_message_id: number;
+            /** Text */
+            text: string;
+            /** User Id */
+            user_id: number | null;
+            /** Username */
+            username: string | null;
+        };
+        /** MemoryRawSourcesResponse */
+        MemoryRawSourcesResponse: {
+            /** Item Id */
+            item_id: number;
+            /** Scope */
+            scope: string;
+            /** Sources */
+            sources: components["schemas"]["MemoryRawSourceResponse"][];
+        };
+        /** MemoryReviewMutationResponse */
+        MemoryReviewMutationResponse: {
+            /** Knowledge Item Id */
+            knowledge_item_id?: number | null;
+            /** Review Id */
+            review_id: number;
+            /** Status */
+            status: string;
+        };
+        /** MemoryReviewPage */
+        MemoryReviewPage: {
+            /** Has More */
+            has_more: boolean;
+            /** Items */
+            items: components["schemas"]["MemoryReviewResponse"][];
+            /** Next Cursor */
+            next_cursor: number | null;
+        };
+        /** MemoryReviewResponse */
+        MemoryReviewResponse: {
+            /** Content */
+            content: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: number;
+            /** Kind */
+            kind: string;
+            /** Scope */
+            scope: string;
+            /** Source Message Ids */
+            source_message_ids: number[];
+        };
         /** MiniAppAuthRequest */
         MiniAppAuthRequest: {
             /** Init Data */
@@ -746,6 +1222,98 @@ export interface components {
             action: string;
             /** Init Data */
             init_data: string;
+        };
+        /** OperationCheckRequest */
+        OperationCheckRequest: {
+            /**
+             * Allow Download
+             * @default false
+             */
+            allow_download: boolean;
+            /** Mode */
+            mode?: string | null;
+            /** Profile Name */
+            profile_name?: string | null;
+        };
+        /** OperationCheckResponse */
+        OperationCheckResponse: {
+            /** Check */
+            check: string;
+            /** Details */
+            details: {
+                [key: string]: unknown;
+            };
+            /** Elapsed Ms */
+            elapsed_ms?: number | null;
+            /** Ok */
+            ok: boolean;
+            /** Result */
+            result: string;
+            /** Warning */
+            warning?: string | null;
+        };
+        /** OperationsHealthResponse */
+        OperationsHealthResponse: {
+            /** Alerts */
+            alerts: {
+                [key: string]: unknown;
+            };
+            /** Checks */
+            checks: string[];
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            /** Provider Calls Performed */
+            provider_calls_performed: boolean;
+            /** Providers */
+            providers: {
+                [key: string]: unknown;
+            };
+            /** Runtime */
+            runtime: {
+                [key: string]: unknown;
+            };
+            /** Storage */
+            storage: {
+                [key: string]: unknown;
+            };
+        };
+        /** ProviderCatalogLocalState */
+        ProviderCatalogLocalState: {
+            /** Dependency Available */
+            dependency_available: boolean;
+            /** Model Loaded */
+            model_loaded: boolean;
+        };
+        /** ProviderCatalogPoolState */
+        ProviderCatalogPoolState: {
+            /** Eligible */
+            eligible: number;
+            /** Total */
+            total: number;
+        };
+        /** ProviderCatalogProfile */
+        ProviderCatalogProfile: {
+            /** Availability */
+            availability: string;
+            /** Capabilities */
+            capabilities: string[];
+            /** Chat Model */
+            chat_model: string;
+            /** Embedding Model */
+            embedding_model: string;
+            /** Enabled */
+            enabled: boolean;
+            local_state: components["schemas"]["ProviderCatalogLocalState"] | null;
+            /** Name */
+            name: string;
+            pool: components["schemas"]["ProviderCatalogPoolState"] | null;
+            /** Provider Kind */
+            provider_kind: string;
+            /** Source */
+            source: string;
         };
         /** ProviderCredentialCreateRequest */
         ProviderCredentialCreateRequest: {
@@ -1070,6 +1638,129 @@ export interface components {
             /** Version */
             version: number;
         };
+        /** QueryAskRequest */
+        QueryAskRequest: {
+            /** Chat Model */
+            chat_model?: string | null;
+            /** Chat Provider Profile */
+            chat_provider_profile?: string | null;
+            /** Embedding Model */
+            embedding_model?: string | null;
+            /** Memory Profile */
+            memory_profile?: string | null;
+            /** Provider Profile */
+            provider_profile?: string | null;
+            /** Question */
+            question: string;
+            /** Reasoning Level */
+            reasoning_level?: string | null;
+            /** Retrieval Provider Profile */
+            retrieval_provider_profile?: string | null;
+            /** Scope */
+            scope: string;
+            /**
+             * Top K
+             * @default 6
+             */
+            top_k: number;
+        };
+        /** QueryAskResponse */
+        QueryAskResponse: {
+            /** Answer */
+            answer: string;
+            /** Destination Scope */
+            destination_scope: string;
+            /** Elapsed Ms */
+            elapsed_ms: number;
+            /** Insufficient Context */
+            insufficient_context: boolean;
+            /** Memory Profile */
+            memory_profile: string | null;
+            /** Results */
+            results: components["schemas"]["QueryResultItemResponse"][];
+            selection: components["schemas"]["QuerySelectionResponse"];
+            /** Source Scopes */
+            source_scopes: string[];
+        };
+        /** QueryCatalogResponse */
+        QueryCatalogResponse: {
+            /** Chat Models */
+            chat_models: string[];
+            /** Embedding Models */
+            embedding_models: string[];
+            /** Profiles */
+            profiles: components["schemas"]["ProviderCatalogProfile"][];
+            /** Reasoning Levels */
+            reasoning_levels: string[];
+            /** Scope */
+            scope: string;
+        };
+        /** QueryResultItemResponse */
+        QueryResultItemResponse: {
+            /** Content */
+            content: string;
+            /** Scope */
+            scope: string;
+            /** Score */
+            score: number;
+            /** Source */
+            source: string;
+            /** Source Message Ids */
+            source_message_ids: number[];
+        };
+        /** QuerySearchRequest */
+        QuerySearchRequest: {
+            /** Chat Model */
+            chat_model?: string | null;
+            /** Chat Provider Profile */
+            chat_provider_profile?: string | null;
+            /** Embedding Model */
+            embedding_model?: string | null;
+            /** Memory Profile */
+            memory_profile?: string | null;
+            /** Provider Profile */
+            provider_profile?: string | null;
+            /** Query */
+            query: string;
+            /** Reasoning Level */
+            reasoning_level?: string | null;
+            /** Retrieval Provider Profile */
+            retrieval_provider_profile?: string | null;
+            /** Scope */
+            scope: string;
+            /**
+             * Top K
+             * @default 6
+             */
+            top_k: number;
+        };
+        /** QuerySearchResponse */
+        QuerySearchResponse: {
+            /** Destination Scope */
+            destination_scope: string;
+            /** Elapsed Ms */
+            elapsed_ms: number;
+            /** Memory Profile */
+            memory_profile: string | null;
+            /** Results */
+            results: components["schemas"]["QueryResultItemResponse"][];
+            selection: components["schemas"]["QuerySelectionResponse"];
+            /** Source Scopes */
+            source_scopes: string[];
+        };
+        /** QuerySelectionResponse */
+        QuerySelectionResponse: {
+            /** Chat Model */
+            chat_model: string | null;
+            /** Chat Provider Profile */
+            chat_provider_profile: string | null;
+            /** Embedding Model */
+            embedding_model: string;
+            /** Reasoning Level */
+            reasoning_level: string | null;
+            /** Retrieval Provider Profile */
+            retrieval_provider_profile: string;
+        };
         /** RuntimeSettingResponse */
         RuntimeSettingResponse: {
             /** Default Value */
@@ -1093,6 +1784,23 @@ export interface components {
             updates: {
                 [key: string]: unknown;
             };
+        };
+        /** SchedulerTaskResponse */
+        SchedulerTaskResponse: {
+            /** Consecutive Failures */
+            consecutive_failures: number;
+            /** Healthy */
+            healthy: boolean;
+            /** Last Exception Type */
+            last_exception_type: string | null;
+            /** Last Failure At */
+            last_failure_at: string | null;
+            /** Last Success At */
+            last_success_at: string | null;
+            /** Name */
+            name: string;
+            /** State */
+            state: string;
         };
         /** ScopePolicyResponse */
         ScopePolicyResponse: {
@@ -1129,6 +1837,133 @@ export interface components {
             settings?: {
                 [key: string]: number | string | boolean | null;
             };
+        };
+        /** StatsAIUsageResponse */
+        StatsAIUsageResponse: {
+            /** Average Latency Ms */
+            average_latency_ms: number | null;
+            /** Errors */
+            errors: number;
+            /** Total */
+            total: number;
+        };
+        /** StatsAdministrationResponse */
+        StatsAdministrationResponse: {
+            /** Bot Admins */
+            bot_admins: number;
+            /** Delegated Chat Admins */
+            delegated_chat_admins: number;
+            /** Managed Chats */
+            managed_chats: {
+                [key: string]: number;
+            };
+        };
+        /** StatsAlertResponse */
+        StatsAlertResponse: {
+            /** States */
+            states: {
+                [key: string]: number;
+            };
+        };
+        /** StatsCredentialResponse */
+        StatsCredentialResponse: {
+            /** Eligible */
+            eligible: number;
+            /** Total */
+            total: number;
+        };
+        /** StatsMemoryResponse */
+        StatsMemoryResponse: {
+            /** Audit Events */
+            audit_events: number;
+            /** Embeddings */
+            embeddings: number;
+            /** Knowledge Items */
+            knowledge_items: number;
+            /** Learned */
+            learned: number;
+            /** Messages */
+            messages: number;
+            /** Pending Reviews */
+            pending_reviews: number;
+            /** Skipped */
+            skipped: number;
+        };
+        /** StatsOverviewResponse */
+        StatsOverviewResponse: {
+            administration: components["schemas"]["StatsAdministrationResponse"];
+            ai_usage: components["schemas"]["StatsAIUsageResponse"];
+            alerts: components["schemas"]["StatsAlertResponse"];
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            memory: components["schemas"]["StatsMemoryResponse"];
+            providers: components["schemas"]["StatsProviderResponse"];
+            runtime: components["schemas"]["StatsRuntimeResponse"];
+            /** Scope */
+            scope: string;
+            storage: components["schemas"]["StatsStorageResponse"];
+        };
+        /** StatsProviderResponse */
+        StatsProviderResponse: {
+            credentials: components["schemas"]["StatsCredentialResponse"];
+            /** Local Dependency Available */
+            local_dependency_available: boolean;
+            /** Local Models Loaded */
+            local_models_loaded: number;
+            /** Profiles */
+            profiles: number;
+        };
+        /** StatsRuntimeResponse */
+        StatsRuntimeResponse: {
+            /** Scheduler */
+            scheduler: components["schemas"]["SchedulerTaskResponse"][];
+            /** Schema Revision */
+            schema_revision: string;
+            /** Uptime Seconds */
+            uptime_seconds: number;
+        };
+        /** StatsStorageResponse */
+        StatsStorageResponse: {
+            /** Database Bytes */
+            database_bytes: number;
+            /** Memory Bytes */
+            memory_bytes: number;
+            /** Memory Files */
+            memory_files: number;
+            /** Memory Scan Truncated */
+            memory_scan_truncated: boolean;
+        };
+        /** StatsTimeseriesPointResponse */
+        StatsTimeseriesPointResponse: {
+            /** Ai Calls */
+            ai_calls: number;
+            /** Ai Errors */
+            ai_errors: number;
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Knowledge Items */
+            knowledge_items: number;
+            /** Learned */
+            learned: number;
+            /** Messages */
+            messages: number;
+            /** Skipped */
+            skipped: number;
+        };
+        /** StatsTimeseriesResponse */
+        StatsTimeseriesResponse: {
+            /** Days */
+            days: number;
+            /** Points */
+            points: components["schemas"]["StatsTimeseriesPointResponse"][];
+            /** Scope */
+            scope: string;
         };
         /** StepUpResponse */
         StepUpResponse: {
@@ -1259,6 +2094,109 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    audit_ai_usage_api_control_v1_audit_ai_usage_get: {
+        parameters: {
+            query?: {
+                scope?: string;
+                cursor?: number | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AIUsagePage"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    audit_events_api_control_v1_audit_events_get: {
+        parameters: {
+            query?: {
+                scope?: string;
+                event_type?: string | null;
+                cursor?: number | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditEventPage"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2538,6 +3476,636 @@ export interface operations {
             };
         };
     };
+    export_memory_api_control_v1_memory_export_get: {
+        parameters: {
+            query: {
+                scope: string;
+                format?: "md" | "jsonl";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    list_memory_items_api_control_v1_memory_items_get: {
+        parameters: {
+            query: {
+                scope: string;
+                kind?: string | null;
+                cursor?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryItemPage"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_memory_item_api_control_v1_memory_items__item_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryItemResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    delete_memory_item_api_control_v1_memory_items__item_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryItemResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    refresh_memory_item_api_control_v1_memory_items__item_id__refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemoryItemRefreshRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryItemRefreshResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_memory_item_sources_api_control_v1_memory_items__item_id__sources_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryRawSourcesResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    list_memory_reviews_api_control_v1_memory_reviews_get: {
+        parameters: {
+            query: {
+                scope: string;
+                cursor?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryReviewPage"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    approve_memory_review_api_control_v1_memory_reviews__review_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                review_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryReviewMutationResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    reject_memory_review_api_control_v1_memory_reviews__review_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                review_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryReviewMutationResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    run_operation_check_api_control_v1_operations_checks__name__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OperationCheckRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperationCheckResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    operations_health_api_control_v1_operations_health_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperationsHealthResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
     list_providers_api_control_v1_providers_get: {
         parameters: {
             query?: never;
@@ -3244,6 +4812,184 @@ export interface operations {
             };
         };
     };
+    query_ask_api_control_v1_query_ask_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QueryAskRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueryAskResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    query_catalog_api_control_v1_query_catalog_get: {
+        parameters: {
+            query: {
+                scope: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueryCatalogResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    query_search_api_control_v1_query_search_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuerySearchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuerySearchResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
     get_session_api_control_v1_session_get: {
         parameters: {
             query?: never;
@@ -3264,6 +5010,105 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    stats_overview_api_control_v1_stats_overview_get: {
+        parameters: {
+            query?: {
+                scope?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatsOverviewResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    stats_timeseries_api_control_v1_stats_timeseries_get: {
+        parameters: {
+            query?: {
+                scope?: string;
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatsTimeseriesResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

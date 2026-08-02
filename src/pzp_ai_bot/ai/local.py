@@ -21,6 +21,10 @@ class LocalSentenceTransformerEmbeddingProvider:
         self._model = None
         self.dimensions = 384
 
+    @property
+    def loaded(self) -> bool:
+        return self._model is not None
+
     async def generate(
         self,
         messages: Sequence[ChatMessage],

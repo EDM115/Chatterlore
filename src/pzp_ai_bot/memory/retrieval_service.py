@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
+from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -27,6 +29,37 @@ ProviderSelector = Callable[[EffectiveScopeSettings, AIRequestOptions | None], P
 ReasoningLevelResolver = Callable[[EffectiveScopeSettings, AIRequestOptions | None], str]
 
 
+@dataclass(frozen=True, slots=True)
+class QuerySelection:
+    retrieval_provider_profile: str
+    embedding_model: str
+    chat_provider_profile: str | None
+    chat_model: str | None
+    reasoning_level: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class SearchExecutionResult:
+    destination_scope: Scope
+    source_scopes: tuple[Scope, ...]
+    memory_profile: str | None
+    selection: QuerySelection
+    results: tuple[SearchResult, ...]
+    elapsed_ms: int
+
+
+@dataclass(frozen=True, slots=True)
+class AskExecutionResult:
+    destination_scope: Scope
+    source_scopes: tuple[Scope, ...]
+    memory_profile: str | None
+    selection: QuerySelection
+    results: tuple[SearchResult, ...]
+    answer: str
+    insufficient_context: bool
+    elapsed_ms: int
+
+
 class MemoryRetrievalService:
     def __init__(
         self,
@@ -34,14 +67,16 @@ class MemoryRetrievalService:
         settings: Settings,
         session_factory: async_sessionmaker,
         settings_profiles: MemorySettingsService,
-        select_provider: ProviderSelector,
+        select_retrieval_provider: ProviderSelector,
+        select_chat_provider: ProviderSelector,
         reasoning_level: ReasoningLevelResolver,
         provider_operations: ProviderOperations,
     ) -> None:
         self.settings = settings
         self.session_factory = session_factory
         self.settings_profiles = settings_profiles
-        self.select_provider = select_provider
+        self.select_retrieval_provider = select_retrieval_provider
+        self.select_chat_provider = select_chat_provider
         self.reasoning_level = reasoning_level
         self.provider_operations = provider_operations
 
@@ -54,27 +89,62 @@ class MemoryRetrievalService:
         profile_name: str | None = None,
         ai_options: AIRequestOptions | None = None,
     ) -> str:
+        return (
+            await self.ask_with_metadata(
+                scope, question, top_k=top_k, profile_name=profile_name, ai_options=ai_options
+            )
+        ).answer
+
+    async def ask_with_metadata(
+        self,
+        scope: Scope,
+        question: str,
+        *,
+        top_k: int | None = None,
+        profile_name: str | None = None,
+        ai_options: AIRequestOptions | None = None,
+    ) -> AskExecutionResult:
+        started = time.perf_counter()
         scope_settings = await self.settings_profiles.get_scope_settings(scope)
         if top_k is None:
             top_k = scope_settings.retrieval_top_k
-        results = await self.search(
+        async with session_scope(self.session_factory) as session:
+            scope_settings = await ScopeSettingsRepository(session).effective(
+                scope, self.settings_profiles.default_scope_settings()
+            )
+            selection = self.select_chat_provider(scope_settings, ai_options)
+            reasoning_level = self.reasoning_level(scope_settings, ai_options)
+            system_template = await self.settings_profiles.answer_system_prompt_in_session(
+                session, scope_settings, ai_options
+            )
+        search_execution = await self.search_with_metadata(
             scope, question, top_k=top_k, profile_name=profile_name, ai_options=ai_options
+        )
+        results = list(search_execution.results)
+        query_selection = QuerySelection(
+            retrieval_provider_profile=search_execution.selection.retrieval_provider_profile,
+            embedding_model=search_execution.selection.embedding_model,
+            chat_provider_profile=selection.profile.name,
+            chat_model=selection.chat_model,
+            reasoning_level=reasoning_level,
         )
         best_score = max((result.score for result in results), default=0.0)
         if not results or best_score < float(
             self.settings_profiles.runtime_setting("answer_min_score")
         ):
-            return f"{ANSWER_INSUFFICIENT_CONTEXT} Best scoped-memory score: {best_score:.3f}."
+            return AskExecutionResult(
+                destination_scope=scope,
+                source_scopes=search_execution.source_scopes,
+                memory_profile=profile_name,
+                selection=query_selection,
+                results=tuple(results),
+                answer=(
+                    f"{ANSWER_INSUFFICIENT_CONTEXT} Best scoped-memory score: {best_score:.3f}."
+                ),
+                insufficient_context=True,
+                elapsed_ms=int((time.perf_counter() - started) * 1000),
+            )
         context = format_results(results)
-        async with session_scope(self.session_factory) as session:
-            scope_settings = await ScopeSettingsRepository(session).effective(
-                scope, self.settings_profiles.default_scope_settings()
-            )
-            selection = self.select_provider(scope_settings, ai_options)
-            reasoning_level = self.reasoning_level(scope_settings, ai_options)
-            system_template = await self.settings_profiles.answer_system_prompt_in_session(
-                session, scope_settings, ai_options
-            )
         messages = [
             ChatMessage(
                 role="system",
@@ -113,7 +183,16 @@ class MemoryRetrievalService:
         )
         async with session_scope(self.session_factory) as session:
             await self.provider_operations.add_usage(session, execution.telemetry)
-        return append_answer_sources(content, results)
+        return AskExecutionResult(
+            destination_scope=scope,
+            source_scopes=search_execution.source_scopes,
+            memory_profile=profile_name,
+            selection=query_selection,
+            results=tuple(results),
+            answer=append_answer_sources(content, results),
+            insufficient_context=False,
+            elapsed_ms=int((time.perf_counter() - started) * 1000),
+        )
 
     async def search(
         self,
@@ -124,11 +203,29 @@ class MemoryRetrievalService:
         profile_name: str | None = None,
         ai_options: AIRequestOptions | None = None,
     ) -> list[SearchResult]:
+        return list(
+            (
+                await self.search_with_metadata(
+                    scope, query, top_k=top_k, profile_name=profile_name, ai_options=ai_options
+                )
+            ).results
+        )
+
+    async def search_with_metadata(
+        self,
+        scope: Scope,
+        query: str,
+        *,
+        top_k: int = 6,
+        profile_name: str | None = None,
+        ai_options: AIRequestOptions | None = None,
+    ) -> SearchExecutionResult:
+        started = time.perf_counter()
         async with session_scope(self.session_factory) as session:
             scope_settings = await ScopeSettingsRepository(session).effective(
                 scope, self.settings_profiles.default_scope_settings()
             )
-            selection = self.select_provider(scope_settings, ai_options)
+            selection = self.select_retrieval_provider(scope_settings, ai_options)
             scopes = await self.retrieval_scopes_in_session(session, scope, profile_name)
         embedding_generation = await self.provider_operations.generate_embeddings(
             selection,
@@ -175,7 +272,21 @@ class MemoryRetrievalService:
                     )
                 )
             results.sort(key=search_result_rank)
-            return results[:top_k]
+            bounded_results = tuple(results[:top_k])
+        return SearchExecutionResult(
+            destination_scope=scope,
+            source_scopes=tuple(scopes),
+            memory_profile=profile_name,
+            selection=QuerySelection(
+                retrieval_provider_profile=selection.profile.name,
+                embedding_model=selection.embedding_model,
+                chat_provider_profile=None,
+                chat_model=None,
+                reasoning_level=None,
+            ),
+            results=bounded_results,
+            elapsed_ms=int((time.perf_counter() - started) * 1000),
+        )
 
     async def retrieval_scopes_in_session(
         self, session: AsyncSession, destination: Scope, profile_name: str | None

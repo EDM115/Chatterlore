@@ -1,6 +1,133 @@
 {
   "components": {
     "schemas": {
+      "AIUsagePage": {
+        "properties": {
+          "has_more": {
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AIUsageResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor",
+          "has_more"
+        ],
+        "title": "AIUsagePage",
+        "type": "object"
+      },
+      "AIUsageResponse": {
+        "properties": {
+          "completion_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completion Tokens"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latency Ms"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "operation": {
+            "title": "Operation",
+            "type": "string"
+          },
+          "prompt_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Tokens"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope"
+          }
+        },
+        "required": [
+          "id",
+          "scope",
+          "provider",
+          "model",
+          "operation",
+          "prompt_tokens",
+          "completion_tokens",
+          "latency_ms",
+          "error",
+          "created_at"
+        ],
+        "title": "AIUsageResponse",
+        "type": "object"
+      },
       "AdminAlertPage": {
         "properties": {
           "has_more": {
@@ -175,6 +302,93 @@
           "error_classification"
         ],
         "title": "AdminAlertSummary",
+        "type": "object"
+      },
+      "AuditEventPage": {
+        "properties": {
+          "has_more": {
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AuditEventResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor",
+          "has_more"
+        ],
+        "title": "AuditEventPage",
+        "type": "object"
+      },
+      "AuditEventResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "event_type": {
+            "title": "Event Type",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          }
+        },
+        "required": [
+          "id",
+          "event_type",
+          "scope",
+          "user_id",
+          "payload",
+          "created_at"
+        ],
+        "title": "AuditEventResponse",
         "type": "object"
       },
       "BotAdminCreateRequest": {
@@ -759,6 +973,334 @@
         "title": "ManagedChatStatusRequest",
         "type": "object"
       },
+      "MemoryItemPage": {
+        "properties": {
+          "has_more": {
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryItemResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor",
+          "has_more"
+        ],
+        "title": "MemoryItemPage",
+        "type": "object"
+      },
+      "MemoryItemRefreshRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "default": "embed",
+            "pattern": "^(embed|summarize|both)$",
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "title": "MemoryItemRefreshRequest",
+        "type": "object"
+      },
+      "MemoryItemRefreshResponse": {
+        "properties": {
+          "embeddings_refreshed": {
+            "title": "Embeddings Refreshed",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "summarized": {
+            "title": "Summarized",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "scope",
+          "kind",
+          "mode",
+          "summarized",
+          "embeddings_refreshed"
+        ],
+        "title": "MemoryItemRefreshResponse",
+        "type": "object"
+      },
+      "MemoryItemResponse": {
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "title": "Metadata",
+            "type": "object"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "source_message_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Source Message Ids",
+            "type": "array"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "scope",
+          "kind",
+          "content",
+          "source_message_ids",
+          "metadata",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "MemoryItemResponse",
+        "type": "object"
+      },
+      "MemoryRawSourceResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "message_permalink": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message Permalink"
+          },
+          "telegram_message_id": {
+            "title": "Telegram Message Id",
+            "type": "integer"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          },
+          "username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          }
+        },
+        "required": [
+          "telegram_message_id",
+          "user_id",
+          "username",
+          "text",
+          "created_at",
+          "message_permalink"
+        ],
+        "title": "MemoryRawSourceResponse",
+        "type": "object"
+      },
+      "MemoryRawSourcesResponse": {
+        "properties": {
+          "item_id": {
+            "title": "Item Id",
+            "type": "integer"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryRawSourceResponse"
+            },
+            "title": "Sources",
+            "type": "array"
+          }
+        },
+        "required": [
+          "item_id",
+          "scope",
+          "sources"
+        ],
+        "title": "MemoryRawSourcesResponse",
+        "type": "object"
+      },
+      "MemoryReviewMutationResponse": {
+        "properties": {
+          "knowledge_item_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Knowledge Item Id"
+          },
+          "review_id": {
+            "title": "Review Id",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "review_id",
+          "status"
+        ],
+        "title": "MemoryReviewMutationResponse",
+        "type": "object"
+      },
+      "MemoryReviewPage": {
+        "properties": {
+          "has_more": {
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryReviewResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor",
+          "has_more"
+        ],
+        "title": "MemoryReviewPage",
+        "type": "object"
+      },
+      "MemoryReviewResponse": {
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "source_message_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Source Message Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "scope",
+          "kind",
+          "content",
+          "source_message_ids",
+          "created_at"
+        ],
+        "title": "MemoryReviewResponse",
+        "type": "object"
+      },
       "MiniAppAuthRequest": {
         "additionalProperties": false,
         "properties": {
@@ -796,6 +1338,254 @@
           "init_data"
         ],
         "title": "MiniAppStepUpRequest",
+        "type": "object"
+      },
+      "OperationCheckRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "allow_download": {
+            "default": false,
+            "title": "Allow Download",
+            "type": "boolean"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "pattern": "^(chat|embedding)$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mode"
+          },
+          "profile_name": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile Name"
+          }
+        },
+        "title": "OperationCheckRequest",
+        "type": "object"
+      },
+      "OperationCheckResponse": {
+        "properties": {
+          "check": {
+            "title": "Check",
+            "type": "string"
+          },
+          "details": {
+            "additionalProperties": true,
+            "title": "Details",
+            "type": "object"
+          },
+          "elapsed_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Elapsed Ms"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "result": {
+            "title": "Result",
+            "type": "string"
+          },
+          "warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warning"
+          }
+        },
+        "required": [
+          "check",
+          "ok",
+          "result",
+          "details"
+        ],
+        "title": "OperationCheckResponse",
+        "type": "object"
+      },
+      "OperationsHealthResponse": {
+        "properties": {
+          "alerts": {
+            "additionalProperties": true,
+            "title": "Alerts",
+            "type": "object"
+          },
+          "checks": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "provider_calls_performed": {
+            "title": "Provider Calls Performed",
+            "type": "boolean"
+          },
+          "providers": {
+            "additionalProperties": true,
+            "title": "Providers",
+            "type": "object"
+          },
+          "runtime": {
+            "additionalProperties": true,
+            "title": "Runtime",
+            "type": "object"
+          },
+          "storage": {
+            "additionalProperties": true,
+            "title": "Storage",
+            "type": "object"
+          }
+        },
+        "required": [
+          "generated_at",
+          "checks",
+          "provider_calls_performed",
+          "runtime",
+          "storage",
+          "providers",
+          "alerts"
+        ],
+        "title": "OperationsHealthResponse",
+        "type": "object"
+      },
+      "ProviderCatalogLocalState": {
+        "properties": {
+          "dependency_available": {
+            "title": "Dependency Available",
+            "type": "boolean"
+          },
+          "model_loaded": {
+            "title": "Model Loaded",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "dependency_available",
+          "model_loaded"
+        ],
+        "title": "ProviderCatalogLocalState",
+        "type": "object"
+      },
+      "ProviderCatalogPoolState": {
+        "properties": {
+          "eligible": {
+            "title": "Eligible",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "eligible",
+          "total"
+        ],
+        "title": "ProviderCatalogPoolState",
+        "type": "object"
+      },
+      "ProviderCatalogProfile": {
+        "properties": {
+          "availability": {
+            "title": "Availability",
+            "type": "string"
+          },
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "chat_model": {
+            "title": "Chat Model",
+            "type": "string"
+          },
+          "embedding_model": {
+            "title": "Embedding Model",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "local_state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProviderCatalogLocalState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "pool": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProviderCatalogPoolState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "provider_kind": {
+            "title": "Provider Kind",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "provider_kind",
+          "source",
+          "enabled",
+          "chat_model",
+          "embedding_model",
+          "capabilities",
+          "availability",
+          "local_state",
+          "pool"
+        ],
+        "title": "ProviderCatalogProfile",
         "type": "object"
       },
       "ProviderCredentialCreateRequest": {
@@ -1871,6 +2661,493 @@
         "title": "ProviderProfileUpdateRequest",
         "type": "object"
       },
+      "QueryAskRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "chat_model": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chat Model"
+          },
+          "chat_provider_profile": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chat Provider Profile"
+          },
+          "embedding_model": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding Model"
+          },
+          "memory_profile": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Profile"
+          },
+          "provider_profile": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Profile"
+          },
+          "question": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Question",
+            "type": "string"
+          },
+          "reasoning_level": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning Level"
+          },
+          "retrieval_provider_profile": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retrieval Provider Profile"
+          },
+          "scope": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Scope",
+            "type": "string"
+          },
+          "top_k": {
+            "default": 6,
+            "maximum": 20.0,
+            "minimum": 1.0,
+            "title": "Top K",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "scope",
+          "question"
+        ],
+        "title": "QueryAskRequest",
+        "type": "object"
+      },
+      "QueryAskResponse": {
+        "properties": {
+          "answer": {
+            "title": "Answer",
+            "type": "string"
+          },
+          "destination_scope": {
+            "title": "Destination Scope",
+            "type": "string"
+          },
+          "elapsed_ms": {
+            "title": "Elapsed Ms",
+            "type": "integer"
+          },
+          "insufficient_context": {
+            "title": "Insufficient Context",
+            "type": "boolean"
+          },
+          "memory_profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Profile"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/QueryResultItemResponse"
+            },
+            "title": "Results",
+            "type": "array"
+          },
+          "selection": {
+            "$ref": "#/components/schemas/QuerySelectionResponse"
+          },
+          "source_scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Source Scopes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "destination_scope",
+          "source_scopes",
+          "memory_profile",
+          "selection",
+          "results",
+          "elapsed_ms",
+          "answer",
+          "insufficient_context"
+        ],
+        "title": "QueryAskResponse",
+        "type": "object"
+      },
+      "QueryCatalogResponse": {
+        "properties": {
+          "chat_models": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Chat Models",
+            "type": "array"
+          },
+          "embedding_models": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Embedding Models",
+            "type": "array"
+          },
+          "profiles": {
+            "items": {
+              "$ref": "#/components/schemas/ProviderCatalogProfile"
+            },
+            "title": "Profiles",
+            "type": "array"
+          },
+          "reasoning_levels": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reasoning Levels",
+            "type": "array"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope",
+          "chat_models",
+          "embedding_models",
+          "reasoning_levels",
+          "profiles"
+        ],
+        "title": "QueryCatalogResponse",
+        "type": "object"
+      },
+      "QueryResultItemResponse": {
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "source_message_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Source Message Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "content",
+          "score",
+          "source",
+          "scope",
+          "source_message_ids"
+        ],
+        "title": "QueryResultItemResponse",
+        "type": "object"
+      },
+      "QuerySearchRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "chat_model": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chat Model"
+          },
+          "chat_provider_profile": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chat Provider Profile"
+          },
+          "embedding_model": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding Model"
+          },
+          "memory_profile": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Profile"
+          },
+          "provider_profile": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Profile"
+          },
+          "query": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Query",
+            "type": "string"
+          },
+          "reasoning_level": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning Level"
+          },
+          "retrieval_provider_profile": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retrieval Provider Profile"
+          },
+          "scope": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Scope",
+            "type": "string"
+          },
+          "top_k": {
+            "default": 6,
+            "maximum": 20.0,
+            "minimum": 1.0,
+            "title": "Top K",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "scope",
+          "query"
+        ],
+        "title": "QuerySearchRequest",
+        "type": "object"
+      },
+      "QuerySearchResponse": {
+        "properties": {
+          "destination_scope": {
+            "title": "Destination Scope",
+            "type": "string"
+          },
+          "elapsed_ms": {
+            "title": "Elapsed Ms",
+            "type": "integer"
+          },
+          "memory_profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Profile"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/QueryResultItemResponse"
+            },
+            "title": "Results",
+            "type": "array"
+          },
+          "selection": {
+            "$ref": "#/components/schemas/QuerySelectionResponse"
+          },
+          "source_scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Source Scopes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "destination_scope",
+          "source_scopes",
+          "memory_profile",
+          "selection",
+          "results",
+          "elapsed_ms"
+        ],
+        "title": "QuerySearchResponse",
+        "type": "object"
+      },
+      "QuerySelectionResponse": {
+        "properties": {
+          "chat_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chat Model"
+          },
+          "chat_provider_profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chat Provider Profile"
+          },
+          "embedding_model": {
+            "title": "Embedding Model",
+            "type": "string"
+          },
+          "reasoning_level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning Level"
+          },
+          "retrieval_provider_profile": {
+            "title": "Retrieval Provider Profile",
+            "type": "string"
+          }
+        },
+        "required": [
+          "retrieval_provider_profile",
+          "embedding_model",
+          "chat_provider_profile",
+          "chat_model",
+          "reasoning_level"
+        ],
+        "title": "QuerySelectionResponse",
+        "type": "object"
+      },
       "RuntimeSettingResponse": {
         "properties": {
           "default_value": {
@@ -1948,6 +3225,72 @@
           "updates"
         ],
         "title": "RuntimeSettingsUpdateRequest",
+        "type": "object"
+      },
+      "SchedulerTaskResponse": {
+        "properties": {
+          "consecutive_failures": {
+            "title": "Consecutive Failures",
+            "type": "integer"
+          },
+          "healthy": {
+            "title": "Healthy",
+            "type": "boolean"
+          },
+          "last_exception_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Exception Type"
+          },
+          "last_failure_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Failure At"
+          },
+          "last_success_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Success At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "state",
+          "healthy",
+          "last_success_at",
+          "last_failure_at",
+          "last_exception_type",
+          "consecutive_failures"
+        ],
+        "title": "SchedulerTaskResponse",
         "type": "object"
       },
       "ScopePolicyResponse": {
@@ -2051,6 +3394,337 @@
           }
         },
         "title": "ScopeSettingsUpdateRequest",
+        "type": "object"
+      },
+      "StatsAIUsageResponse": {
+        "properties": {
+          "average_latency_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Latency Ms"
+          },
+          "errors": {
+            "title": "Errors",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "errors",
+          "average_latency_ms"
+        ],
+        "title": "StatsAIUsageResponse",
+        "type": "object"
+      },
+      "StatsAdministrationResponse": {
+        "properties": {
+          "bot_admins": {
+            "title": "Bot Admins",
+            "type": "integer"
+          },
+          "delegated_chat_admins": {
+            "title": "Delegated Chat Admins",
+            "type": "integer"
+          },
+          "managed_chats": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Managed Chats",
+            "type": "object"
+          }
+        },
+        "required": [
+          "bot_admins",
+          "delegated_chat_admins",
+          "managed_chats"
+        ],
+        "title": "StatsAdministrationResponse",
+        "type": "object"
+      },
+      "StatsAlertResponse": {
+        "properties": {
+          "states": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "States",
+            "type": "object"
+          }
+        },
+        "required": [
+          "states"
+        ],
+        "title": "StatsAlertResponse",
+        "type": "object"
+      },
+      "StatsCredentialResponse": {
+        "properties": {
+          "eligible": {
+            "title": "Eligible",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "eligible",
+          "total"
+        ],
+        "title": "StatsCredentialResponse",
+        "type": "object"
+      },
+      "StatsMemoryResponse": {
+        "properties": {
+          "audit_events": {
+            "title": "Audit Events",
+            "type": "integer"
+          },
+          "embeddings": {
+            "title": "Embeddings",
+            "type": "integer"
+          },
+          "knowledge_items": {
+            "title": "Knowledge Items",
+            "type": "integer"
+          },
+          "learned": {
+            "title": "Learned",
+            "type": "integer"
+          },
+          "messages": {
+            "title": "Messages",
+            "type": "integer"
+          },
+          "pending_reviews": {
+            "title": "Pending Reviews",
+            "type": "integer"
+          },
+          "skipped": {
+            "title": "Skipped",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "messages",
+          "learned",
+          "skipped",
+          "knowledge_items",
+          "embeddings",
+          "pending_reviews",
+          "audit_events"
+        ],
+        "title": "StatsMemoryResponse",
+        "type": "object"
+      },
+      "StatsOverviewResponse": {
+        "properties": {
+          "administration": {
+            "$ref": "#/components/schemas/StatsAdministrationResponse"
+          },
+          "ai_usage": {
+            "$ref": "#/components/schemas/StatsAIUsageResponse"
+          },
+          "alerts": {
+            "$ref": "#/components/schemas/StatsAlertResponse"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "memory": {
+            "$ref": "#/components/schemas/StatsMemoryResponse"
+          },
+          "providers": {
+            "$ref": "#/components/schemas/StatsProviderResponse"
+          },
+          "runtime": {
+            "$ref": "#/components/schemas/StatsRuntimeResponse"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "storage": {
+            "$ref": "#/components/schemas/StatsStorageResponse"
+          }
+        },
+        "required": [
+          "scope",
+          "generated_at",
+          "memory",
+          "ai_usage",
+          "storage",
+          "runtime",
+          "administration",
+          "providers",
+          "alerts"
+        ],
+        "title": "StatsOverviewResponse",
+        "type": "object"
+      },
+      "StatsProviderResponse": {
+        "properties": {
+          "credentials": {
+            "$ref": "#/components/schemas/StatsCredentialResponse"
+          },
+          "local_dependency_available": {
+            "title": "Local Dependency Available",
+            "type": "boolean"
+          },
+          "local_models_loaded": {
+            "title": "Local Models Loaded",
+            "type": "integer"
+          },
+          "profiles": {
+            "title": "Profiles",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "profiles",
+          "credentials",
+          "local_dependency_available",
+          "local_models_loaded"
+        ],
+        "title": "StatsProviderResponse",
+        "type": "object"
+      },
+      "StatsRuntimeResponse": {
+        "properties": {
+          "scheduler": {
+            "items": {
+              "$ref": "#/components/schemas/SchedulerTaskResponse"
+            },
+            "title": "Scheduler",
+            "type": "array"
+          },
+          "schema_revision": {
+            "title": "Schema Revision",
+            "type": "string"
+          },
+          "uptime_seconds": {
+            "title": "Uptime Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "uptime_seconds",
+          "schema_revision",
+          "scheduler"
+        ],
+        "title": "StatsRuntimeResponse",
+        "type": "object"
+      },
+      "StatsStorageResponse": {
+        "properties": {
+          "database_bytes": {
+            "title": "Database Bytes",
+            "type": "integer"
+          },
+          "memory_bytes": {
+            "title": "Memory Bytes",
+            "type": "integer"
+          },
+          "memory_files": {
+            "title": "Memory Files",
+            "type": "integer"
+          },
+          "memory_scan_truncated": {
+            "title": "Memory Scan Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "database_bytes",
+          "memory_bytes",
+          "memory_files",
+          "memory_scan_truncated"
+        ],
+        "title": "StatsStorageResponse",
+        "type": "object"
+      },
+      "StatsTimeseriesPointResponse": {
+        "properties": {
+          "ai_calls": {
+            "title": "Ai Calls",
+            "type": "integer"
+          },
+          "ai_errors": {
+            "title": "Ai Errors",
+            "type": "integer"
+          },
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "knowledge_items": {
+            "title": "Knowledge Items",
+            "type": "integer"
+          },
+          "learned": {
+            "title": "Learned",
+            "type": "integer"
+          },
+          "messages": {
+            "title": "Messages",
+            "type": "integer"
+          },
+          "skipped": {
+            "title": "Skipped",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "date",
+          "messages",
+          "learned",
+          "skipped",
+          "knowledge_items",
+          "ai_calls",
+          "ai_errors"
+        ],
+        "title": "StatsTimeseriesPointResponse",
+        "type": "object"
+      },
+      "StatsTimeseriesResponse": {
+        "properties": {
+          "days": {
+            "title": "Days",
+            "type": "integer"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/StatsTimeseriesPointResponse"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope",
+          "days",
+          "points"
+        ],
+        "title": "StatsTimeseriesResponse",
         "type": "object"
       },
       "StepUpResponse": {
@@ -2295,6 +3969,214 @@
           "alerts"
         ],
         "x-pzp-capability": "bot_admin"
+      }
+    },
+    "/api/control/v1/audit/ai-usage": {
+      "get": {
+        "operationId": "audit_ai_usage_api_control_v1_audit_ai_usage_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Scope",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AIUsagePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Audit Ai Usage",
+        "tags": [
+          "audit"
+        ],
+        "x-pzp-capability": "scope_admin"
+      }
+    },
+    "/api/control/v1/audit/events": {
+      "get": {
+        "operationId": "audit_events_api_control_v1_audit_events_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Scope",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "event_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Event Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditEventPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Audit Events",
+        "tags": [
+          "audit"
+        ],
+        "x-pzp-capability": "scope_admin"
       }
     },
     "/api/control/v1/auth/logout": {
@@ -3882,6 +5764,873 @@
         "x-pzp-capability": "chat_admin"
       }
     },
+    "/api/control/v1/memory/export": {
+      "get": {
+        "operationId": "export_memory_api_control_v1_memory_export_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "scope",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Scope",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "default": "md",
+              "enum": [
+                "md",
+                "jsonl"
+              ],
+              "title": "Format",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Export Memory",
+        "tags": [
+          "memory"
+        ],
+        "x-pzp-capability": "scope_admin"
+      }
+    },
+    "/api/control/v1/memory/items": {
+      "get": {
+        "operationId": "list_memory_items_api_control_v1_memory_items_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "scope",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Scope",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Cursor",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryItemPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "List Memory Items",
+        "tags": [
+          "memory"
+        ],
+        "x-pzp-capability": "scope_admin"
+      }
+    },
+    "/api/control/v1/memory/items/{item_id}": {
+      "delete": {
+        "operationId": "delete_memory_item_api_control_v1_memory_items__item_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryItemResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Delete Memory Item",
+        "tags": [
+          "memory"
+        ],
+        "x-pzp-capability": "persisted_scope_admin"
+      },
+      "get": {
+        "operationId": "get_memory_item_api_control_v1_memory_items__item_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryItemResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Get Memory Item",
+        "tags": [
+          "memory"
+        ],
+        "x-pzp-capability": "persisted_scope_admin"
+      }
+    },
+    "/api/control/v1/memory/items/{item_id}/refresh": {
+      "post": {
+        "operationId": "refresh_memory_item_api_control_v1_memory_items__item_id__refresh_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryItemRefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryItemRefreshResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Refresh Memory Item",
+        "tags": [
+          "memory"
+        ],
+        "x-pzp-capability": "persisted_scope_admin"
+      }
+    },
+    "/api/control/v1/memory/items/{item_id}/sources": {
+      "post": {
+        "operationId": "get_memory_item_sources_api_control_v1_memory_items__item_id__sources_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryRawSourcesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Get Memory Item Sources",
+        "tags": [
+          "memory"
+        ],
+        "x-pzp-capability": "persisted_scope_admin"
+      }
+    },
+    "/api/control/v1/memory/reviews": {
+      "get": {
+        "operationId": "list_memory_reviews_api_control_v1_memory_reviews_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "scope",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Scope",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Cursor",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryReviewPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "List Memory Reviews",
+        "tags": [
+          "memory"
+        ],
+        "x-pzp-capability": "scope_admin"
+      }
+    },
+    "/api/control/v1/memory/reviews/{review_id}/approve": {
+      "post": {
+        "operationId": "approve_memory_review_api_control_v1_memory_reviews__review_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "review_id",
+            "required": true,
+            "schema": {
+              "title": "Review Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryReviewMutationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Approve Memory Review",
+        "tags": [
+          "memory"
+        ],
+        "x-pzp-capability": "persisted_scope_admin"
+      }
+    },
+    "/api/control/v1/memory/reviews/{review_id}/reject": {
+      "post": {
+        "operationId": "reject_memory_review_api_control_v1_memory_reviews__review_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "review_id",
+            "required": true,
+            "schema": {
+              "title": "Review Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryReviewMutationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Reject Memory Review",
+        "tags": [
+          "memory"
+        ],
+        "x-pzp-capability": "persisted_scope_admin"
+      }
+    },
+    "/api/control/v1/operations/checks/{name}": {
+      "post": {
+        "operationId": "run_operation_check_api_control_v1_operations_checks__name__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationCheckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationCheckResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Run Operation Check",
+        "tags": [
+          "operations"
+        ],
+        "x-pzp-capability": "bot_admin"
+      }
+    },
+    "/api/control/v1/operations/health": {
+      "get": {
+        "operationId": "operations_health_api_control_v1_operations_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationsHealthResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Operations Health",
+        "tags": [
+          "operations"
+        ],
+        "x-pzp-capability": "bot_admin"
+      }
+    },
     "/api/control/v1/providers": {
       "get": {
         "operationId": "list_providers_api_control_v1_providers_get",
@@ -4820,6 +7569,225 @@
         "x-pzp-capability": "bot_admin"
       }
     },
+    "/api/control/v1/query/ask": {
+      "post": {
+        "operationId": "query_ask_api_control_v1_query_ask_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QueryAskRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryAskResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Query Ask",
+        "tags": [
+          "query"
+        ],
+        "x-pzp-capability": "chat_admin"
+      }
+    },
+    "/api/control/v1/query/catalog": {
+      "get": {
+        "operationId": "query_catalog_api_control_v1_query_catalog_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "scope",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Scope",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryCatalogResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Query Catalog",
+        "tags": [
+          "query"
+        ],
+        "x-pzp-capability": "chat_admin"
+      }
+    },
+    "/api/control/v1/query/search": {
+      "post": {
+        "operationId": "query_search_api_control_v1_query_search_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuerySearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuerySearchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Query Search",
+        "tags": [
+          "query"
+        ],
+        "x-pzp-capability": "chat_admin"
+      }
+    },
     "/api/control/v1/session": {
       "get": {
         "operationId": "get_session_api_control_v1_session_get",
@@ -4847,6 +7815,150 @@
         },
         "summary": "Get Session",
         "x-pzp-capability": "authenticated"
+      }
+    },
+    "/api/control/v1/stats/overview": {
+      "get": {
+        "operationId": "stats_overview_api_control_v1_stats_overview_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Scope",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatsOverviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Stats Overview",
+        "tags": [
+          "stats"
+        ],
+        "x-pzp-capability": "scope_admin"
+      }
+    },
+    "/api/control/v1/stats/timeseries": {
+      "get": {
+        "operationId": "stats_timeseries_api_control_v1_stats_timeseries_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Scope",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 366,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatsTimeseriesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Stats Timeseries",
+        "tags": [
+          "stats"
+        ],
+        "x-pzp-capability": "scope_admin"
       }
     },
     "/auth/telegram/callback": {

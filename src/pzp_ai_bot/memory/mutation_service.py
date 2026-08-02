@@ -25,6 +25,7 @@ from pzp_ai_bot.memory.contracts import (
     MemoryItemPreview,
     MemoryNotePreview,
     MemoryReviewPreview,
+    MemorySourcePreview,
 )
 from pzp_ai_bot.memory.provider_operations import ProviderOperations
 from pzp_ai_bot.memory.scope import Scope
@@ -262,6 +263,57 @@ class MemoryMutationService:
             rows = await KnowledgeRepository(session).list_recent(scope, kind=kind, limit=limit)
             return [memory_item_preview(row) for row in rows]
 
+    async def browse_items_page(
+        self,
+        scope: Scope | None = None,
+        *,
+        kind: str | None = None,
+        after_id: int = 0,
+        limit: int = 20,
+    ) -> list[MemoryItemPreview]:
+        async with session_scope(self.session_factory) as session:
+            rows = await KnowledgeRepository(session).list_page(
+                scope, after_id=after_id, kind=kind, limit=limit
+            )
+            return [memory_item_preview(row) for row in rows]
+
+    async def memory_item(self, item_id: int) -> MemoryItemPreview:
+        async with session_scope(self.session_factory) as session:
+            item = await KnowledgeRepository(session).get(item_id)
+            if item is None:
+                raise ValueError(f"memory item #{item_id} was not found")
+            return memory_item_preview(item)
+
+    async def memory_item_sources(
+        self, item_id: int, *, accessed_by: int, limit: int = 100
+    ) -> tuple[Scope, list[MemorySourcePreview]]:
+        async with session_scope(self.session_factory) as session:
+            item = await KnowledgeRepository(session).get(item_id)
+            if item is None:
+                raise ValueError(f"memory item #{item_id} was not found")
+            item_scope = Scope(item.chat_id, item.message_thread_id)
+            messages = await MessageRepository(session).by_telegram_ids_exact(
+                item_scope, list(item.source_message_ids), limit=limit
+            )
+            previews = [
+                MemorySourcePreview(
+                    telegram_message_id=message.telegram_message_id,
+                    user_id=message.user_id,
+                    username=message.username,
+                    text=message.text[:8_000],
+                    created_at=message.created_at,
+                    message_permalink=message.message_permalink,
+                )
+                for message in messages
+            ]
+            await EventRepository(session).add(
+                event_type="control_plane.memory.raw_sources_accessed",
+                scope=item_scope,
+                user_id=accessed_by,
+                payload={"knowledge_item_id": item_id, "source_count": len(previews)},
+            )
+            return item_scope, previews
+
     async def delete_memory_item(
         self, scope: Scope, item_id: int, *, deleted_by: int | None = None
     ) -> MemoryItemPreview:
@@ -345,6 +397,26 @@ class MemoryMutationService:
                     kind=item.kind,
                     content=item.content,
                     source_message_ids=list(item.source_message_ids),
+                    created_at=item.created_at,
+                )
+                for item in items
+            ]
+
+    async def pending_reviews_page(
+        self, scope: Scope | None = None, *, after_id: int = 0, limit: int = 50
+    ) -> list[MemoryReviewPreview]:
+        async with session_scope(self.session_factory) as session:
+            items = await MemoryReviewRepository(session).pending_page(
+                scope, after_id=after_id, limit=limit
+            )
+            return [
+                MemoryReviewPreview(
+                    id=item.id,
+                    scope=Scope(item.chat_id, item.message_thread_id),
+                    kind=item.kind,
+                    content=item.content,
+                    source_message_ids=list(item.source_message_ids),
+                    created_at=item.created_at,
                 )
                 for item in items
             ]

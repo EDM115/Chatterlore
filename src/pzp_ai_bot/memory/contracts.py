@@ -45,6 +45,7 @@ class MemoryReviewPreview:
     kind: str
     content: str
     source_message_ids: list[int]
+    created_at: datetime
 
 
 @dataclass
@@ -85,6 +86,8 @@ class SystemPromptTemplatePreview:
 @dataclass
 class AIRequestOptions:
     provider_profile: str | None = None
+    retrieval_provider_profile: str | None = None
+    chat_provider_profile: str | None = None
     chat_model: str | None = None
     embedding_model: str | None = None
     reasoning_level: str | None = None
@@ -284,6 +287,16 @@ class MemoryItemPreview:
 
 
 @dataclass
+class MemorySourcePreview:
+    telegram_message_id: int
+    user_id: int | None
+    username: str | None
+    text: str
+    created_at: datetime
+    message_permalink: str | None
+
+
+@dataclass
 class MemoryItemRefreshResult:
     id: int
     scope: Scope
@@ -316,6 +329,7 @@ __all__ = [
     "MemoryItemRefreshResult",
     "MemoryNotePreview",
     "MemoryReviewPreview",
+    "MemorySourcePreview",
     "MemoryStatusPreview",
     "PendingSummaryOutcome",
     "ProviderCallTelemetry",

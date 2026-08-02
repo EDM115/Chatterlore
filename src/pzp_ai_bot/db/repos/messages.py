@@ -309,6 +309,22 @@ class MessageRepository:
         )
         return list((await self.session.scalars(stmt)).all())
 
+    async def by_telegram_ids_exact(
+        self, scope: Scope, telegram_message_ids: list[int], *, limit: int
+    ) -> list[Message]:
+        if not telegram_message_ids or limit <= 0:
+            return []
+        stmt = (
+            select(Message)
+            .where(
+                exact_scope_filter(Message, scope),
+                Message.telegram_message_id.in_(sorted(set(telegram_message_ids))),
+            )
+            .order_by(Message.created_at.asc(), Message.id.asc())
+            .limit(limit)
+        )
+        return list((await self.session.scalars(stmt)).all())
+
     async def existing_logical_ids(self, scope: Scope, telegram_message_ids: list[int]) -> set[int]:
         if not telegram_message_ids:
             return set()

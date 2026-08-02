@@ -50,6 +50,21 @@ class MemoryReviewRepository:
         stmt = stmt.order_by(MemoryReviewItem.created_at.asc(), MemoryReviewItem.id.asc())
         return list((await self.session.scalars(stmt)).all())
 
+    async def pending_page(
+        self, scope: Scope | None = None, *, after_id: int = 0, limit: int
+    ) -> list[MemoryReviewItem]:
+        if limit <= 0:
+            raise ValueError("review page limit must be positive")
+        stmt = (
+            select(MemoryReviewItem)
+            .where(MemoryReviewItem.status == "pending", MemoryReviewItem.id > after_id)
+            .order_by(MemoryReviewItem.id.asc())
+            .limit(limit)
+        )
+        if scope is not None:
+            stmt = stmt.where(scope_filter(MemoryReviewItem, scope))
+        return list((await self.session.scalars(stmt)).all())
+
     async def get_pending(self, review_id: int) -> MemoryReviewItem | None:
         return await self.session.scalar(
             select(MemoryReviewItem).where(

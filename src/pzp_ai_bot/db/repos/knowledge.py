@@ -49,7 +49,7 @@ class KnowledgeRepository:
         return list((await self.session.scalars(stmt)).all())
 
     async def list_page(
-        self, scope: Scope | None = None, *, after_id: int = 0, limit: int
+        self, scope: Scope | None = None, *, after_id: int = 0, kind: str | None = None, limit: int
     ) -> list[KnowledgeItem]:
         if limit <= 0:
             raise ValueError("knowledge page limit must be positive")
@@ -61,6 +61,8 @@ class KnowledgeRepository:
         )
         if scope is not None:
             stmt = stmt.where(scope_filter(KnowledgeItem, scope))
+        if kind is not None:
+            stmt = stmt.where(KnowledgeItem.kind == kind)
         return list((await self.session.scalars(stmt)).all())
 
     async def list_exact_scope(self, scope: Scope) -> list[KnowledgeItem]:
