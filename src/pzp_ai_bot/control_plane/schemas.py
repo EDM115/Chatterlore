@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -357,3 +357,304 @@ class ChatForgetResponse(BaseModel):
     messages: int
     knowledge_items: int
     embeddings: int
+
+
+class ProviderCatalogLocalState(BaseModel):
+    dependency_available: bool
+    model_loaded: bool
+
+
+class ProviderCatalogPoolState(BaseModel):
+    eligible: int
+    total: int
+
+
+class ProviderCatalogProfile(BaseModel):
+    name: str
+    provider_kind: str
+    source: str
+    enabled: bool
+    chat_model: str
+    embedding_model: str
+    capabilities: list[str]
+    availability: str
+    local_state: ProviderCatalogLocalState | None
+    pool: ProviderCatalogPoolState | None
+
+
+class QueryCatalogResponse(BaseModel):
+    scope: str
+    chat_models: list[str]
+    embedding_models: list[str]
+    reasoning_levels: list[str]
+    profiles: list[ProviderCatalogProfile]
+
+
+class QueryRequestOptions(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    scope: str = Field(min_length=1, max_length=128)
+    memory_profile: str | None = Field(default=None, min_length=1, max_length=64)
+    provider_profile: str | None = Field(default=None, min_length=1, max_length=64)
+    retrieval_provider_profile: str | None = Field(default=None, min_length=1, max_length=64)
+    chat_provider_profile: str | None = Field(default=None, min_length=1, max_length=64)
+    chat_model: str | None = Field(default=None, min_length=1, max_length=255)
+    embedding_model: str | None = Field(default=None, min_length=1, max_length=255)
+    reasoning_level: str | None = Field(default=None, min_length=1, max_length=32)
+    top_k: int = Field(default=6, ge=1, le=20)
+
+
+class QuerySearchRequest(QueryRequestOptions):
+    query: str = Field(min_length=1, max_length=8_000)
+
+
+class QueryAskRequest(QueryRequestOptions):
+    question: str = Field(min_length=1, max_length=8_000)
+
+
+class QuerySelectionResponse(BaseModel):
+    retrieval_provider_profile: str
+    embedding_model: str
+    chat_provider_profile: str | None
+    chat_model: str | None
+    reasoning_level: str | None
+
+
+class QueryResultItemResponse(BaseModel):
+    content: str
+    score: float
+    source: str
+    scope: str
+    source_message_ids: list[int]
+
+
+class QuerySearchResponse(BaseModel):
+    destination_scope: str
+    source_scopes: list[str]
+    memory_profile: str | None
+    selection: QuerySelectionResponse
+    results: list[QueryResultItemResponse]
+    elapsed_ms: int
+
+
+class QueryAskResponse(QuerySearchResponse):
+    answer: str
+    insufficient_context: bool
+
+
+class MemoryItemResponse(BaseModel):
+    id: int
+    scope: str
+    kind: str
+    content: str
+    source_message_ids: list[int]
+    metadata: dict[str, Any]
+    created_at: datetime
+    updated_at: datetime
+
+
+class MemoryItemPage(BaseModel):
+    items: list[MemoryItemResponse]
+    next_cursor: int | None
+    has_more: bool
+
+
+class MemoryRawSourceResponse(BaseModel):
+    telegram_message_id: int
+    user_id: int | None
+    username: str | None
+    text: str
+    created_at: datetime
+    message_permalink: str | None
+
+
+class MemoryRawSourcesResponse(BaseModel):
+    item_id: int
+    scope: str
+    sources: list[MemoryRawSourceResponse]
+
+
+class MemoryItemRefreshRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mode: str = Field(default="embed", pattern="^(embed|summarize|both)$")
+
+
+class MemoryItemRefreshResponse(BaseModel):
+    id: int
+    scope: str
+    kind: str
+    mode: str
+    summarized: bool
+    embeddings_refreshed: int
+
+
+class MemoryReviewResponse(BaseModel):
+    id: int
+    scope: str
+    kind: str
+    content: str
+    source_message_ids: list[int]
+    created_at: datetime
+
+
+class MemoryReviewPage(BaseModel):
+    items: list[MemoryReviewResponse]
+    next_cursor: int | None
+    has_more: bool
+
+
+class MemoryReviewMutationResponse(BaseModel):
+    review_id: int
+    status: str
+    knowledge_item_id: int | None = None
+
+
+class StatsMemoryResponse(BaseModel):
+    messages: int
+    learned: int
+    skipped: int
+    knowledge_items: int
+    embeddings: int
+    pending_reviews: int
+    audit_events: int
+
+
+class StatsAIUsageResponse(BaseModel):
+    total: int
+    errors: int
+    average_latency_ms: int | None
+
+
+class StatsStorageResponse(BaseModel):
+    database_bytes: int
+    memory_bytes: int
+    memory_files: int
+    memory_scan_truncated: bool
+
+
+class SchedulerTaskResponse(BaseModel):
+    name: str
+    state: str
+    healthy: bool
+    last_success_at: datetime | None
+    last_failure_at: datetime | None
+    last_exception_type: str | None
+    consecutive_failures: int
+
+
+class StatsRuntimeResponse(BaseModel):
+    uptime_seconds: int
+    schema_revision: str
+    scheduler: list[SchedulerTaskResponse]
+
+
+class StatsAdministrationResponse(BaseModel):
+    bot_admins: int
+    delegated_chat_admins: int
+    managed_chats: dict[str, int]
+
+
+class StatsCredentialResponse(BaseModel):
+    eligible: int
+    total: int
+
+
+class StatsProviderResponse(BaseModel):
+    profiles: int
+    credentials: StatsCredentialResponse
+    local_dependency_available: bool
+    local_models_loaded: int
+
+
+class StatsAlertResponse(BaseModel):
+    states: dict[str, int]
+
+
+class StatsOverviewResponse(BaseModel):
+    scope: str
+    generated_at: datetime
+    memory: StatsMemoryResponse
+    ai_usage: StatsAIUsageResponse
+    storage: StatsStorageResponse
+    runtime: StatsRuntimeResponse
+    administration: StatsAdministrationResponse
+    providers: StatsProviderResponse
+    alerts: StatsAlertResponse
+
+
+class StatsTimeseriesPointResponse(BaseModel):
+    date: date
+    messages: int
+    learned: int
+    skipped: int
+    knowledge_items: int
+    ai_calls: int
+    ai_errors: int
+
+
+class StatsTimeseriesResponse(BaseModel):
+    scope: str
+    days: int
+    points: list[StatsTimeseriesPointResponse]
+
+
+class AuditEventResponse(BaseModel):
+    id: int
+    event_type: str
+    scope: str | None
+    user_id: int | None
+    payload: dict[str, Any]
+    created_at: datetime
+
+
+class AuditEventPage(BaseModel):
+    items: list[AuditEventResponse]
+    next_cursor: int | None
+    has_more: bool
+
+
+class AIUsageResponse(BaseModel):
+    id: int
+    scope: str | None
+    provider: str
+    model: str
+    operation: str
+    prompt_tokens: int | None
+    completion_tokens: int | None
+    latency_ms: int | None
+    error: str | None
+    created_at: datetime
+
+
+class AIUsagePage(BaseModel):
+    items: list[AIUsageResponse]
+    next_cursor: int | None
+    has_more: bool
+
+
+class OperationsHealthResponse(BaseModel):
+    generated_at: datetime
+    checks: list[str]
+    provider_calls_performed: bool
+    runtime: dict[str, Any]
+    storage: dict[str, Any]
+    providers: dict[str, Any]
+    alerts: dict[str, Any]
+
+
+class OperationCheckRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    profile_name: str | None = Field(default=None, min_length=1, max_length=64)
+    mode: str | None = Field(default=None, pattern="^(chat|embedding)$")
+    allow_download: bool = False
+
+
+class OperationCheckResponse(BaseModel):
+    check: str
+    ok: bool
+    result: str
+    details: dict[str, Any]
+    warning: str | None = None
+    elapsed_ms: int | None = None

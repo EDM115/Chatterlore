@@ -77,6 +77,37 @@ class EventRepository:
             stmt = stmt.where(scope_filter(BotEvent, scope))
         return list((await self.session.scalars(stmt)).all())
 
+    async def list_events_page(
+        self,
+        *,
+        limit: int,
+        before_id: int | None = None,
+        event_type: str | None = None,
+        scope: Scope | None = None,
+    ) -> list[BotEvent]:
+        if limit <= 0:
+            raise ValueError("event page limit must be positive")
+        stmt = select(BotEvent).order_by(BotEvent.id.desc()).limit(limit)
+        if before_id is not None:
+            stmt = stmt.where(BotEvent.id < before_id)
+        if event_type is not None:
+            stmt = stmt.where(BotEvent.event_type == event_type)
+        if scope is not None:
+            stmt = stmt.where(scope_filter(BotEvent, scope))
+        return list((await self.session.scalars(stmt)).all())
+
+    async def list_ai_usage_page(
+        self, *, limit: int, before_id: int | None = None, scope: Scope | None = None
+    ) -> list[AIUsage]:
+        if limit <= 0:
+            raise ValueError("AI usage page limit must be positive")
+        stmt = select(AIUsage).order_by(AIUsage.id.desc()).limit(limit)
+        if before_id is not None:
+            stmt = stmt.where(AIUsage.id < before_id)
+        if scope is not None:
+            stmt = stmt.where(scope_filter(AIUsage, scope))
+        return list((await self.session.scalars(stmt)).all())
+
     async def count_events(self, scope: Scope | None = None) -> int:
         stmt = select(func.count(BotEvent.id))
         if scope is not None:

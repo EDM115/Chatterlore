@@ -35,6 +35,7 @@ class ProviderRegistry:
         ] = {}
         self._managed_profiles: dict[str, ProviderProfile] = {}
         self._managed_revisions: dict[str, int] = {}
+        self._managed_capabilities: dict[str, frozenset[str]] = {}
         self._credential_pool: CredentialPoolService | None = None
 
     def configure_credential_pool(self, pool: CredentialPoolService) -> None:
@@ -42,10 +43,15 @@ class ProviderRegistry:
         self.invalidate()
 
     def replace_managed_profiles(
-        self, profiles: dict[str, ProviderProfile], *, revisions: dict[str, int] | None = None
+        self,
+        profiles: dict[str, ProviderProfile],
+        *,
+        revisions: dict[str, int] | None = None,
+        capabilities: dict[str, frozenset[str]] | None = None,
     ) -> None:
         self._managed_profiles = dict(profiles)
         self._managed_revisions = dict(revisions or {})
+        self._managed_capabilities = dict(capabilities or {})
         self.invalidate()
 
     def invalidate(self, profile_name: str | None = None) -> None:
@@ -64,6 +70,18 @@ class ProviderRegistry:
         if selected in self._managed_profiles:
             return self._managed_profiles[selected]
         return self.settings.provider_profile_by_name(selected)
+
+    def profile_capabilities(self, name: str | None) -> frozenset[str]:
+        profile = self.profile_by_name(name)
+        managed = self._managed_capabilities.get(profile.name)
+        if managed is not None:
+            return managed
+        if profile.provider == "local":
+            return frozenset({"embedding"})
+        capabilities = {"chat", "embedding"}
+        if profile.provider == "openai_compatible":
+            capabilities.add("reasoning")
+        return frozenset(capabilities)
 
     def select(
         self,

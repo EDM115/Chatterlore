@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -1100,7 +1100,7 @@ async def test_chat_shared_update_completes_the_matching_control_plane_enrollmen
             requested_by=111,
             delivery="mini_app",
             created_at=now,
-            expires_at=datetime(2026, 8, 2, tzinfo=UTC),
+            expires_at=now + timedelta(minutes=5),
         )
     session = EnrollmentTelegramSession()
     bot = Bot(context.settings.telegram_bot_token, session=session)

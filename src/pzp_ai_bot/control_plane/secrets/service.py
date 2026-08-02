@@ -111,6 +111,7 @@ class ProviderSecretService:
         bootstrap = self.settings.provider_profiles
         managed: dict[str, ProviderProfile] = {}
         revisions: dict[str, int] = {}
+        capabilities: dict[str, frozenset[str]] = {}
         async with session_scope(self.session_factory) as session:
             profiles = await ProviderProfileRepository(session).list_all()
             credentials = ProviderCredentialRepository(session)
@@ -134,7 +135,17 @@ class ProviderSecretService:
                     stored, api_key=api_key, api_key_env=api_key_env
                 )
                 revisions[stored.name] = stored.version
-        self.registry.replace_managed_profiles(managed, revisions=revisions)
+                profile_capabilities: set[str] = set()
+                if stored.chat_capable and not stored.local and stored.provider_kind != "local":
+                    profile_capabilities.add("chat")
+                if stored.embedding_capable:
+                    profile_capabilities.add("embedding")
+                if stored.reasoning_capable and "chat" in profile_capabilities:
+                    profile_capabilities.add("reasoning")
+                capabilities[stored.name] = frozenset(profile_capabilities)
+        self.registry.replace_managed_profiles(
+            managed, revisions=revisions, capabilities=capabilities
+        )
 
     async def list_profiles(self) -> list[ProviderProfileSummary]:
         bootstrap = {

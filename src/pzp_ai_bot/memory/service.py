@@ -39,6 +39,7 @@ from pzp_ai_bot.memory.contracts import (
     MemoryItemRefreshResult,
     MemoryNotePreview,
     MemoryReviewPreview,
+    MemorySourcePreview,
     MemoryStatusPreview,
     PendingSummaryOutcome,
     ProviderCallTelemetry,
@@ -65,7 +66,11 @@ from pzp_ai_bot.memory.provider_operations import ProviderOperations
 from pzp_ai_bot.memory.provider_operations import provider_call_telemetry as provider_call_telemetry
 from pzp_ai_bot.memory.provider_operations import telemetry_scope as telemetry_scope
 from pzp_ai_bot.memory.retrieval import SearchResult
-from pzp_ai_bot.memory.retrieval_service import MemoryRetrievalService
+from pzp_ai_bot.memory.retrieval_service import (
+    AskExecutionResult,
+    MemoryRetrievalService,
+    SearchExecutionResult,
+)
 from pzp_ai_bot.memory.retrieval_service import append_answer_sources as append_answer_sources
 from pzp_ai_bot.memory.retrieval_service import compact_answer_sources as compact_answer_sources
 from pzp_ai_bot.memory.retrieval_service import dedupe_scope_list as dedupe_scope_list
@@ -117,7 +122,8 @@ class MemoryService:
             settings=self.settings,
             session_factory=self.session_factory,
             settings_profiles=self._settings_profiles,
-            select_provider=self._select_provider,
+            select_retrieval_provider=self._select_retrieval_provider,
+            select_chat_provider=self._select_chat_provider,
             reasoning_level=self._reasoning_level,
             provider_operations=self._provider_operations,
         )
@@ -579,6 +585,19 @@ class MemoryService:
             scope, question, top_k=top_k, profile_name=profile_name, ai_options=ai_options
         )
 
+    async def ask_with_metadata(
+        self,
+        scope: Scope,
+        question: str,
+        *,
+        top_k: int | None = None,
+        profile_name: str | None = None,
+        ai_options: AIRequestOptions | None = None,
+    ) -> AskExecutionResult:
+        return await self._retrieval_service.ask_with_metadata(
+            scope, question, top_k=top_k, profile_name=profile_name, ai_options=ai_options
+        )
+
     async def search(
         self,
         scope: Scope,
@@ -589,6 +608,19 @@ class MemoryService:
         ai_options: AIRequestOptions | None = None,
     ) -> list[SearchResult]:
         return await self._retrieval_service.search(
+            scope, query, top_k=top_k, profile_name=profile_name, ai_options=ai_options
+        )
+
+    async def search_with_metadata(
+        self,
+        scope: Scope,
+        query: str,
+        *,
+        top_k: int = 6,
+        profile_name: str | None = None,
+        ai_options: AIRequestOptions | None = None,
+    ) -> SearchExecutionResult:
+        return await self._retrieval_service.search_with_metadata(
             scope, query, top_k=top_k, profile_name=profile_name, ai_options=ai_options
         )
 
@@ -623,6 +655,28 @@ class MemoryService:
         self, scope: Scope | None = None, *, kind: str | None = None, limit: int = 20
     ) -> list[MemoryItemPreview]:
         return await self._mutation_service.browse_items(scope, kind=kind, limit=limit)
+
+    async def browse_items_page(
+        self,
+        scope: Scope | None = None,
+        *,
+        kind: str | None = None,
+        after_id: int = 0,
+        limit: int = 20,
+    ) -> list[MemoryItemPreview]:
+        return await self._mutation_service.browse_items_page(
+            scope, kind=kind, after_id=after_id, limit=limit
+        )
+
+    async def memory_item(self, item_id: int) -> MemoryItemPreview:
+        return await self._mutation_service.memory_item(item_id)
+
+    async def memory_item_sources(
+        self, item_id: int, *, accessed_by: int, limit: int = 100
+    ) -> tuple[Scope, list[MemorySourcePreview]]:
+        return await self._mutation_service.memory_item_sources(
+            item_id, accessed_by=accessed_by, limit=limit
+        )
 
     async def delete_memory_item(
         self, scope: Scope, item_id: int, *, deleted_by: int | None = None
@@ -743,6 +797,13 @@ class MemoryService:
 
     async def pending_reviews(self, scope: Scope | None = None) -> list[MemoryReviewPreview]:
         return await self._mutation_service.pending_reviews(scope)
+
+    async def pending_reviews_page(
+        self, scope: Scope | None = None, *, after_id: int = 0, limit: int = 50
+    ) -> list[MemoryReviewPreview]:
+        return await self._mutation_service.pending_reviews_page(
+            scope, after_id=after_id, limit=limit
+        )
 
     async def pending_review_scope(self, review_id: int) -> Scope:
         return await self._mutation_service.pending_review_scope(review_id)
@@ -908,6 +969,50 @@ class MemoryService:
     ) -> str:
         requested = (options.reasoning_level if options else None) or scope_settings.reasoning_level
         return self.settings.validate_reasoning_level(requested)
+
+    def _select_retrieval_provider(
+        self, scope_settings: EffectiveScopeSettings, options: AIRequestOptions | None = None
+    ) -> ProviderSelection:
+        request = options or AIRequestOptions()
+        if request.retrieval_provider_profile is None:
+            selection = self._select_provider(scope_settings, request)
+            if not self._profile_supports(selection.profile.name, "embedding"):
+                raise ValueError(
+                    f"provider profile {selection.profile.name!r} is not embedding capable"
+                )
+            return selection
+        profile = self.provider_registry.profile_by_name(request.retrieval_provider_profile)
+        if not self._profile_supports(profile.name, "embedding"):
+            raise ValueError(f"provider profile {profile.name!r} is not embedding capable")
+        return self.provider_registry.select(
+            profile.name,
+            chat_model=profile.chat_model,
+            embedding_model=request.embedding_model or scope_settings.embedding_model,
+        )
+
+    def _select_chat_provider(
+        self, scope_settings: EffectiveScopeSettings, options: AIRequestOptions | None = None
+    ) -> ProviderSelection:
+        request = options or AIRequestOptions()
+        if request.chat_provider_profile is None:
+            selection = self._select_provider(scope_settings, request)
+            if not self._profile_supports(selection.profile.name, "chat"):
+                raise ValueError(f"provider profile {selection.profile.name!r} is not chat capable")
+            return selection
+        profile = self.provider_registry.profile_by_name(request.chat_provider_profile)
+        if not self._profile_supports(profile.name, "chat"):
+            raise ValueError(f"provider profile {profile.name!r} is not chat capable")
+        return self.provider_registry.select(
+            profile.name,
+            chat_model=request.chat_model or scope_settings.chat_model,
+            embedding_model=profile.embedding_model,
+        )
+
+    def _profile_supports(self, profile_name: str, capability: str) -> bool:
+        resolver = getattr(self.provider_registry, "profile_capabilities", None)
+        if resolver is None:
+            return True
+        return capability in resolver(profile_name)
 
     async def _execute_chat_provider(
         self,

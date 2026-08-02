@@ -30,6 +30,8 @@ PZP AI is built around explicit learning consent, scoped retrieval and reviewabl
 - Bulk imports commit each successful 100-row batch and record content-free checkpoint counts. A later parse, validation, database or provider failure leaves prior checkpoints committed; retrying the same input skips exact JSONL kind/content/source tuples and logical Telegram message IDs instead of duplicating them.
 - Review import files before importing because they may contain old group content outside the bot's live-learning consent moment.
 - Telegram JSON import preserves message text plus selected metadata such as links, document file names and photo attachment labels. It does not import binary media files into bot storage.
+- The control-plane memory list and detail APIs expose committed durable knowledge, not raw learned-message bodies. Raw sources require a separate authorized POST, return at most 100 exact source messages and create a content-free audit event identifying the actor, owning scope, knowledge item and returned count.
+- Browser Markdown/JSONL exports are streamed without full-payload materialization and carry private/no-store, no-cache and download headers, but the downloaded file is still plaintext sensitive memory outside application control. HTTP cancellation closes the underlying exporter; it does not revoke or erase bytes already received by the browser.
 
 ## AI Provider Safety
 
@@ -58,4 +60,6 @@ PZP AI is built around explicit learning consent, scoped retrieval and reviewabl
 - A failed post-commit Markdown rebuild records `markdown_projection_failed` with only the exception type. The committed SQLite knowledge remains authoritative, and no memory content is copied into the event.
 - A failed summary records scoped `summary_failed` metadata and an AI-usage error using only the exception type, provider/model selection and source message IDs. Provider exception text, prompts and raw message bodies are excluded.
 - Bulk-import checkpoint, completion and failure events contain counts, batch numbers, the local file name and exception type but no imported text or raw provider exception message.
+- Control-plane audit pages recursively redact payload keys associated with secrets, tokens, prompts, text or content and bound nested output. AI-usage pages deliberately exclude the metadata JSON that can contain internal source identifiers; query responses expose only selected profile/model/reasoning fields, bounded durable snippets and source IDs, never prompts or hidden reasoning.
+- Routine control-plane stats and health load only SQL aggregates, bounded filesystem metadata and in-process state. Paid provider calls and local-model load/download attempts occur only after an explicit bot-admin operations-check POST, and the resulting audit record contains no provider response or diagnostic input content.
 - Admin cache entries contain Telegram user IDs for chat administrators and expire according to `ADMIN_CACHE_TTL_SECONDS`. They are process-local and are not written to SQLite or Markdown memory.

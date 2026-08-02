@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from collections import defaultdict, deque
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -11,14 +11,16 @@ from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Body, FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, RedirectResponse, Response
+from fastapi.responses import JSONResponse, RedirectResponse, Response, StreamingResponse
 
 from pzp_ai_bot.ai.credential_pool import ProviderCallError
 from pzp_ai_bot.app_context import AppContext
 from pzp_ai_bot.db.models import AdminAlert
 from pzp_ai_bot.db.repos.events import EventRepository
 from pzp_ai_bot.db.session import session_scope
-from pzp_ai_bot.memory.scope import Scope
+from pzp_ai_bot.memory.contracts import AIRequestOptions
+from pzp_ai_bot.memory.scope import Scope, parse_scope
+from pzp_ai_bot.memory.transfer import MemoryExportFormat
 
 from .auth.mini_app import MiniAppValidationError, validate_mini_app_init_data
 from .auth.oidc import OIDCValidationError, TelegramOIDCClient
@@ -41,6 +43,8 @@ from .runtime import ControlPlaneRuntime
 from .schemas import (
     AdminAlertPage,
     AdminAlertSummary,
+    AIUsagePage,
+    AuditEventPage,
     BotAdminCreateRequest,
     BotAdminResponse,
     ChatAdminCreateRequest,
@@ -57,8 +61,18 @@ from .schemas import (
     DevelopmentStepUpRequest,
     ManagedChatResponse,
     ManagedChatStatusRequest,
+    MemoryItemPage,
+    MemoryItemRefreshRequest,
+    MemoryItemRefreshResponse,
+    MemoryItemResponse,
+    MemoryRawSourcesResponse,
+    MemoryReviewMutationResponse,
+    MemoryReviewPage,
     MiniAppAuthRequest,
     MiniAppStepUpRequest,
+    OperationCheckRequest,
+    OperationCheckResponse,
+    OperationsHealthResponse,
     ProviderCredentialCreateRequest,
     ProviderCredentialDeleteRequest,
     ProviderCredentialMutationResponse,
@@ -73,10 +87,17 @@ from .schemas import (
     ProviderProfileMutationResponse,
     ProviderProfileResponse,
     ProviderProfileUpdateRequest,
+    QueryAskRequest,
+    QueryAskResponse,
+    QueryCatalogResponse,
+    QuerySearchRequest,
+    QuerySearchResponse,
     RuntimeSettingResponse,
     RuntimeSettingsUpdateRequest,
     ScopeSettingsResponse,
     ScopeSettingsUpdateRequest,
+    StatsOverviewResponse,
+    StatsTimeseriesResponse,
     StepUpResponse,
     VersionedMutationRequest,
 )
@@ -161,6 +182,11 @@ def create_control_plane_schema_app() -> FastAPI:
     app.include_router(_build_provider_router())
     app.include_router(_build_alert_router())
     app.include_router(_build_management_router())
+    app.include_router(_build_query_router())
+    app.include_router(_build_memory_router())
+    app.include_router(_build_stats_router())
+    app.include_router(_build_audit_router())
+    app.include_router(_build_operations_router())
     return app
 
 
@@ -178,6 +204,11 @@ def install_control_plane(
     app.include_router(_build_provider_router())
     app.include_router(_build_alert_router())
     app.include_router(_build_management_router())
+    app.include_router(_build_query_router())
+    app.include_router(_build_memory_router())
+    app.include_router(_build_stats_router())
+    app.include_router(_build_audit_router())
+    app.include_router(_build_operations_router())
     public_post_paths = {"/api/control/v1/auth/mini-app"}
     if development_auth is not None:
         public_post_paths.add(CONTROL_PLANE_DEV_AUTH_PATH)
@@ -1270,6 +1301,425 @@ def _build_management_router() -> APIRouter:
     return router
 
 
+def _build_query_router() -> APIRouter:
+    router = APIRouter(prefix="/api/control/v1/query", tags=["query"])
+    common_errors: dict[int | str, dict[str, Any]] = {
+        401: {"model": ControlPlaneErrorEnvelope},
+        403: {"model": ControlPlaneErrorEnvelope},
+        404: {"model": ControlPlaneErrorEnvelope},
+        422: {"model": ControlPlaneErrorEnvelope},
+    }
+
+    @router.get(
+        "/catalog",
+        response_model=QueryCatalogResponse,
+        openapi_extra={"x-pzp-capability": "chat_admin"},
+        responses=common_errors,
+    )
+    async def query_catalog(request: Request, scope: str = Query(min_length=1, max_length=128)):
+        _, runtime, parsed = await _require_active_query_scope(request, scope)
+        return await runtime.catalog.for_scope(parsed.key)
+
+    @router.post(
+        "/search",
+        response_model=QuerySearchResponse,
+        openapi_extra={"x-pzp-capability": "chat_admin"},
+        responses=common_errors,
+    )
+    async def query_search(request: Request, payload: QuerySearchRequest) -> dict[str, Any]:
+        context, _, scope = await _require_active_query_scope(request, payload.scope)
+        try:
+            execution = await context.memory.search_with_metadata(
+                scope,
+                payload.query,
+                top_k=payload.top_k,
+                profile_name=payload.memory_profile,
+                ai_options=_query_ai_options(payload),
+            )
+        except ValueError as exc:
+            raise ControlPlaneAPIError(
+                422, "query_selection_invalid", "The query selection is invalid."
+            ) from exc
+        return _query_execution_payload(execution)
+
+    @router.post(
+        "/ask",
+        response_model=QueryAskResponse,
+        openapi_extra={"x-pzp-capability": "chat_admin"},
+        responses=common_errors,
+    )
+    async def query_ask(request: Request, payload: QueryAskRequest) -> dict[str, Any]:
+        context, _, scope = await _require_active_query_scope(request, payload.scope)
+        try:
+            execution = await context.memory.ask_with_metadata(
+                scope,
+                payload.question,
+                top_k=payload.top_k,
+                profile_name=payload.memory_profile,
+                ai_options=_query_ai_options(payload),
+            )
+        except ValueError as exc:
+            raise ControlPlaneAPIError(
+                422, "query_selection_invalid", "The query selection is invalid."
+            ) from exc
+        return {
+            **_query_execution_payload(execution),
+            "answer": execution.answer,
+            "insufficient_context": execution.insufficient_context,
+        }
+
+    return router
+
+
+def _build_memory_router() -> APIRouter:
+    router = APIRouter(prefix="/api/control/v1/memory", tags=["memory"])
+    common_errors: dict[int | str, dict[str, Any]] = {
+        401: {"model": ControlPlaneErrorEnvelope},
+        403: {"model": ControlPlaneErrorEnvelope},
+        404: {"model": ControlPlaneErrorEnvelope},
+        422: {"model": ControlPlaneErrorEnvelope},
+    }
+
+    @router.get(
+        "/export",
+        response_class=StreamingResponse,
+        openapi_extra={"x-pzp-capability": "scope_admin"},
+        responses=common_errors,
+    )
+    async def export_memory(
+        request: Request,
+        scope: str = Query(min_length=1, max_length=128),
+        fmt: MemoryExportFormat = Query(default="md", alias="format"),
+    ) -> StreamingResponse:
+        context, parsed, _ = await _require_memory_scope(request, scope)
+        suffix = "md" if fmt == "md" else "jsonl"
+        media_type = "text/markdown" if fmt == "md" else "application/x-ndjson"
+        return StreamingResponse(
+            _memory_export_stream(context, None if parsed.is_global else parsed, fmt),
+            media_type=media_type,
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="memory_{parsed.filename_stem}.{suffix}"'
+                ),
+                "Cache-Control": "no-store, private",
+                "Pragma": "no-cache",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
+
+    @router.get(
+        "/items",
+        response_model=MemoryItemPage,
+        openapi_extra={"x-pzp-capability": "scope_admin"},
+        responses=common_errors,
+    )
+    async def list_memory_items(
+        request: Request,
+        scope: str = Query(min_length=1, max_length=128),
+        kind: str | None = Query(default=None, min_length=1, max_length=64),
+        cursor: int = Query(default=0, ge=0),
+        limit: int = Query(default=50, ge=1, le=100),
+    ) -> dict[str, Any]:
+        context, parsed, _ = await _require_memory_scope(request, scope)
+        items = await context.memory.browse_items_page(
+            None if parsed.is_global else parsed, kind=kind, after_id=cursor, limit=limit + 1
+        )
+        has_more = len(items) > limit
+        page = items[:limit]
+        return {
+            "items": [_memory_item_payload(item) for item in page],
+            "next_cursor": page[-1].id if has_more and page else None,
+            "has_more": has_more,
+        }
+
+    @router.get(
+        "/items/{item_id}",
+        response_model=MemoryItemResponse,
+        openapi_extra={"x-pzp-capability": "persisted_scope_admin"},
+        responses=common_errors,
+    )
+    async def get_memory_item(request: Request, item_id: int) -> dict[str, Any]:
+        _context, item = await _authorized_memory_item(request, item_id)
+        return _memory_item_payload(item)
+
+    @router.post(
+        "/items/{item_id}/sources",
+        response_model=MemoryRawSourcesResponse,
+        openapi_extra={"x-pzp-capability": "persisted_scope_admin"},
+        responses=common_errors,
+    )
+    async def get_memory_item_sources(request: Request, item_id: int) -> dict[str, Any]:
+        context, item = await _authorized_memory_item(request, item_id)
+        authenticated = await _authenticate(
+            request.app.state.control_plane_runtime, _session_token(request)
+        )
+        scope, sources = await context.memory.memory_item_sources(
+            item.id, accessed_by=authenticated.identity.telegram_user_id, limit=100
+        )
+        return {
+            "item_id": item.id,
+            "scope": scope.key,
+            "sources": [
+                {
+                    "telegram_message_id": source.telegram_message_id,
+                    "user_id": source.user_id,
+                    "username": source.username,
+                    "text": source.text,
+                    "created_at": _as_utc(source.created_at),
+                    "message_permalink": source.message_permalink,
+                }
+                for source in sources
+            ],
+        }
+
+    @router.post(
+        "/items/{item_id}/refresh",
+        response_model=MemoryItemRefreshResponse,
+        openapi_extra={"x-pzp-capability": "persisted_scope_admin"},
+        responses=common_errors,
+    )
+    async def refresh_memory_item(
+        request: Request, item_id: int, payload: MemoryItemRefreshRequest
+    ) -> dict[str, Any]:
+        context, item = await _authorized_memory_item(request, item_id)
+        authenticated = await _authenticate(
+            request.app.state.control_plane_runtime, _session_token(request)
+        )
+        try:
+            result = await context.memory.refresh_memory_item(
+                item.scope,
+                item.id,
+                mode=payload.mode,
+                updated_by=authenticated.identity.telegram_user_id,
+            )
+        except ValueError as exc:
+            raise ControlPlaneAPIError(
+                422, "memory_refresh_invalid", "The memory refresh request is invalid."
+            ) from exc
+        return {
+            "id": result.id,
+            "scope": result.scope.key,
+            "kind": result.kind,
+            "mode": result.mode,
+            "summarized": result.summarized,
+            "embeddings_refreshed": result.embeddings_refreshed,
+        }
+
+    @router.delete(
+        "/items/{item_id}",
+        response_model=MemoryItemResponse,
+        openapi_extra={"x-pzp-capability": "persisted_scope_admin"},
+        responses=common_errors,
+    )
+    async def delete_memory_item(request: Request, item_id: int) -> dict[str, Any]:
+        context, item = await _authorized_memory_item(request, item_id)
+        authenticated = await _authenticate(
+            request.app.state.control_plane_runtime, _session_token(request)
+        )
+        deleted = await context.memory.delete_memory_item(
+            item.scope, item.id, deleted_by=authenticated.identity.telegram_user_id
+        )
+        return _memory_item_payload(deleted)
+
+    @router.get(
+        "/reviews",
+        response_model=MemoryReviewPage,
+        openapi_extra={"x-pzp-capability": "scope_admin"},
+        responses=common_errors,
+    )
+    async def list_memory_reviews(
+        request: Request,
+        scope: str = Query(min_length=1, max_length=128),
+        cursor: int = Query(default=0, ge=0),
+        limit: int = Query(default=50, ge=1, le=100),
+    ) -> dict[str, Any]:
+        context, parsed, _ = await _require_memory_scope(request, scope)
+        reviews = await context.memory.pending_reviews_page(
+            None if parsed.is_global else parsed, after_id=cursor, limit=limit + 1
+        )
+        has_more = len(reviews) > limit
+        page = reviews[:limit]
+        return {
+            "items": [_memory_review_payload(review) for review in page],
+            "next_cursor": page[-1].id if has_more and page else None,
+            "has_more": has_more,
+        }
+
+    @router.post(
+        "/reviews/{review_id}/approve",
+        response_model=MemoryReviewMutationResponse,
+        openapi_extra={"x-pzp-capability": "persisted_scope_admin"},
+        responses=common_errors,
+    )
+    async def approve_memory_review(request: Request, review_id: int) -> dict[str, Any]:
+        context, authenticated = await _authorized_pending_review(request, review_id)
+        try:
+            item_id = await context.memory.approve_review(
+                review_id, reviewed_by=authenticated.identity.telegram_user_id
+            )
+        except ValueError as exc:
+            raise ControlPlaneAPIError(
+                404, "memory_review_not_found", "The pending memory review was not found."
+            ) from exc
+        return {"review_id": review_id, "status": "approved", "knowledge_item_id": item_id}
+
+    @router.post(
+        "/reviews/{review_id}/reject",
+        response_model=MemoryReviewMutationResponse,
+        openapi_extra={"x-pzp-capability": "persisted_scope_admin"},
+        responses=common_errors,
+    )
+    async def reject_memory_review(request: Request, review_id: int) -> dict[str, Any]:
+        context, authenticated = await _authorized_pending_review(request, review_id)
+        try:
+            await context.memory.reject_review(
+                review_id, reviewed_by=authenticated.identity.telegram_user_id
+            )
+        except ValueError as exc:
+            raise ControlPlaneAPIError(
+                404, "memory_review_not_found", "The pending memory review was not found."
+            ) from exc
+        return {"review_id": review_id, "status": "rejected", "knowledge_item_id": None}
+
+    return router
+
+
+def _build_stats_router() -> APIRouter:
+    router = APIRouter(prefix="/api/control/v1/stats", tags=["stats"])
+    common_errors: dict[int | str, dict[str, Any]] = {
+        401: {"model": ControlPlaneErrorEnvelope},
+        403: {"model": ControlPlaneErrorEnvelope},
+        422: {"model": ControlPlaneErrorEnvelope},
+    }
+
+    @router.get(
+        "/overview",
+        response_model=StatsOverviewResponse,
+        openapi_extra={"x-pzp-capability": "scope_admin"},
+        responses=common_errors,
+    )
+    async def stats_overview(
+        request: Request, scope: str = Query(default="all", min_length=1, max_length=128)
+    ) -> dict[str, Any]:
+        _, parsed, _ = await _require_memory_scope(request, scope)
+        _, runtime = _services(request)
+        payload = await runtime.insights.overview(None if parsed.is_global else parsed)
+        payload["runtime"]["scheduler"] = _scheduler_status(request)
+        return payload
+
+    @router.get(
+        "/timeseries",
+        response_model=StatsTimeseriesResponse,
+        openapi_extra={"x-pzp-capability": "scope_admin"},
+        responses=common_errors,
+    )
+    async def stats_timeseries(
+        request: Request,
+        scope: str = Query(default="all", min_length=1, max_length=128),
+        days: int = Query(default=30, ge=1, le=366),
+    ) -> dict[str, Any]:
+        _, parsed, _ = await _require_memory_scope(request, scope)
+        _, runtime = _services(request)
+        return await runtime.insights.timeseries(None if parsed.is_global else parsed, days=days)
+
+    return router
+
+
+def _build_audit_router() -> APIRouter:
+    router = APIRouter(prefix="/api/control/v1/audit", tags=["audit"])
+    common_errors: dict[int | str, dict[str, Any]] = {
+        401: {"model": ControlPlaneErrorEnvelope},
+        403: {"model": ControlPlaneErrorEnvelope},
+        422: {"model": ControlPlaneErrorEnvelope},
+    }
+
+    @router.get(
+        "/events",
+        response_model=AuditEventPage,
+        openapi_extra={"x-pzp-capability": "scope_admin"},
+        responses=common_errors,
+    )
+    async def audit_events(
+        request: Request,
+        scope: str = Query(default="all", min_length=1, max_length=128),
+        event_type: str | None = Query(default=None, min_length=1, max_length=64),
+        cursor: int | None = Query(default=None, ge=1),
+        limit: int = Query(default=50, ge=1, le=100),
+    ) -> dict[str, Any]:
+        _, parsed, _ = await _require_memory_scope(request, scope)
+        _, runtime = _services(request)
+        return await runtime.audit.events(
+            scope=None if parsed.is_global else parsed,
+            event_type=event_type,
+            before_id=cursor,
+            limit=limit,
+        )
+
+    @router.get(
+        "/ai-usage",
+        response_model=AIUsagePage,
+        openapi_extra={"x-pzp-capability": "scope_admin"},
+        responses=common_errors,
+    )
+    async def audit_ai_usage(
+        request: Request,
+        scope: str = Query(default="all", min_length=1, max_length=128),
+        cursor: int | None = Query(default=None, ge=1),
+        limit: int = Query(default=50, ge=1, le=100),
+    ) -> dict[str, Any]:
+        _, parsed, _ = await _require_memory_scope(request, scope)
+        _, runtime = _services(request)
+        return await runtime.audit.ai_usage(
+            scope=None if parsed.is_global else parsed, before_id=cursor, limit=limit
+        )
+
+    return router
+
+
+def _build_operations_router() -> APIRouter:
+    router = APIRouter(prefix="/api/control/v1/operations", tags=["operations"])
+    common_errors: dict[int | str, dict[str, Any]] = {
+        401: {"model": ControlPlaneErrorEnvelope},
+        403: {"model": ControlPlaneErrorEnvelope},
+        422: {"model": ControlPlaneErrorEnvelope},
+    }
+
+    @router.get(
+        "/health",
+        response_model=OperationsHealthResponse,
+        openapi_extra={"x-pzp-capability": "bot_admin"},
+        responses=common_errors,
+    )
+    async def operations_health(request: Request) -> dict[str, Any]:
+        _, runtime, _, _ = await _require_bot_admin(request)
+        return await runtime.operations.health()
+
+    @router.post(
+        "/checks/{name}",
+        response_model=OperationCheckResponse,
+        openapi_extra={"x-pzp-capability": "bot_admin"},
+        responses=common_errors,
+    )
+    async def run_operation_check(
+        request: Request, name: str, payload: OperationCheckRequest
+    ) -> dict[str, Any]:
+        _, runtime, authenticated, _ = await _require_bot_admin(request)
+        try:
+            return await runtime.operations.run_check(
+                name,
+                actor_user_id=authenticated.identity.telegram_user_id,
+                profile_name=payload.profile_name,
+                mode=payload.mode,
+                allow_download=payload.allow_download,
+            )
+        except ValueError as exc:
+            raise ControlPlaneAPIError(
+                422, "operation_check_invalid", "The requested operation check is invalid."
+            ) from exc
+
+    return router
+
+
 def _services(request: Request) -> tuple[AppContext, ControlPlaneRuntime]:
     return (request.app.state.control_plane_context, request.app.state.control_plane_runtime)
 
@@ -1334,6 +1784,173 @@ async def _require_chat_admin(
             403, "chat_admin_required", "Administrator access to this managed chat is required."
         )
     return context, runtime, authenticated, actor
+
+
+async def _require_active_query_scope(
+    request: Request, raw_scope: str
+) -> tuple[AppContext, ControlPlaneRuntime, Scope]:
+    try:
+        scope = parse_scope(raw_scope)
+    except ValueError as exc:
+        raise ControlPlaneAPIError(422, "scope_invalid", "The requested scope is invalid.") from exc
+    if scope.chat_id is None:
+        raise ControlPlaneAPIError(422, "scope_invalid", "A concrete chat scope is required.")
+    context, runtime, _, _ = await _require_chat_admin(request, scope.chat_id)
+    try:
+        managed = await runtime.management.get_managed_chat(scope.chat_id)
+    except ControlPlaneManagementError as exc:
+        _raise_management_error(exc)
+    if managed.status != "active":
+        raise ControlPlaneAPIError(
+            409, "managed_chat_inactive", "The requested managed chat is not active."
+        )
+    return context, runtime, scope
+
+
+async def _require_memory_scope(
+    request: Request, raw_scope: str
+) -> tuple[AppContext, Scope, AuthenticatedSession]:
+    try:
+        scope = parse_scope(raw_scope)
+    except ValueError as exc:
+        raise ControlPlaneAPIError(422, "scope_invalid", "The requested scope is invalid.") from exc
+    if scope.is_global:
+        context, _, authenticated, _ = await _require_bot_admin(request)
+        return context, scope, authenticated
+    assert scope.chat_id is not None
+    context, _, authenticated, _ = await _require_chat_admin(request, scope.chat_id)
+    return context, scope, authenticated
+
+
+async def _authorized_memory_item(request: Request, item_id: int) -> tuple[AppContext, Any]:
+    context, _ = _services(request)
+    try:
+        item = await context.memory.memory_item(item_id)
+    except ValueError as exc:
+        raise ControlPlaneAPIError(
+            404, "memory_item_not_found", "The requested memory item was not found."
+        ) from exc
+    await _require_memory_scope(request, item.scope.key)
+    return context, item
+
+
+async def _authorized_pending_review(
+    request: Request, review_id: int
+) -> tuple[AppContext, AuthenticatedSession]:
+    context, _ = _services(request)
+    try:
+        scope = await context.memory.pending_review_scope(review_id)
+    except ValueError as exc:
+        raise ControlPlaneAPIError(
+            404, "memory_review_not_found", "The pending memory review was not found."
+        ) from exc
+    context, _, authenticated = await _require_memory_scope(request, scope.key)
+    return context, authenticated
+
+
+def _query_ai_options(payload: Any) -> AIRequestOptions:
+    return AIRequestOptions(
+        provider_profile=payload.provider_profile,
+        retrieval_provider_profile=payload.retrieval_provider_profile,
+        chat_provider_profile=payload.chat_provider_profile,
+        chat_model=payload.chat_model,
+        embedding_model=payload.embedding_model,
+        reasoning_level=payload.reasoning_level,
+    )
+
+
+def _query_execution_payload(execution: Any) -> dict[str, Any]:
+    selection = execution.selection
+    return {
+        "destination_scope": execution.destination_scope.key,
+        "source_scopes": [scope.key for scope in execution.source_scopes],
+        "memory_profile": execution.memory_profile,
+        "selection": {
+            "retrieval_provider_profile": selection.retrieval_provider_profile,
+            "embedding_model": selection.embedding_model,
+            "chat_provider_profile": selection.chat_provider_profile,
+            "chat_model": selection.chat_model,
+            "reasoning_level": selection.reasoning_level,
+        },
+        "results": [
+            {
+                "content": result.content[:4_000],
+                "score": result.score,
+                "source": result.source,
+                "scope": result.scope.key,
+                "source_message_ids": result.source_message_ids[:100],
+            }
+            for result in execution.results
+        ],
+        "elapsed_ms": execution.elapsed_ms,
+    }
+
+
+def _memory_item_payload(item: Any) -> dict[str, Any]:
+    return {
+        "id": item.id,
+        "scope": item.scope.key,
+        "kind": item.kind,
+        "content": item.content,
+        "source_message_ids": item.source_message_ids,
+        "metadata": item.metadata,
+        "created_at": _as_utc(item.created_at),
+        "updated_at": _as_utc(item.updated_at),
+    }
+
+
+def _memory_review_payload(review: Any) -> dict[str, Any]:
+    return {
+        "id": review.id,
+        "scope": review.scope.key,
+        "kind": review.kind,
+        "content": review.content,
+        "source_message_ids": review.source_message_ids,
+        "created_at": _as_utc(review.created_at),
+    }
+
+
+async def _memory_export_stream(
+    context: AppContext, scope: Scope | None, fmt: MemoryExportFormat
+) -> AsyncGenerator[bytes, None]:
+    chunks = context.memory.export_memory_chunks(scope, fmt=fmt)
+    try:
+        async for chunk in chunks:
+            yield chunk.text.encode("utf-8")
+    finally:
+        close = getattr(chunks, "aclose", None)
+        if close is not None:
+            await close()
+
+
+def _as_utc(value: datetime) -> datetime:
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
+def _scheduler_status(request: Request) -> list[dict[str, Any]]:
+    handles = getattr(request.app.state, "background_tasks", {})
+    out: list[dict[str, Any]] = []
+    for name, handle in sorted(handles.items()):
+        task = getattr(handle, "task", handle)
+        state = getattr(handle, "state", None)
+        if task.cancelled():
+            task_state = "cancelled"
+        elif task.done():
+            task_state = "failed" if task.exception() is not None else "completed"
+        else:
+            task_state = "running"
+        out.append(
+            {
+                "name": str(getattr(state, "name", name)),
+                "state": task_state,
+                "healthy": bool(getattr(handle, "healthy", task_state == "running")),
+                "last_success_at": getattr(state, "last_success_at", None),
+                "last_failure_at": getattr(state, "last_failure_at", None),
+                "last_exception_type": getattr(state, "last_exception_type", None),
+                "consecutive_failures": int(getattr(state, "consecutive_failures", 0)),
+            }
+        )
+    return out
 
 
 def _require_step_up(

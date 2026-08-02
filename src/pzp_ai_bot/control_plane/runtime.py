@@ -11,11 +11,15 @@ from pzp_ai_bot.memory.service import MemoryService
 from pzp_ai_bot.telegram.admin import AdminService
 
 from .alerts import AdminAlertService
+from .audit import ControlPlaneAuditService
 from .auth.oidc import TelegramOIDCClient
 from .auth.sessions import ControlPlaneSessionService
 from .auth.transactions import OIDCTransactionService
 from .authorization import ControlPlaneAuthorizationService
+from .catalog import ProviderCapabilityCatalog
+from .insights import ControlPlaneInsightsService
 from .management import ControlPlaneManagementService
+from .operations import ControlPlaneOperationsService
 from .secrets.service import ProviderSecretService
 
 
@@ -29,6 +33,10 @@ class ControlPlaneRuntime:
     credential_pool: CredentialPoolService
     alerts: AdminAlertService
     management: ControlPlaneManagementService
+    catalog: ProviderCapabilityCatalog
+    insights: ControlPlaneInsightsService
+    operations: ControlPlaneOperationsService
+    audit: ControlPlaneAuditService
 
 
 def build_control_plane_runtime(
@@ -42,6 +50,9 @@ def build_control_plane_runtime(
     credential_pool = CredentialPoolService(settings, session_factory, secrets.vault)
     sessions = ControlPlaneSessionService(session_factory, settings)
     provider_registry.configure_credential_pool(credential_pool)
+    insights = ControlPlaneInsightsService(
+        settings, session_factory, admins=admins, secrets=secrets
+    )
     return ControlPlaneRuntime(
         sessions=sessions,
         transactions=OIDCTransactionService(session_factory, settings),
@@ -53,4 +64,10 @@ def build_control_plane_runtime(
         management=ControlPlaneManagementService(
             session_factory, admins=admins, sessions=sessions, memory=memory
         ),
+        catalog=ProviderCapabilityCatalog(settings, secrets),
+        insights=insights,
+        operations=ControlPlaneOperationsService(
+            settings, session_factory, memory=memory, secrets=secrets, insights=insights
+        ),
+        audit=ControlPlaneAuditService(session_factory),
     )

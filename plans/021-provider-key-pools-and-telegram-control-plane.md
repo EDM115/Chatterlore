@@ -1,10 +1,10 @@
 ---
 goal: Secure Telegram-authenticated control plane and resilient provider API-key pools
-version: 1.9
+version: 1.10
 date_created: 2026-07-30
-last_updated: 2026-08-01
+last_updated: 2026-08-02
 owner: PZP-AI
-status: In progress — Phase 6 is implemented and locally validated; Phase 7 is ready and not started
+status: In progress — Phase 7 is implemented and locally validated; Phase 8 is ready and not started
 tags:
   - feature
   - security
@@ -459,14 +459,28 @@ Phase 6 verification evidence:
 
 | Task     | Description                                                                                                                                                                                                                                        | Completed | Date |
 | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ---- |
-| TASK-052 | Add provider capability discovery and safe profile/model catalogs that combine approved allowlists, local dependency/model state and managed profile health without revealing secrets.                                                             |           |      |
-| TASK-053 | Extend `AIRequestOptions` and provider selection only as required for independently selected one-shot retrieval and chat profiles; preserve `provider_profile` as the backward-compatible shorthand and keep existing Telegram/CLI outputs stable. |           |      |
-| TASK-054 | Add Search and Ask API orchestration through `MemoryService`, enforce destination/source permissions, validate capabilities/model/reasoning allowlists and return safe source/provider metadata plus existing insufficient-context behavior.       |           |      |
-| TASK-055 | Add keyset-paginated memory item/review endpoints, item detail, explicit bounded raw-source access, existing delete/refresh/review mutations and safe authorization against the persisted owning scope.                                            |           |      |
-| TASK-056 | Add HTTP streaming Markdown/JSONL exports using the existing export generator, authorization and scope naming; include sensitive download/cache headers and cancellation cleanup.                                                                  |           |      |
-| TASK-057 | Add SQL-aggregated overview/timeseries statistics for global/chat/topic scopes plus bounded filesystem, process uptime, scheduler, migration, admin, managed-chat, provider pool, local-model and alert status.                                    |           |      |
-| TASK-058 | Add paginated safe audit/AI-usage/alert views and manual operations checks for DB integrity, projection status, provider profile test and local-model readiness; manual checks must not run on normal dashboard load.                              |           |      |
-| TASK-059 | Add API performance/query-count tests proving dashboard, memory, audit and stats pages do not perform N+1 hydration or load unbounded rows, prompts, embeddings or exports.                                                                        |           |      |
+| TASK-052 | Add provider capability discovery and safe profile/model catalogs that combine approved allowlists, local dependency/model state and managed profile health without revealing secrets.                                                             | DONE      | 2026-08-02 |
+| TASK-053 | Extend `AIRequestOptions` and provider selection only as required for independently selected one-shot retrieval and chat profiles; preserve `provider_profile` as the backward-compatible shorthand and keep existing Telegram/CLI outputs stable. | DONE      | 2026-08-02 |
+| TASK-054 | Add Search and Ask API orchestration through `MemoryService`, enforce destination/source permissions, validate capabilities/model/reasoning allowlists and return safe source/provider metadata plus existing insufficient-context behavior.       | DONE      | 2026-08-02 |
+| TASK-055 | Add keyset-paginated memory item/review endpoints, item detail, explicit bounded raw-source access, existing delete/refresh/review mutations and safe authorization against the persisted owning scope.                                            | DONE      | 2026-08-02 |
+| TASK-056 | Add HTTP streaming Markdown/JSONL exports using the existing export generator, authorization and scope naming; include sensitive download/cache headers and cancellation cleanup.                                                                  | DONE      | 2026-08-02 |
+| TASK-057 | Add SQL-aggregated overview/timeseries statistics for global/chat/topic scopes plus bounded filesystem, process uptime, scheduler, migration, admin, managed-chat, provider pool, local-model and alert status.                                    | DONE      | 2026-08-02 |
+| TASK-058 | Add paginated safe audit/AI-usage/alert views and manual operations checks for DB integrity, projection status, provider profile test and local-model readiness; manual checks must not run on normal dashboard load.                              | DONE      | 2026-08-02 |
+| TASK-059 | Add API performance/query-count tests proving dashboard, memory, audit and stats pages do not perform N+1 hydration or load unbounded rows, prompts, embeddings or exports.                                                                        | DONE      | 2026-08-02 |
+
+Phase 7 implementation evidence:
+- `ProviderCapabilityCatalog` publishes approved models/reasoning, bootstrap/managed profile capabilities, safe pool availability and local dependency/load state without credential material. `ProviderRegistry` retains capability declarations across reloadless managed-profile refreshes, and the local embedding provider exposes load state without loading during catalog/status calls.
+- `AIRequestOptions` now supports independent `retrieval_provider_profile` and `chat_provider_profile` selectors while the existing `provider_profile` remains the exact both-leg shorthand. `MemoryRetrievalService` returns typed safe selection/source metadata, rejects unsupported profile/model/reasoning combinations before the corresponding call and validates Ask's chat leg before spending an embedding request; minimal legacy registry doubles remain structurally compatible.
+- FastAPI exposes typed active-destination Search/Ask routes through `MemoryService`; keyset memory/review lists; persisted-owning-scope item, raw-source, refresh/delete/approve/reject authorization; and scope-named Markdown/JSONL `StreamingResponse` downloads with private/no-store headers and underlying-generator cleanup on cancellation.
+- `db.repos.insights` and the control-plane insights service provide one-query scoped overview aggregation, three-query bounded timeseries plus fixed-count system/provider/filesystem/scheduler state without a provider call or local-model load. Audit/AI-usage routes use bounded descending cursors and safe payload projection; the existing alert pages remain authoritative for alert delivery. Routine operations health is side-effect free, while explicit bot-admin checks separately run DB integrity, bounded projection status, one constant provider input or opt-in local-model readiness/download and write content-free audit metadata.
+- `tests/test_control_plane_phase7.py` covers authorization, safe catalog/source/usage output, split selection, insufficient context, owning-scope mutations, explicit raw access, export cancellation and manual-check side effects. With 150 seeded knowledge/event rows, measured service query counts remain exactly 1 for memory, 1 for audit, 7 for overview and 3 for timeseries; pages remain bounded and initialize no export.
+- Phase 7 keeps its typed route families composed by the existing `control_plane.app` boundary while the business work lives in catalog/audit/insights/operations services and `MemoryService` collaborators. The previously recorded final `control_plane/api/*` route-family extraction therefore remains outstanding architecture cleanup for a later control-plane pass; it is not disguised as completed by the new endpoints.
+
+Phase 7 verification evidence:
+- Focused Phase 7 plus adjacent memory/provider/control-plane/operations selections passed. The final post-hardening fresh external-basetemp offline suite reported 370 passed, 1 skipped live Telegram test and 4 deliberate strict control-plane contract xfails; the public `MemoryService` facade inventory includes all six intentional Phase 7 additions, the enrollment regression now uses a relative expiry instead of a date-dependent midnight, directory scanning stops lazily at its configured cap and projection status does not repair missing files.
+- Immutable uv lock, whole-repository Ruff format/lint, `ty`, packaged CLI help and fake-provider doctor gates pass. A fresh disposable SQLite database upgrades through unchanged head `0016_managed_chat_enrollment_requests`, and `alembic check` exits cleanly with no model/history drift.
+- Frontend verification passes Oxfmt, type-aware Oxlint/tsgolint, raw `pnpm typecheck`, 30 unit/component tests, synchronized deterministic OpenAPI/client types, a 2.89 MB production SSR build, a complete 236-text-asset secret scan, direct production SSR smoke and all 22 existing desktop/mobile Chromium checks. No Phase 8 product screen is claimed merely because its backend contract is now generated.
+- Docker/Compose/Caddy/TLS and live BotFather OIDC/Mini App/provider/Telegram acceptance were not rerun for this backend/API phase and remain Gate E release work. Phase 8 is the next implementation slice and must build the requested query, memory, stats, audit and operations UI over these contracts without moving business behavior into Nuxt.
 
 ### Implementation Phase 8: Complete Nuxt control-plane experience
 
