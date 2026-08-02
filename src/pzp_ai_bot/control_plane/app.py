@@ -76,6 +76,7 @@ from .schemas import (
     ProviderCredentialCreateRequest,
     ProviderCredentialDeleteRequest,
     ProviderCredentialMutationResponse,
+    ProviderCredentialReplaceRequest,
     ProviderCredentialRevealResponse,
     ProviderCredentialSummary,
     ProviderCredentialTestRequest,
@@ -821,6 +822,40 @@ def _build_provider_router() -> APIRouter:
                 credential_id,
                 expected_version=payload.version,
                 updates=payload.model_dump(exclude={"version"}, exclude_none=True),
+                actor_user_id=authenticated.identity.telegram_user_id,
+                now=datetime.now(UTC),
+            )
+        except (ProviderSecretConflictError, ValueError) as exc:
+            _raise_provider_error(exc)
+        return _credential_mutation_payload(credential)
+
+    @router.post(
+        "/{name}/credentials/{credential_id}/replace",
+        response_model=ProviderCredentialMutationResponse,
+        openapi_extra={"x-pzp-capability": "bot_admin_step_up"},
+        responses={**versioned_errors, 429: {"model": ControlPlaneErrorEnvelope}},
+    )
+    async def replace_provider_credential(
+        request: Request, name: str, credential_id: int, payload: ProviderCredentialReplaceRequest
+    ) -> dict[str, Any]:
+        context, runtime, authenticated, _ = await _require_bot_admin(request)
+        _check_rate_limit(
+            request,
+            bucket="credential_replace",
+            limit=context.settings.control_plane_step_up_rate_limit,
+        )
+        _require_step_up(authenticated, action="credential:replace", context=context)
+        if len(payload.value) > context.settings.control_plane_max_secret_length:
+            raise ControlPlaneAPIError(
+                422, "credential_invalid", "The provider credential is invalid."
+            )
+        try:
+            credential = await runtime.secrets.replace_credential(
+                name,
+                credential_id,
+                expected_version=payload.version,
+                value=payload.value,
+                label=payload.label,
                 actor_user_id=authenticated.identity.telegram_user_id,
                 now=datetime.now(UTC),
             )

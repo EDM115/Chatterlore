@@ -7,6 +7,15 @@ onMounted(() => {
   hydrated.value = true;
 });
 
+watch(
+  () => route.fullPath,
+  async () => {
+    if (!import.meta.client) return;
+    await nextTick();
+    document.querySelector<HTMLElement>("#control-plane-content")?.focus({ preventScroll: true });
+  },
+);
+
 const authenticated = computed(
   () => hydrated.value && controlSession.status.value === "authenticated",
 );
@@ -15,10 +24,15 @@ const visibleUser = computed(() => (hydrated.value ? controlSession.user.value :
 const navigation = computed(() => {
   if (authenticated.value) {
     return [
-      { label: "Overview", to: "/" },
+      { label: "Dashboard", to: "/" },
       { label: "Chats", to: "/chats" },
+      { label: "Query", to: "/query" },
+      { label: "Memory", to: "/memory" },
+      { label: "Stats", to: "/stats" },
+      { label: "Audit", to: "/audit" },
       ...(controlSession.hasCapability("bot.admin")
         ? [
+            { label: "Operations", to: "/operations" },
             { label: "Bot Settings", to: "/bot-settings" },
             { label: "Providers", to: "/providers" },
           ]

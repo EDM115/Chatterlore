@@ -25,6 +25,74 @@ async function stubAuthenticatedSession(page: Page): Promise<void> {
   );
 }
 
+async function stubDashboard(page: Page): Promise<void> {
+  await page.route("**/api/control/v1/stats/overview?scope=all", (route) =>
+    route.fulfill({
+      body: JSON.stringify({
+        scope: "all",
+        generated_at: "2026-08-02T12:00:00Z",
+        memory: {
+          messages: 180,
+          learned: 150,
+          skipped: 30,
+          knowledge_items: 72,
+          embeddings: 72,
+          pending_reviews: 4,
+          audit_events: 91,
+        },
+        ai_usage: { total: 44, errors: 2, average_latency_ms: 860 },
+        storage: {
+          database_bytes: 1048576,
+          memory_bytes: 2048,
+          memory_files: 3,
+          memory_scan_truncated: false,
+        },
+        runtime: { uptime_seconds: 3661, schema_revision: "0016", scheduler: [] },
+        administration: {
+          bot_admins: 2,
+          delegated_chat_admins: 3,
+          managed_chats: { active: 4, paused: 1, detached: 1 },
+        },
+        providers: {
+          profiles: 3,
+          credentials: { eligible: 2, total: 3 },
+          local_dependency_available: true,
+          local_models_loaded: 1,
+        },
+        alerts: { states: { pending: 1, delivered: 8 } },
+      }),
+      contentType: "application/json",
+    }),
+  );
+  await page.route("**/api/control/v1/stats/timeseries?scope=all&days=14", (route) =>
+    route.fulfill({ body: JSON.stringify({ scope: "all", days: 14, points: [] }) }),
+  );
+  await page.route("**/api/control/v1/operations/health", (route) =>
+    route.fulfill({
+      body: JSON.stringify({
+        generated_at: "2026-08-02T12:00:00Z",
+        checks: ["db-integrity", "provider-profile"],
+        provider_calls_performed: false,
+        runtime: { uptime_seconds: 3661, schema_revision: "0016", scheduler: [] },
+        storage: {
+          database_bytes: 1048576,
+          memory_bytes: 2048,
+          memory_files: 3,
+          memory_scan_truncated: false,
+        },
+        providers: {
+          profiles: 3,
+          credentials: { eligible: 2, total: 3 },
+          local_dependency_available: true,
+          local_models_loaded: 1,
+        },
+        alerts: { states: { pending: 1, delivered: 8 } },
+      }),
+      contentType: "application/json",
+    }),
+  );
+}
+
 async function stubProviderOperations(page: Page, credentials: object[] = []): Promise<void> {
   await page.route("**/api/control/v1/providers", (route) =>
     route.fulfill({
@@ -117,6 +185,7 @@ async function stubManagement(page: Page): Promise<void> {
 
 test("keyboard users can skip navigation and focus the main content", async ({ page }) => {
   await stubAuthenticatedSession(page);
+  await stubDashboard(page);
   const browserErrors: string[] = [];
   page.on("console", (message) => {
     if (message.type() === "error") browserErrors.push(message.text());
@@ -124,9 +193,7 @@ test("keyboard users can skip navigation and focus the main content", async ({ p
   page.on("pageerror", (error) => browserErrors.push(error.message));
 
   await page.goto("/");
-  await expect(
-    page.getByRole("heading", { name: "Private operations, one clear surface." }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "The bot at a glance." })).toBeVisible();
 
   expect(browserErrors).toEqual([]);
 
@@ -139,8 +206,9 @@ test("keyboard users can skip navigation and focus the main content", async ({ p
 
 test("foundation routes retain distinct document titles", async ({ page }) => {
   await stubAuthenticatedSession(page);
+  await stubDashboard(page);
   await page.goto("/");
-  await expect(page).toHaveTitle("Overview · PZP AI Control Plane");
+  await expect(page).toHaveTitle("Dashboard · PZP AI Control Plane");
 });
 
 test("bot administrators can hydrate the direct provider operations route", async ({ page }) => {
@@ -288,6 +356,15 @@ test("anonymous browsers retain the sign-in document title", async ({ page }) =>
   await expect(page).toHaveTitle("Sign in · PZP AI Control Plane");
 });
 
+test("expired sessions return to login with an explicit recovery message", async ({ page }) => {
+  await page.route("**/api/control/v1/session", (route) =>
+    route.fulfill({ body: JSON.stringify({ detail: "authentication required" }), status: 401 }),
+  );
+  await page.goto("/login?expired=1");
+  await expect(page.getByRole("alert")).toContainText("Your Telegram session expired");
+  await expect(page.getByRole("link", { name: "Sign in with Telegram" })).toBeVisible();
+});
+
 test.describe("server-rendered direct routes", () => {
   test.use({ javaScriptEnabled: false });
 
@@ -298,9 +375,7 @@ test.describe("server-rendered direct routes", () => {
 
     expect(response?.status()).toBe(200);
     await expect(page.getByTestId("auth-pending")).toContainText("Checking Telegram access");
-    await expect(
-      page.getByRole("heading", { name: "Private operations, one clear surface." }),
-    ).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "The bot at a glance." })).toHaveCount(0);
     await expect(page.getByText("Opening the control plane…")).toHaveCount(0);
   });
 
@@ -318,7 +393,15 @@ test.describe("server-rendered direct routes", () => {
   test("new management routes keep privileged data out of server-rendered HTML", async ({
     page,
   }) => {
-    for (const path of ["/bot-settings", "/chats"]) {
+    for (const path of [
+      "/bot-settings",
+      "/chats",
+      "/query",
+      "/memory",
+      "/stats",
+      "/audit",
+      "/operations",
+    ]) {
       const response = await page.goto(path);
       expect(response?.status()).toBe(200);
       await expect(page.getByTestId("auth-pending")).toContainText("Checking Telegram access");

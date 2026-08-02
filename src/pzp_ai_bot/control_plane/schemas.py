@@ -144,6 +144,14 @@ class ProviderCredentialUpdateRequest(BaseModel):
     state: str | None = None
 
 
+class ProviderCredentialReplaceRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version: int = Field(ge=1)
+    value: str = Field(min_length=1, max_length=131_072)
+    label: str | None = Field(default=None, min_length=1, max_length=64)
+
+
 class ProviderCredentialDeleteRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

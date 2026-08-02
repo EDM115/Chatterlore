@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import type { components } from "../types/openapi";
+import { syncTelegramClosingConfirmation } from "../plugins/telegram.client";
+
 definePageMeta({ middleware: "auth" });
 
 useSeoMeta({ title: "Bot Settings · PZP AI Control Plane" });
@@ -21,15 +24,27 @@ interface RuntimeSetting {
   version: number | null;
 }
 
+type QueryCatalog = components["schemas"]["QueryCatalogResponse"];
+
 const api = useControlApi();
 const controlSession = useControlSession();
 const admins = ref<BotAdmin[]>([]);
 const runtimeSettings = ref<RuntimeSetting[]>([]);
 const runtimeDraft = ref<Record<string, string>>({});
+const savedRuntimeDraft = ref<Record<string, string>>({});
+const catalog = ref<QueryCatalog | null>(null);
 const newAdminId = ref("");
 const activeOperation = ref<string | null>(null);
 const error = ref<string | null>(null);
 const notice = ref<string | null>(null);
+const dirty = computed(
+  () =>
+    newAdminId.value.trim() !== "" ||
+    JSON.stringify(runtimeDraft.value) !== JSON.stringify(savedRuntimeDraft.value),
+);
+
+watch(dirty, (value) => syncTelegramClosingConfirmation(window.Telegram?.WebApp, value));
+onBeforeUnmount(() => syncTelegramClosingConfirmation(window.Telegram?.WebApp, false));
 
 onMounted(async () => {
   if (!controlSession.hasCapability("bot.admin")) {
@@ -49,8 +64,14 @@ async function refreshPage() {
     runtimeDraft.value = Object.fromEntries(
       runtimeSettings.value.map((setting) => [setting.key, formatDraft(setting.value)]),
     );
-  } catch {
-    error.value = "Bot settings could not be loaded.";
+    savedRuntimeDraft.value = { ...runtimeDraft.value };
+    try {
+      catalog.value = await api.request<QueryCatalog>("/query/catalog?scope=all");
+    } catch {
+      catalog.value = null;
+    }
+  } catch (caught) {
+    error.value = controlErrorMessage(caught, "Bot settings could not be loaded.");
   }
 }
 
@@ -73,8 +94,8 @@ async function addBotAdmin() {
     ].sort((left, right) => left.telegram_user_id - right.telegram_user_id);
     newAdminId.value = "";
     notice.value = `Telegram ${telegramUserId} is now a bot administrator.`;
-  } catch {
-    error.value = "The bot administrator could not be added.";
+  } catch (caught) {
+    error.value = controlErrorMessage(caught, "The bot administrator could not be added.");
   } finally {
     activeOperation.value = null;
   }
@@ -94,8 +115,11 @@ async function removeBotAdmin(admin: BotAdmin) {
       (candidate) => candidate.telegram_user_id !== admin.telegram_user_id,
     );
     notice.value = `Telegram ${admin.telegram_user_id} is no longer a bot administrator.`;
-  } catch {
-    error.value = "The bot administrator could not be removed. Refresh before retrying.";
+  } catch (caught) {
+    error.value = controlErrorMessage(
+      caught,
+      "The bot administrator could not be removed. Refresh before retrying.",
+    );
   } finally {
     activeOperation.value = null;
   }
@@ -114,9 +138,10 @@ async function saveRuntimeSetting(setting: RuntimeSetting) {
     runtimeDraft.value = Object.fromEntries(
       runtimeSettings.value.map((item) => [item.key, formatDraft(item.value)]),
     );
+    savedRuntimeDraft.value = { ...runtimeDraft.value };
     notice.value = `${setting.key} was updated and reloaded.`;
-  } catch {
-    error.value = `${setting.key} could not be updated.`;
+  } catch (caught) {
+    error.value = controlErrorMessage(caught, `${setting.key} could not be updated.`);
   } finally {
     activeOperation.value = null;
   }
@@ -221,7 +246,8 @@ function parseDraft(value: string, setting: RuntimeSetting): unknown {
           <label :for="`runtime-${setting.key}`"
             ><strong>{{ setting.key }}</strong
             ><small
-              >Default: {{ formatDraft(setting.default_value) }} ·
+              >Default: {{ formatDraft(setting.default_value) }} · Previous:
+              {{ formatDraft(setting.previous_value) }} ·
               {{ setting.version === null ? "environment" : `v${setting.version}` }}</small
             ></label
           >
@@ -240,6 +266,30 @@ function parseDraft(value: string, setting: RuntimeSetting): unknown {
             @click="saveRuntimeSetting(setting)"
             >Save</UButton
           >
+        </article>
+      </div>
+    </section>
+
+    <section v-if="catalog" class="management-panel" aria-labelledby="approved-models-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Approved selections</p>
+          <h2 id="approved-models-title">Model and reasoning allowlists</h2>
+        </div>
+        <span>Validated before provider calls</span>
+      </div>
+      <div class="settings-columns">
+        <article>
+          <h3>Chat models</h3>
+          <p>{{ catalog.chat_models.join(" · ") || "No approved chat models" }}</p>
+        </article>
+        <article>
+          <h3>Embedding models</h3>
+          <p>{{ catalog.embedding_models.join(" · ") || "No approved embedding models" }}</p>
+        </article>
+        <article>
+          <h3>Reasoning efforts</h3>
+          <p>{{ catalog.reasoning_levels.join(" · ") || "No approved reasoning overrides" }}</p>
         </article>
       </div>
     </section>

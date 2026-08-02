@@ -23,8 +23,8 @@ PZP AI is a Telegram memory assistant that learns from live group conversations 
 - Useful answers: `/ask` retrieves durable memory, manual notes and recent learned context, then answers with source references when needed.
 - Portable storage: SQLite keeps operational state, Markdown keeps durable memory readable, and exports are available as Markdown or JSONL.
 - Provider choice and resilience: run deterministic fake AI for development, local embeddings when you want that tradeoff, or managed OpenAI-compatible profiles with encrypted multi-key sticky failover and a bot-admin health console.
-- Graphical administration: the Telegram-authenticated SSR control plane manages reloadless safe bot defaults, bootstrap/database bot owners, delegated chat admins, group enrollment, chat/topic policy and distinct pause, detach, leave and forget actions.
-- Bounded control APIs: the authenticated backend also exposes capability-aware Search/Ask, memory/review maintenance, cancellable Markdown/JSONL downloads, SQL-backed statistics, sanitized audit/usage pages and explicit diagnostics without triggering paid or local-model work during ordinary status loads; their Nuxt screens arrive in Plan 021 Phase 8.
+- Graphical administration: the Telegram-authenticated SSR control plane provides a live Dashboard plus Bot Settings, Providers, Chats, Query, Memory, Stats, Audit and Operations workspaces for reloadless safe defaults, encrypted multi-key credentials, scoped memory and source-backed inspection on desktop, mobile browsers and Telegram Mini Apps.
+- Bounded control APIs: the authenticated backend exposes capability-aware Search/Ask, memory/review maintenance, cancellable Markdown/JSONL downloads, SQL-backed statistics, sanitized audit/usage pages and explicit diagnostics without triggering paid or local-model work during ordinary status loads; paid provider and optional local-model download checks remain separately labeled manual actions.
 - Operationally ready: structured logs, audit events, runtime settings, database maintenance commands, Docker support and GitHub Actions CI are included.
 
 ## Quick Start

@@ -207,6 +207,9 @@ class Settings(BaseSettings):
 
     @property
     def control_plane_safe_config(self) -> dict[str, Any]:
+        master_keys_configured = bool(
+            self.control_plane_master_key_ids and self.control_plane_active_master_key_id
+        )
         return {
             "enabled": self.control_plane_enabled,
             "public_origin": self.control_plane_public_origin,
@@ -216,6 +219,11 @@ class Settings(BaseSettings):
             ),
             "master_key_ids": list(self.control_plane_master_key_ids),
             "active_master_key_id": self.control_plane_active_master_key_id,
+            "master_keys_configured": master_keys_configured,
+            "session_store": "database",
+            "provider_pools_enabled": self.control_plane_enabled and master_keys_configured,
+            "provider_pool_max_credentials": self.control_plane_max_credentials_per_profile,
+            "alert_worker_enabled": self.control_plane_enabled and self.runtime_mode == "webhook",
             "auth_max_age_seconds": self.control_plane_auth_max_age_seconds,
             "step_up_max_age_seconds": self.control_plane_step_up_max_age_seconds,
             "session_idle_seconds": self.control_plane_session_idle_seconds,

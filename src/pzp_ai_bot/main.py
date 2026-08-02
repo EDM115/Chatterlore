@@ -437,7 +437,7 @@ def sqlite_stats(path: Path) -> dict[str, int | str]:
 
 
 def provider_health_checks(settings: Settings) -> list[tuple[str, bool, str]]:
-    checks: list[tuple[str, bool, str]] = []
+    checks = control_plane_health_checks(settings)
     try:
         profiles = settings.provider_profiles
     except ValueError as exc:
@@ -489,6 +489,55 @@ def provider_health_checks(settings: Settings) -> list[tuple[str, bool, str]]:
             ("memory_dir", False, f"cannot write memory dir {settings.memory_dir}: {exc}")
         )
     return checks
+
+
+def control_plane_health_checks(settings: Settings) -> list[tuple[str, bool, str]]:
+    if not settings.control_plane_enabled:
+        return [("control_plane", True, "disabled")]
+    safe = settings.control_plane_safe_config
+    oidc_ready = bool(safe["oidc_client_configured"])
+    master_ready = bool(safe["master_keys_configured"])
+    session_ready = bool(settings.db_url.strip())
+    pools_ready = bool(safe["provider_pools_enabled"])
+    alert_enabled = bool(safe["alert_worker_enabled"])
+    return [
+        (
+            "control_plane",
+            bool(settings.control_plane_public_origin),
+            "enabled with a validated public origin",
+        ),
+        (
+            "control_plane_oidc",
+            oidc_ready,
+            "Telegram OIDC configured" if oidc_ready else "Telegram OIDC is incomplete",
+        ),
+        (
+            "control_plane_master_keys",
+            master_ready,
+            (
+                f"{len(settings.control_plane_master_key_ids)} key IDs configured; "
+                "active ID present"
+                if master_ready
+                else "master keyring is incomplete"
+            ),
+        ),
+        (
+            "control_plane_session_store",
+            session_ready,
+            "database-backed revocable sessions configured",
+        ),
+        (
+            "provider_pools",
+            pools_ready,
+            "database-managed pools; maximum "
+            f"{settings.control_plane_max_credentials_per_profile} credentials per profile",
+        ),
+        (
+            "alert_worker",
+            True,
+            "supervised in webhook mode" if alert_enabled else "inactive outside webhook mode",
+        ),
+    ]
 
 
 if __name__ == "__main__":

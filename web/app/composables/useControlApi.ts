@@ -3,6 +3,8 @@ type ControlApiMethod = "GET" | "POST" | "PATCH" | "DELETE";
 interface ControlApiOptions {
   method?: ControlApiMethod;
   body?: unknown;
+  signal?: AbortSignal;
+  timeout?: number;
 }
 
 export function useControlApi() {
@@ -16,13 +18,26 @@ export function useControlApi() {
     if (!["GET"].includes(method) && csrfToken.value) {
       headers["X-CSRF-Token"] = csrfToken.value;
     }
-    return await globalThis.$fetch<T>(`${config.public.controlApiBase}${path}`, {
-      ...(options.body === undefined ? {} : { body: options.body }),
-      credentials: "include",
-      headers,
-      method,
-      timeout: 5_000,
-    });
+    try {
+      return await globalThis.$fetch<T>(`${config.public.controlApiBase}${path}`, {
+        ...(options.body === undefined ? {} : { body: options.body }),
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+        credentials: "include",
+        headers,
+        method,
+        timeout: options.timeout ?? 5_000,
+      });
+    } catch (error) {
+      if (controlResponseStatus(error) === 401) {
+        useState("control-plane-session").value = null;
+        useState("control-plane-session-status").value = "anonymous";
+        csrfToken.value = null;
+        if (import.meta.client && !import.meta.dev && !import.meta.test) {
+          queueMicrotask(() => void navigateTo({ path: "/login", query: { expired: "1" } }));
+        }
+      }
+      throw error;
+    }
   }
 
   return {

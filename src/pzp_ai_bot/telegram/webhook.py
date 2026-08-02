@@ -92,8 +92,23 @@ def create_webhook_app(
             for task_name in (IDLE_SUMMARIZER_TASK_NAME, RUNTIME_SETTINGS_REFRESHER_TASK_NAME)
         }
         healthy = all(task_health.values())
+        safe_control_plane = context.settings.control_plane_safe_config
+        alert_handle = handles.get(ADMIN_ALERT_DELIVERY_TASK_NAME)
+        control_plane_health = {
+            "enabled": context.settings.control_plane_enabled,
+            "oidc_configured": bool(safe_control_plane["oidc_client_configured"]),
+            "master_keys_configured": bool(safe_control_plane["master_keys_configured"]),
+            "session_store": safe_control_plane["session_store"],
+            "provider_pools_enabled": bool(safe_control_plane["provider_pools_enabled"]),
+            "alert_worker": {
+                "configured": context.settings.control_plane_enabled,
+                "running": bool(alert_handle is not None and alert_handle.healthy),
+                "critical": False,
+            },
+        }
         return JSONResponse(
-            status_code=200 if healthy else 503, content={"ok": healthy, "tasks": task_health}
+            status_code=200 if healthy else 503,
+            content={"ok": healthy, "tasks": task_health, "control_plane": control_plane_health},
         )
 
     if context.settings.control_plane_enabled:

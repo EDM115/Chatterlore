@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { syncTelegramClosingConfirmation } from "../plugins/telegram.client";
+
 definePageMeta({ middleware: "auth" });
 
 useSeoMeta({ title: "Chats · PZP AI Control Plane" });
@@ -48,9 +50,11 @@ const scopeSettings = ref<ScopeSettings | null>(null);
 const threadId = ref("");
 const newChatAdminId = ref("");
 const settingsDraft = ref<Record<string, string>>({});
+const savedSettingsDraft = ref<Record<string, string>>({});
 const learningEnabled = ref(false);
 const allowAdmins = ref(false);
 const confirmations = ref<Record<number, string>>({});
+const statusFilter = ref<"all" | ManagedChat["status"]>("all");
 const activeOperation = ref<string | null>(null);
 const error = ref<string | null>(null);
 const notice = ref<string | null>(null);
@@ -58,6 +62,23 @@ const notice = ref<string | null>(null);
 const isBotAdmin = computed(() => controlSession.hasCapability("bot.admin"));
 const selectedChat = computed(
   () => chats.value.find((chat) => chat.chat_id === selectedChatId.value) ?? null,
+);
+const filteredChats = computed(() =>
+  statusFilter.value === "all"
+    ? chats.value
+    : chats.value.filter((chat) => chat.status === statusFilter.value),
+);
+const statusCounts = computed(() => ({
+  active: chats.value.filter((chat) => chat.status === "active").length,
+  paused: chats.value.filter((chat) => chat.status === "paused").length,
+  detached: chats.value.filter((chat) => chat.status === "detached").length,
+}));
+const dirty = computed(
+  () =>
+    newChatAdminId.value.trim() !== "" ||
+    threadId.value.trim() !== "" ||
+    JSON.stringify(settingsDraft.value) !== JSON.stringify(savedSettingsDraft.value) ||
+    Object.values(confirmations.value).some((value) => value.trim() !== ""),
 );
 const supportsRequestChat = computed(() => {
   if (!import.meta.client) return false;
@@ -68,6 +89,8 @@ const supportsRequestChat = computed(() => {
 });
 
 onMounted(refreshChats);
+watch(dirty, (value) => syncTelegramClosingConfirmation(window.Telegram?.WebApp, value));
+onBeforeUnmount(() => syncTelegramClosingConfirmation(window.Telegram?.WebApp, false));
 
 async function refreshChats() {
   error.value = null;
@@ -77,8 +100,8 @@ async function refreshChats() {
       selectedChatId.value = chats.value[0]?.chat_id ?? null;
     }
     await loadSelectedChat();
-  } catch {
-    error.value = "Managed chats could not be loaded.";
+  } catch (caught) {
+    error.value = controlErrorMessage(caught, "Managed chats could not be loaded.");
   }
 }
 
@@ -91,15 +114,23 @@ async function loadSelectedChat() {
   const query = threadId.value.trim()
     ? `?thread_id=${encodeURIComponent(threadId.value.trim())}`
     : "";
-  [chatAdmins.value, scopeSettings.value] = await Promise.all([
-    api.request<ChatAdmin[]>(`/chats/${selectedChatId.value}/admins`),
-    api.request<ScopeSettings>(`/chats/${selectedChatId.value}/settings${query}`),
-  ]);
-  settingsDraft.value = Object.fromEntries(
-    Object.entries(scopeSettings.value.overrides).map(([key, value]) => [key, formatDraft(value)]),
-  );
-  learningEnabled.value = scopeSettings.value.policy.learning_enabled;
-  allowAdmins.value = scopeSettings.value.policy.allow_admins;
+  try {
+    [chatAdmins.value, scopeSettings.value] = await Promise.all([
+      api.request<ChatAdmin[]>(`/chats/${selectedChatId.value}/admins`),
+      api.request<ScopeSettings>(`/chats/${selectedChatId.value}/settings${query}`),
+    ]);
+    settingsDraft.value = Object.fromEntries(
+      Object.entries(scopeSettings.value.overrides).map(([key, value]) => [
+        key,
+        formatDraft(value),
+      ]),
+    );
+    savedSettingsDraft.value = { ...settingsDraft.value };
+    learningEnabled.value = scopeSettings.value.policy.learning_enabled;
+    allowAdmins.value = scopeSettings.value.policy.allow_admins;
+  } catch (caught) {
+    error.value = controlErrorMessage(caught, "The selected chat scope could not be loaded.");
+  }
 }
 
 async function startEnrollment() {
@@ -130,8 +161,11 @@ async function startEnrollment() {
       return;
     }
     await pollEnrollment(pending);
-  } catch {
-    error.value = "Chat enrollment could not be started. Open the bot DM once, then retry.";
+  } catch (caught) {
+    error.value = controlErrorMessage(
+      caught,
+      "Chat enrollment could not be started. Open the bot DM once, then retry.",
+    );
   } finally {
     activeOperation.value = null;
   }
@@ -162,8 +196,11 @@ async function changeStatus(chat: ManagedChat, status: ManagedChat["status"]) {
     });
     replaceChat(updated);
     notice.value = `${chatLabel(updated)} is now ${updated.status}.`;
-  } catch {
-    error.value = "The chat lifecycle changed concurrently. Refresh before retrying.";
+  } catch (caught) {
+    error.value = controlErrorMessage(
+      caught,
+      "The chat lifecycle changed concurrently. Refresh before retrying.",
+    );
   } finally {
     activeOperation.value = null;
   }
@@ -188,8 +225,8 @@ async function runConfirmedAction(chat: ManagedChat, action: "leave" | "forget")
         ? `${chatLabel(chat)} was detached after the bot left.`
         : `${chatLabel(chat)} memory was forgotten and projections were reconciled.`;
     confirmations.value[chat.chat_id] = "";
-  } catch {
-    error.value = `The ${action} action could not be completed.`;
+  } catch (caught) {
+    error.value = controlErrorMessage(caught, `The ${action} action could not be completed.`);
   } finally {
     activeOperation.value = null;
   }
@@ -212,8 +249,11 @@ async function addChatAdmin() {
       created,
     ];
     newChatAdminId.value = "";
-  } catch {
-    error.value = "Telegram could not verify that account in this chat.";
+  } catch (caught) {
+    error.value = controlErrorMessage(
+      caught,
+      "Telegram could not verify that account in this chat.",
+    );
   }
 }
 
@@ -226,8 +266,8 @@ async function removeChatAdmin(admin: ChatAdmin) {
     chatAdmins.value = chatAdmins.value.filter(
       (candidate) => candidate.telegram_user_id !== admin.telegram_user_id,
     );
-  } catch {
-    error.value = "The delegated administrator could not be removed.";
+  } catch (caught) {
+    error.value = controlErrorMessage(caught, "The delegated administrator could not be removed.");
   }
 }
 
@@ -253,9 +293,16 @@ async function saveScopeSettings() {
         method: "PATCH",
       },
     );
+    settingsDraft.value = Object.fromEntries(
+      Object.entries(scopeSettings.value.overrides).map(([key, value]) => [
+        key,
+        formatDraft(value),
+      ]),
+    );
+    savedSettingsDraft.value = { ...settingsDraft.value };
     notice.value = `Settings for ${scopeSettings.value.scope} were applied.`;
-  } catch {
-    error.value = "The scoped settings could not be applied.";
+  } catch (caught) {
+    error.value = controlErrorMessage(caught, "The scoped settings could not be applied.");
   }
 }
 
@@ -336,14 +383,27 @@ function delay(milliseconds: number): Promise<void> {
           <p class="eyebrow">Lifecycle</p>
           <h2 id="managed-chats-title">Managed chats</h2>
         </div>
-        <span>{{ chats.length }} visible</span>
+        <span
+          >{{ statusCounts.active }} active · {{ statusCounts.paused }} paused ·
+          {{ statusCounts.detached }} detached</span
+        >
+      </div>
+      <div class="filter-bar compact-filter">
+        <label
+          >Status<select v-model="statusFilter" data-testid="chat-status-filter">
+            <option value="all">All states</option>
+            <option value="active">Active</option>
+            <option value="paused">Paused</option>
+            <option value="detached">Detached</option>
+          </select></label
+        >
       </div>
       <p v-if="!chats.length" class="empty-panel">
         No managed chats are visible to this Telegram account.
       </p>
       <div v-else class="management-list">
         <article
-          v-for="chat in chats"
+          v-for="chat in filteredChats"
           :key="chat.chat_id"
           class="management-card chat-card"
           :data-selected="selectedChatId === chat.chat_id"
@@ -461,9 +521,11 @@ function delay(milliseconds: number): Promise<void> {
         <form class="inline-form" @submit.prevent="loadSelectedChat">
           <label for="thread-id">Topic ID (optional)</label
           ><input id="thread-id" v-model="threadId" inputmode="numeric" /><UButton
-            type="submit"
+            data-testid="load-topic-scope"
+            type="button"
             color="neutral"
             variant="soft"
+            @click="loadSelectedChat"
             >Load scope</UButton
           >
         </form>
@@ -498,7 +560,10 @@ function delay(milliseconds: number): Promise<void> {
                       ? formatDraft(value)
                       : `Inherited: ${formatDraft(scopeSettings.inherited[String(key)])}`
                   "
-              /></label>
+                /><small
+                  >Inherited: {{ formatDraft(scopeSettings.inherited[String(key)]) }}</small
+                ></label
+              >
             </div>
           </article>
         </div>
