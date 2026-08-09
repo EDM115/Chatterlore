@@ -81,6 +81,7 @@ from pzp_ai_bot.memory.scope import Scope, parse_scope
 from pzp_ai_bot.memory.settings_profiles import (
     SAFE_RUNTIME_SETTING_TYPES,
     MemorySettingsService,
+    VersionedSettingsMutation,
     validate_scope_settings,
 )
 from pzp_ai_bot.memory.summary_service import (
@@ -262,6 +263,32 @@ class MemoryService:
         self, updates: dict[str, Any], *, updated_by: int | None = None
     ) -> list[RuntimeSettingPreview]:
         return await self._settings_profiles.set_runtime_settings(updates, updated_by=updated_by)
+
+    async def set_runtime_setting_versioned(
+        self, updates: dict[str, Any], *, expected_version: int, updated_by: int | None = None
+    ) -> VersionedSettingsMutation:
+        return await self._settings_profiles.set_runtime_setting_versioned(
+            updates, expected_version=expected_version, updated_by=updated_by
+        )
+
+    async def update_scope_configuration(
+        self,
+        scope: Scope,
+        settings_updates: dict[str, int | str | bool | None],
+        *,
+        learning_enabled: bool | None,
+        allow_admins: bool | None,
+        expected_version: int,
+        updated_by: int | None,
+    ) -> VersionedSettingsMutation:
+        return await self._settings_profiles.update_scope_configuration(
+            scope,
+            settings_updates,
+            learning_enabled=learning_enabled,
+            allow_admins=allow_admins,
+            expected_version=expected_version,
+            updated_by=updated_by,
+        )
 
     async def list_runtime_settings(self) -> list[RuntimeSettingPreview]:
         return await self._settings_profiles.list_runtime_settings()

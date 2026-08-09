@@ -19,7 +19,7 @@ const session = {
   chat_capabilities: {},
 };
 
-const runtime = { uptime_seconds: 3661, schema_revision: "0016", scheduler: [] };
+const runtime = { uptime_seconds: 3661, schema_revision: "0017", scheduler: [] };
 const storage = {
   database_bytes: 1048576,
   memory_bytes: 2048,
@@ -154,6 +154,41 @@ async function stubPhase8Api(page: Page): Promise<string[]> {
         ],
         elapsed_ms: 18,
       });
+    if (path === "/query/ask" && request.method() === "POST") {
+      expect(request.postDataJSON()).toMatchObject({
+        question: "Why preserve one public origin?",
+        scope: "all",
+        retrieval_provider_profile: "local",
+        embedding_model: "all-MiniLM-L6-v2",
+        chat_provider_profile: "primary",
+        chat_model: "gpt-5.6-terra",
+        reasoning_level: "high",
+      });
+      return fulfillJson(route, {
+        destination_scope: "all",
+        source_scopes: ["-1001"],
+        memory_profile: null,
+        selection: {
+          retrieval_provider_profile: "local",
+          embedding_model: "all-MiniLM-L6-v2",
+          chat_provider_profile: "primary",
+          chat_model: "gpt-5.6-terra",
+          reasoning_level: "high",
+        },
+        results: [
+          {
+            content: "Keep Caddy as the one public origin.",
+            score: 0.91,
+            source: "summary",
+            scope: "-1001",
+            source_message_ids: [42, 43],
+          },
+        ],
+        elapsed_ms: 32,
+        answer: "It keeps authentication cookies and backend routing on one trusted origin.",
+        insufficient_context: false,
+      });
+    }
     if (path === "/memory/items?scope=all&limit=25&cursor=0")
       return fulfillJson(route, {
         items: [
@@ -172,7 +207,39 @@ async function stubPhase8Api(page: Page): Promise<string[]> {
         has_more: false,
       });
     if (path === "/memory/reviews?scope=all&limit=25&cursor=0")
-      return fulfillJson(route, { items: [], next_cursor: null, has_more: false });
+      return fulfillJson(route, {
+        items: [
+          {
+            id: 12,
+            scope: "-1001:22",
+            kind: "summary",
+            content: "Approve this compacted decision.",
+            source_message_ids: [51],
+            created_at: "2026-08-01T12:00:00Z",
+          },
+          {
+            id: 13,
+            scope: "-1001:22",
+            kind: "summary",
+            content: "Reject this stale compacted decision.",
+            source_message_ids: [52],
+            created_at: "2026-08-01T12:01:00Z",
+          },
+        ],
+        next_cursor: null,
+        has_more: false,
+      });
+    if (path === "/memory/reviews/12/approve" && request.method() === "POST")
+      return fulfillJson(route, { review_id: 12, status: "approved", knowledge_item_id: 8 });
+    if (path === "/memory/reviews/13/reject" && request.method() === "POST")
+      return fulfillJson(route, { review_id: 13, status: "rejected", knowledge_item_id: null });
+    if (path === "/memory/export?scope=all&format=md")
+      return route.fulfill({
+        body: "# Phase 10 memory export\n",
+        contentType: "text/markdown; charset=utf-8",
+        headers: { "content-disposition": 'attachment; filename="memory-all.md"' },
+        status: 200,
+      });
     if (path === "/memory/items/7/sources" && request.method() === "POST")
       return fulfillJson(route, {
         item_id: 7,
@@ -227,6 +294,30 @@ async function stubPhase8Api(page: Page): Promise<string[]> {
           version: null,
         },
       ]);
+    if (path === "/operations/checks/db-integrity" && request.method() === "POST")
+      return fulfillJson(route, {
+        check: "db-integrity",
+        ok: true,
+        result: "ok",
+        details: {},
+        warning: null,
+        elapsed_ms: 2,
+      });
+    if (path === "/operations/checks/provider-profile" && request.method() === "POST") {
+      expect(request.postDataJSON()).toEqual({
+        profile_name: "primary",
+        mode: "chat",
+        allow_download: false,
+      });
+      return fulfillJson(route, {
+        check: "provider-profile",
+        ok: true,
+        result: "ready",
+        details: { profile_name: "primary", model: "gpt-5.6-terra" },
+        warning: "This explicit manual check may incur provider usage charges.",
+        elapsed_ms: 220,
+      });
+    }
 
     unexpected.push(`${request.method()} ${path}`);
     return fulfillJson(route, { detail: `Unexpected test request: ${path}` }, 500);
@@ -266,6 +357,15 @@ test("Query and Memory keep sources explicit across a real browser interaction",
   await expect(page.getByText("Keep Caddy as the one public origin.")).toBeVisible();
   await expect(page.getByText("Messages 42, 43")).toBeVisible();
 
+  await page.getByTestId("query-mode").selectOption("ask");
+  await page.getByTestId("retrieval-profile").selectOption("local");
+  await page.getByLabel("Reasoning effort").selectOption("high");
+  await page.getByTestId("query-input").fill("Why preserve one public origin?");
+  await page.getByTestId("run-query").click();
+  await expect(
+    page.getByText("It keeps authentication cookies and backend routing on one trusted origin."),
+  ).toBeVisible();
+
   await page.goto("/memory");
   await expect(page.getByText("Deploy behind one Caddy origin.")).toBeVisible();
   await expect(page.getByText("Raw source revealed only after the explicit click.")).toHaveCount(0);
@@ -273,8 +373,29 @@ test("Query and Memory keep sources explicit across a real browser interaction",
     "href",
     "/api/control/v1/memory/export?scope=all&format=md",
   );
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByTestId("export-md").click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe("memory-all.md");
   await page.getByTestId("raw-sources-7").click();
   await expect(page.getByText("Raw source revealed only after the explicit click.")).toBeVisible();
+  await page.getByTestId("approve-review-12").click();
+  await expect(page.getByText("Approve this compacted decision.")).toHaveCount(0);
+  await page.getByTestId("reject-review-13").click();
+  await expect(page.getByText("Reject this stale compacted decision.")).toHaveCount(0);
+  expect(unexpected).toEqual([]);
+});
+
+test("explicit operational checks stay separate from cached health", async ({ page }) => {
+  const unexpected = await stubPhase8Api(page);
+  await page.goto("/operations");
+  await expect(page.getByText("No provider call performed")).toBeVisible();
+
+  await page.getByTestId("check-db-integrity").click();
+  await expect(page.getByText("db-integrity · ok")).toBeVisible();
+  await page.getByTestId("check-provider-profile").click();
+  await expect(page.getByText("provider-profile · ready")).toBeVisible();
+  await expect(page.getByText("gpt-5.6-terra")).toBeVisible();
   expect(unexpected).toEqual([]);
 });
 

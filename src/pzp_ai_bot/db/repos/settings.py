@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, ClassVar
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pzp_ai_bot.db.models import (
@@ -123,18 +123,78 @@ class ScopeSettingsRepository:
                 message_thread_id=scope.thread_id,
                 updated_by=updated_by,
                 updated_at=utc_now(),
+                version=1,
             )
             self.session.add(row)
         else:
             row = rows[0]
             for duplicate in rows[1:]:
                 await self.session.delete(duplicate)
+            row.version += 1
         for key, value in updates.items():
             setattr(row, key, value)
         row.updated_by = updated_by
         row.updated_at = utc_now()
         await self.session.flush()
         return row
+
+    async def set_settings_versioned(
+        self,
+        scope: Scope,
+        updates: dict[str, int | str | bool | None],
+        updated_by: int | None,
+        *,
+        expected_version: int,
+    ) -> ScopeSettings | None:
+        unknown = set(updates) - self.SETTING_FIELDS
+        if unknown:
+            raise ValueError(f"unknown setting: {sorted(unknown)[0]}")
+        rows = await self._rows(scope)
+        if not rows:
+            if expected_version != 0:
+                return None
+            row = ScopeSettings(
+                chat_id=scope.chat_id,
+                message_thread_id=scope.thread_id,
+                updated_by=updated_by,
+                updated_at=utc_now(),
+                version=1,
+            )
+            for key, value in updates.items():
+                setattr(row, key, value)
+            self.session.add(row)
+            await self.session.flush()
+            return row
+        row = rows[0]
+        if row.version != expected_version:
+            return None
+        for duplicate in rows[1:]:
+            await self.session.delete(duplicate)
+        values: dict[str, Any] = {
+            **updates,
+            "updated_by": updated_by,
+            "updated_at": utc_now(),
+            "version": expected_version + 1,
+        }
+        result = await self.session.execute(
+            update(ScopeSettings)
+            .where(ScopeSettings.id == row.id, ScopeSettings.version == expected_version)
+            .values(**values)
+            .returning(ScopeSettings.id)
+            .execution_options(synchronize_session=False)
+        )
+        if result.scalar_one_or_none() is None:
+            return None
+        await self.session.refresh(row)
+        return row
+
+    async def current_version(self, scope: Scope) -> int:
+        stmt = select(ScopeSettings.version).where(
+            _nullable_eq(ScopeSettings.chat_id, scope.chat_id),
+            _nullable_eq(ScopeSettings.message_thread_id, scope.thread_id),
+        )
+        version = await self.session.scalar(stmt.order_by(ScopeSettings.id.asc()))
+        return int(version) if version is not None else 0
 
     async def effective(
         self, scope: Scope, defaults: EffectiveScopeSettings
@@ -318,6 +378,18 @@ class RuntimeSettingRepository:
         rows = list((await self.session.scalars(select(RuntimeSetting))).all())
         return {row.key: _setting_payload_value(row.value) for row in rows}
 
+    async def get(self, key: str) -> RuntimeSettingView | None:
+        row = await self.session.scalar(
+            select(RuntimeSetting).where(RuntimeSetting.key == key.strip().lower())
+        )
+        return runtime_setting_view(row) if row is not None else None
+
+    async def current_version(self, key: str) -> int:
+        version = await self.session.scalar(
+            select(RuntimeSetting.version).where(RuntimeSetting.key == key.strip().lower())
+        )
+        return int(version) if version is not None else 0
+
     async def set_value(
         self, *, key: str, value: Any, updated_by: int | None = None
     ) -> RuntimeSettingView:
@@ -343,6 +415,50 @@ class RuntimeSettingRepository:
             row.updated_by = updated_by
             row.updated_at = now
             row.version += 1
+        await self.session.flush()
+        return runtime_setting_view(row)
+
+    async def set_value_versioned(
+        self, *, key: str, value: Any, expected_version: int, updated_by: int | None = None
+    ) -> RuntimeSettingView | None:
+        clean_key = key.strip().lower()
+        row = await self.session.scalar(
+            select(RuntimeSetting).where(RuntimeSetting.key == clean_key)
+        )
+        payload = {"value": value}
+        now = utc_now()
+        if row is None:
+            if expected_version != 0:
+                return None
+            row = RuntimeSetting(
+                key=clean_key,
+                value=payload,
+                previous_value=None,
+                updated_by=updated_by,
+                updated_at=now,
+                version=1,
+            )
+            self.session.add(row)
+        else:
+            if row.version != expected_version:
+                return None
+            result = await self.session.execute(
+                update(RuntimeSetting)
+                .where(RuntimeSetting.id == row.id, RuntimeSetting.version == expected_version)
+                .values(
+                    previous_value=dict(row.value),
+                    value=payload,
+                    updated_by=updated_by,
+                    updated_at=now,
+                    version=expected_version + 1,
+                )
+                .returning(RuntimeSetting.id)
+                .execution_options(synchronize_session=False)
+            )
+            if result.scalar_one_or_none() is None:
+                return None
+            await self.session.refresh(row)
+            return runtime_setting_view(row)
         await self.session.flush()
         return runtime_setting_view(row)
 

@@ -17,7 +17,8 @@ def test_command_help_lists_registered_commands() -> None:
     help_text = command_help_text()
     command_names = {command.command for command in BOT_COMMANDS}
 
-    assert "help" in command_names
+    assert {"start", "help"} <= command_names
+    assert "/start" in help_text
     assert "/ask" in help_text
     assert "/memory_export" in help_text
     assert "/forget" in help_text

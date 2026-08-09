@@ -78,7 +78,7 @@ describe("Phase 8 dashboard and navigation", () => {
             memory_files: 3,
             memory_scan_truncated: false,
           },
-          runtime: { uptime_seconds: 3661, schema_revision: "0016", scheduler: [] },
+          runtime: { uptime_seconds: 3661, schema_revision: "0017", scheduler: [] },
           administration: {
             bot_admins: 2,
             delegated_chat_admins: 3,
@@ -115,7 +115,7 @@ describe("Phase 8 dashboard and navigation", () => {
           generated_at: "2026-08-02T12:00:00Z",
           checks: ["db-integrity", "provider-profile"],
           provider_calls_performed: false,
-          runtime: { uptime_seconds: 3661, schema_revision: "0016", scheduler: [] },
+          runtime: { uptime_seconds: 3661, schema_revision: "0017", scheduler: [] },
           storage: { database_bytes: 1048576, memory_bytes: 2048 },
           providers: { profiles: 3, credentials: { eligible: 2, total: 3 } },
           alerts: { states: { pending: 1, delivered: 8 } },

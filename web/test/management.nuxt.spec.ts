@@ -60,17 +60,21 @@ describe("Phase 6 management pages", () => {
         ];
       }
       if (input.endsWith("/bot-settings/runtime") && options?.method === "PATCH") {
-        return [
-          {
-            key: "retrieval_top_k",
-            value: 9,
-            default_value: 6,
-            previous_value: 6,
-            updated_by: 111,
-            updated_at: "2026-08-01T12:00:00Z",
-            version: 2,
-          },
-        ];
+        return {
+          items: [
+            {
+              key: "retrieval_top_k",
+              value: 9,
+              default_value: 6,
+              previous_value: 6,
+              updated_by: 111,
+              updated_at: "2026-08-01T12:00:00Z",
+              version: 1,
+            },
+          ],
+          version: 1,
+          audit_event_id: 12,
+        };
       }
       if (input.endsWith("/bot-settings/runtime")) {
         return [
@@ -101,7 +105,10 @@ describe("Phase 6 management pages", () => {
     await wrapper.get('[data-testid="save-runtime-retrieval_top_k"]').trigger("click");
     expect(request).toHaveBeenCalledWith(
       "/api/control/v1/bot-settings/runtime",
-      expect.objectContaining({ body: { updates: { retrieval_top_k: 9 } }, method: "PATCH" }),
+      expect.objectContaining({
+        body: { updates: { retrieval_top_k: 9 }, version: 0 },
+        method: "PATCH",
+      }),
     );
     expect(wrapper.text()).not.toContain("openai_api_key");
   });
@@ -144,7 +151,8 @@ describe("Phase 6 management pages", () => {
           error_code: null,
         };
       }
-      if (input.endsWith("/chats")) return [];
+      if (input.endsWith("/chats?limit=100"))
+        return { items: [], next_cursor: null, has_more: false };
       throw new Error(`Unexpected request: ${input}`);
     });
     vi.stubGlobal("$fetch", request);
@@ -183,7 +191,8 @@ describe("Phase 6 management pages", () => {
           error_code: null,
         };
       }
-      if (input.endsWith("/chats")) return [];
+      if (input.endsWith("/chats?limit=100"))
+        return { items: [], next_cursor: null, has_more: false };
       throw new Error(`Unexpected request: ${input}`);
     });
     vi.stubGlobal("$fetch", request);

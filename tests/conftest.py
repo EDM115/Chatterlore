@@ -35,4 +35,7 @@ def test_settings(tmp_path) -> Settings:
 @pytest.fixture
 async def context(test_settings: Settings) -> AsyncIterator[AppContext]:
     ctx = await build_context(test_settings)
-    yield ctx
+    try:
+        yield ctx
+    finally:
+        await ctx.session_factory.kw["bind"].dispose()

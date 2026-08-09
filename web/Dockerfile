@@ -1,14 +1,19 @@
+# syntax=docker/dockerfile:1
+
 FROM node:24.18.0-bookworm-slim AS dependencies
 
 ENV PNPM_HOME=/pnpm \
-    PATH=/pnpm:$PATH
+    PATH=/pnpm:$PATH \
+    NODE_OPTIONS=--max-old-space-size=640 \
+    pnpm_config_network_concurrency=1 \
+    pnpm_config_child_concurrency=1
 
 WORKDIR /app
 
 RUN corepack enable && corepack prepare pnpm@11.18.0 --activate
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-RUN pnpm install --frozen-lockfile
+RUN --mount=type=cache,id=pzp-ai-web-pnpm,target=/pnpm/store pnpm install --frozen-lockfile --prod
 
 FROM dependencies AS build
 

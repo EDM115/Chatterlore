@@ -506,6 +506,7 @@ async def feed(dispatcher: Dispatcher, bot: Bot, update_payload: dict[str, Any])
 
 def command_for(name: str) -> str:
     return {
+        "start": "/start",
         "ask": "/ask what happened",
         "memory_search": "/memory_search roadmap",
         "memory_export": "/memory_export md",

@@ -20,6 +20,7 @@ from pzp_ai_bot.db.repos.events import EventRepository
 from pzp_ai_bot.db.session import session_scope
 from pzp_ai_bot.memory.contracts import AIRequestOptions
 from pzp_ai_bot.memory.scope import Scope, parse_scope
+from pzp_ai_bot.memory.settings_profiles import SettingsVersionConflictError
 from pzp_ai_bot.memory.transfer import MemoryExportFormat
 
 from .auth.mini_app import MiniAppValidationError, validate_mini_app_init_data
@@ -59,6 +60,8 @@ from .schemas import (
     ControlPlaneUserResponse,
     DeleteMutationResponse,
     DevelopmentStepUpRequest,
+    ManagedChatMutationResponse,
+    ManagedChatPage,
     ManagedChatResponse,
     ManagedChatStatusRequest,
     MemoryItemPage,
@@ -94,7 +97,9 @@ from .schemas import (
     QuerySearchRequest,
     QuerySearchResponse,
     RuntimeSettingResponse,
+    RuntimeSettingsMutationResponse,
     RuntimeSettingsUpdateRequest,
+    ScopeSettingsMutationResponse,
     ScopeSettingsResponse,
     ScopeSettingsUpdateRequest,
     StatsOverviewResponse,
@@ -492,6 +497,7 @@ def _build_auth_router(development_auth: DevelopmentAuthConfig | None = None) ->
         responses={
             401: {"model": ControlPlaneErrorEnvelope},
             403: {"model": ControlPlaneErrorEnvelope},
+            422: {"model": ControlPlaneErrorEnvelope},
             429: {"model": ControlPlaneErrorEnvelope},
         },
     )
@@ -588,6 +594,7 @@ def _build_auth_router(development_auth: DevelopmentAuthConfig | None = None) ->
         responses={
             401: {"model": ControlPlaneErrorEnvelope},
             403: {"model": ControlPlaneErrorEnvelope},
+            422: {"model": ControlPlaneErrorEnvelope},
             429: {"model": ControlPlaneErrorEnvelope},
         },
     )
@@ -1070,23 +1077,31 @@ def _build_management_router() -> APIRouter:
 
     @router.patch(
         "/bot-settings/runtime",
-        response_model=list[RuntimeSettingResponse],
+        response_model=RuntimeSettingsMutationResponse,
         openapi_extra={"x-pzp-capability": "bot_admin"},
         responses=common_errors,
     )
     async def update_runtime_settings(
         request: Request, payload: RuntimeSettingsUpdateRequest
-    ) -> list[Any]:
+    ) -> dict[str, Any]:
         context, _, authenticated, _ = await _require_bot_admin(request)
         try:
-            await context.memory.set_runtime_settings(
-                payload.updates, updated_by=authenticated.identity.telegram_user_id
+            mutation = await context.memory.set_runtime_setting_versioned(
+                payload.updates,
+                expected_version=payload.version,
+                updated_by=authenticated.identity.telegram_user_id,
             )
+        except SettingsVersionConflictError as exc:
+            _raise_settings_conflict(exc)
         except ValueError as exc:
             raise ControlPlaneAPIError(
                 422, "runtime_settings_invalid", "The runtime settings update is invalid."
             ) from exc
-        return await context.memory.list_runtime_settings()
+        return {
+            "items": await context.memory.list_runtime_settings(),
+            "version": mutation.version,
+            "audit_event_id": mutation.audit_event_id,
+        }
 
     @router.post(
         "/chats/enrollment-requests",
@@ -1123,15 +1138,21 @@ def _build_management_router() -> APIRouter:
 
     @router.get(
         "/chats",
-        response_model=list[ManagedChatResponse],
+        response_model=ManagedChatPage,
         openapi_extra={"x-pzp-capability": "authenticated_admin"},
         responses=common_errors,
     )
-    async def list_managed_chats(request: Request) -> list[Any]:
+    async def list_managed_chats(
+        request: Request,
+        cursor: int | None = Query(default=None, ge=1),
+        limit: int = Query(default=100, ge=1, le=100),
+    ) -> dict[str, Any]:
         _, runtime, authenticated, actor = await _require_authenticated(request)
-        chats = await runtime.management.list_managed_chats()
+        chats, next_cursor, has_more = await runtime.management.list_managed_chats_page(
+            limit=limit, before_id=cursor
+        )
         if actor.is_bot_admin:
-            return chats
+            return {"items": chats, "next_cursor": next_cursor, "has_more": has_more}
         bot = getattr(request.app.state, "telegram_bot", None)
         visible: list[Any] = []
         for chat in chats:
@@ -1142,11 +1163,11 @@ def _build_management_router() -> APIRouter:
             )
             if CAPABILITY_CHAT_ADMIN in resolved.capabilities_for_chat(chat.chat_id):
                 visible.append(chat)
-        return visible
+        return {"items": visible, "next_cursor": next_cursor, "has_more": has_more}
 
     @router.patch(
         "/chats/{chat_id}/status",
-        response_model=ManagedChatResponse,
+        response_model=ManagedChatMutationResponse,
         openapi_extra={"x-pzp-capability": "chat_admin"},
         responses=common_errors,
     )
@@ -1155,12 +1176,13 @@ def _build_management_router() -> APIRouter:
     ) -> Any:
         _, runtime, authenticated, _ = await _require_chat_admin(request, chat_id)
         try:
-            return await runtime.management.set_chat_status(
+            managed = await runtime.management.set_chat_status(
                 chat_id=chat_id,
                 status=payload.status,
                 expected_version=payload.version,
                 actor_user_id=authenticated.identity.telegram_user_id,
             )
+            return _managed_chat_mutation_payload(managed)
         except ControlPlaneManagementError as exc:
             _raise_management_error(exc)
 
@@ -1292,7 +1314,7 @@ def _build_management_router() -> APIRouter:
 
     @router.patch(
         "/chats/{chat_id}/settings",
-        response_model=ScopeSettingsResponse,
+        response_model=ScopeSettingsMutationResponse,
         openapi_extra={"x-pzp-capability": "chat_admin"},
         responses=common_errors,
     )
@@ -1313,25 +1335,23 @@ def _build_management_router() -> APIRouter:
             )
         scope = Scope(chat_id, thread_id)
         try:
-            if payload.settings:
-                await context.memory.set_scope_settings(
-                    scope, payload.settings, updated_by=authenticated.identity.telegram_user_id
-                )
-            if payload.learning_enabled is not None:
-                await context.memory.set_learning(
-                    scope,
-                    payload.learning_enabled,
-                    updated_by=authenticated.identity.telegram_user_id,
-                )
-            if payload.allow_admins is not None:
-                await context.memory.set_allow_admins(
-                    scope, payload.allow_admins, updated_by=authenticated.identity.telegram_user_id
-                )
+            mutation = await context.memory.update_scope_configuration(
+                scope,
+                payload.settings,
+                learning_enabled=payload.learning_enabled,
+                allow_admins=payload.allow_admins,
+                expected_version=payload.version,
+                updated_by=authenticated.identity.telegram_user_id,
+            )
+        except SettingsVersionConflictError as exc:
+            _raise_settings_conflict(exc)
         except ValueError as exc:
             raise ControlPlaneAPIError(
                 422, "scope_settings_invalid", "The scope settings update is invalid."
             ) from exc
-        return await _scope_settings_payload(context, runtime, scope)
+        response = await _scope_settings_payload(context, runtime, scope)
+        response["audit_event_id"] = mutation.audit_event_id
+        return response
 
     return router
 
@@ -1343,6 +1363,7 @@ def _build_query_router() -> APIRouter:
         403: {"model": ControlPlaneErrorEnvelope},
         404: {"model": ControlPlaneErrorEnvelope},
         422: {"model": ControlPlaneErrorEnvelope},
+        429: {"model": ControlPlaneErrorEnvelope},
     }
 
     @router.get(
@@ -1413,6 +1434,7 @@ def _build_memory_router() -> APIRouter:
         403: {"model": ControlPlaneErrorEnvelope},
         404: {"model": ControlPlaneErrorEnvelope},
         422: {"model": ControlPlaneErrorEnvelope},
+        429: {"model": ControlPlaneErrorEnvelope},
     }
 
     @router.get(
@@ -2048,6 +2070,15 @@ def _raise_management_error(exc: ControlPlaneManagementError) -> Never:
     raise ControlPlaneAPIError(422, exc.code, str(exc)) from exc
 
 
+def _raise_settings_conflict(exc: SettingsVersionConflictError) -> Never:
+    raise ControlPlaneAPIError(
+        409,
+        "version_conflict",
+        "The settings resource changed concurrently.",
+        current={"version": exc.current_version},
+    ) from exc
+
+
 def _telegram_bot(request: Request) -> Any:
     bot = getattr(request.app.state, "telegram_bot", None)
     if bot is None:
@@ -2073,6 +2104,21 @@ async def _scope_settings_payload(
             "learning_enabled": bool(policy["learning_enabled"]),
             "allow_admins": bool(policy["allow_admins"]),
         },
+        "version": settings.version,
+    }
+
+
+def _managed_chat_mutation_payload(managed: Any) -> dict[str, Any]:
+    if managed.audit_event_id is None:
+        raise RuntimeError("managed chat mutation did not produce an audit event")
+    return {
+        "chat_id": managed.chat_id,
+        "title": managed.title,
+        "username": managed.username,
+        "status": managed.status,
+        "version": managed.version,
+        "updated_at": managed.updated_at,
+        "audit_event_id": managed.audit_event_id,
     }
 
 

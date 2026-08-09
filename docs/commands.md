@@ -4,6 +4,7 @@ This page is the command reference for Telegram admins, configured bot admins an
 
 ## Conversation And Retrieval
 
+- `/start`: show the welcome and command-help entry point in a bot DM or chat.
 - `/ask [profile=name] [provider=name] [system=name] [model=name] [reasoning=low|medium|high] [prompt="one-shot system prompt"] <question>`: answer from current chat/topic memory by default and include compact source references when the model output does not already cite them. `profile=name` expands retrieval through explicitly permissioned, learning-enabled memory profiles. `provider`, `model`, `reasoning`, `system` and `prompt` are admin-only one-shot AI overrides.
 - `/memory_search [profile=name] [provider=name] [embedding_model=name] <query>`: show top retrieved memory snippets, optionally using a permissioned cross-chat profile and admin-selected query embedding provider/model.
 - `/summarize_now [template=name] [provider=name] [model=name] [reasoning=low|medium|high] [prompt="one-shot instruction"]`: summarize pending learned messages for this scope with the general template, a named template or an admin-only one-shot summary instruction.

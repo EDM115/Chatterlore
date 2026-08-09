@@ -84,9 +84,7 @@ class ManagementBotDouble:
         return True
 
 
-def test_revision_0016_normalizes_detached_status_and_adds_enrollment_requests(
-    tmp_path: Path,
-) -> None:
+def test_revisions_0016_and_0017_normalize_chats_and_version_scope_settings(tmp_path: Path) -> None:
     settings = control_plane_settings(tmp_path)
     upgrade_schema(settings, "0015_admin_alert_outbox")
     assert settings.sqlite_path is not None
@@ -102,6 +100,14 @@ def test_revision_0016_normalizes_detached_status_and_adds_enrollment_requests(
             """,
             (-1001, "Detached legacy chat", 111, timestamp, 111, timestamp, timestamp),
         )
+        connection.execute(
+            """
+            insert into scope_settings (
+                chat_id, message_thread_id, updated_by, updated_at
+            ) values (?, null, ?, ?)
+            """,
+            (-1001, 111, timestamp),
+        )
         connection.commit()
 
     upgrade_schema(settings)
@@ -110,6 +116,9 @@ def test_revision_0016_normalizes_detached_status_and_adds_enrollment_requests(
         revision = connection.execute("select version_num from alembic_version").fetchone()
         status = connection.execute(
             "select status from managed_chats where chat_id = -1001"
+        ).fetchone()
+        scope_version = connection.execute(
+            "select version from scope_settings where chat_id = -1001"
         ).fetchone()
         tables = {
             row[0]
@@ -124,8 +133,9 @@ def test_revision_0016_normalizes_detached_status_and_adds_enrollment_requests(
             ).fetchall()
         }
 
-    assert revision == ("0016_managed_chat_enrollment_requests",)
+    assert revision == ("0017_scope_settings_versions",)
     assert status == ("detached",)
+    assert scope_version == (1,)
     assert "managed_chat_enrollment_requests" in tables
     assert {
         "uq_managed_chat_enrollment_requests_request_id",

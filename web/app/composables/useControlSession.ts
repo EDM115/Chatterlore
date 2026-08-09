@@ -101,7 +101,7 @@ export function useControlSession() {
     if (import.meta.server) return false;
     if (bootstrapped.value) return status.value === "authenticated";
     bootstrapped.value = true;
-    const initData = import.meta.client ? window.Telegram?.WebApp.initData.trim() : "";
+    const initData = import.meta.client ? await waitForTelegramInitData() : "";
     if (initData) return await exchangeMiniApp(initData);
     const restored = await refresh();
     if (restored || status.value !== "anonymous") return restored;
@@ -110,7 +110,7 @@ export function useControlSession() {
   }
 
   async function ensureStepUp(action: string, returnTo = "/"): Promise<boolean> {
-    const initData = import.meta.client ? window.Telegram?.WebApp.initData.trim() : "";
+    const initData = import.meta.client ? readTelegramInitData() : "";
     try {
       let verified: StepUpResponse;
       if (session.value?.client_kind === "mini_app" && initData) {

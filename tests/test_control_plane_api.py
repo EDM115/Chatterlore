@@ -659,19 +659,33 @@ def test_phase6_bot_admin_runtime_settings_and_session_invalidation_api(tmp_path
         runtime = client.get("/api/control/v1/bot-settings/runtime")
         assert runtime.status_code == 200
         assert all(item["key"] != "openai_api_key" for item in runtime.json())
+        current_runtime = next(item for item in runtime.json() if item["key"] == "retrieval_top_k")
+        assert current_runtime["version"] is None
         changed = client.patch(
             "/api/control/v1/bot-settings/runtime",
             headers=headers,
-            json={"updates": {"retrieval_top_k": 11}},
+            json={"updates": {"retrieval_top_k": 11}, "version": 0},
         )
         assert changed.status_code == 200
+        assert changed.json()["version"] == 1
+        assert changed.json()["audit_event_id"] > 0
         assert (
-            next(item for item in changed.json() if item["key"] == "retrieval_top_k")["value"] == 11
+            next(item for item in changed.json()["items"] if item["key"] == "retrieval_top_k")[
+                "value"
+            ]
+            == 11
         )
+        stale = client.patch(
+            "/api/control/v1/bot-settings/runtime",
+            headers=headers,
+            json={"updates": {"retrieval_top_k": 12}, "version": 0},
+        )
+        assert stale.status_code == 409
+        assert stale.json()["current"] == {"version": 1}
         unsafe = client.patch(
             "/api/control/v1/bot-settings/runtime",
             headers=headers,
-            json={"updates": {"openai_api_key": "never"}},
+            json={"updates": {"openai_api_key": "never"}, "version": 0},
         )
         assert unsafe.status_code == 422
 
@@ -731,7 +745,9 @@ def test_phase6_managed_chat_admin_and_scope_settings_api_enforce_chat_boundarie
         headers = {"Origin": ORIGIN, "X-CSRF-Token": login.json()["csrf_token"]}
         chats = client.get("/api/control/v1/chats")
         assert chats.status_code == 200
-        assert chats.json()[0]["chat_id"] == -1001
+        assert chats.json()["items"][0]["chat_id"] == -1001
+        assert chats.json()["next_cursor"] is None
+        assert chats.json()["has_more"] is False
         delegated = client.post(
             "/api/control/v1/chats/-1001/admins", headers=headers, json={"telegram_user_id": 333}
         )
@@ -744,11 +760,21 @@ def test_phase6_managed_chat_admin_and_scope_settings_api_enforce_chat_boundarie
                 "settings": {"retrieval_top_k": 4, "reasoning_level": "high"},
                 "learning_enabled": True,
                 "allow_admins": True,
+                "version": 0,
             },
         )
         assert settings.status_code == 200
         assert settings.json()["effective"]["retrieval_top_k"] == 4
         assert settings.json()["overrides"]["reasoning_level"] == "high"
+        assert settings.json()["version"] == 1
+        assert settings.json()["audit_event_id"] > 0
+        stale_settings = client.patch(
+            "/api/control/v1/chats/-1001/settings?thread_id=7",
+            headers=headers,
+            json={"settings": {"retrieval_top_k": 5}, "version": 0},
+        )
+        assert stale_settings.status_code == 409
+        assert stale_settings.json()["current"] == {"version": 1}
         paused = client.patch(
             "/api/control/v1/chats/-1001/status",
             headers=headers,
@@ -756,6 +782,7 @@ def test_phase6_managed_chat_admin_and_scope_settings_api_enforce_chat_boundarie
         )
         assert paused.status_code == 200
         assert paused.json()["status"] == "paused"
+        assert paused.json()["audit_event_id"] > 0
         stale = client.patch(
             "/api/control/v1/chats/-1001/status",
             headers=headers,
@@ -824,7 +851,64 @@ def test_phase6_managed_chat_admin_and_scope_settings_api_enforce_chat_boundarie
         )
         assert delegated_login.status_code == 200
         assert delegated_login.json()["chat_capabilities"] == {}
-        assert client.get("/api/control/v1/chats").json() == []
+        assert client.get("/api/control/v1/chats").json()["items"] == []
+
+
+def test_phase6_managed_chat_list_uses_bounded_cursor_pages(tmp_path: Path) -> None:
+    context, app = build_test_app(tmp_path)
+
+    async def seed() -> None:
+        assert context.control_plane is not None
+        for chat_id in (-1001, -1002, -1003):
+            await context.control_plane.management.enroll_chat(
+                chat_id=chat_id, title=f"Chat {chat_id}", username=None, actor_user_id=111, now=NOW
+            )
+
+    asyncio.run(seed())
+
+    with TestClient(app, base_url=ORIGIN) as client:
+        login = client.post(
+            "/api/control/v1/auth/mini-app",
+            headers={"Origin": ORIGIN},
+            json={"init_data": signed_init_data(111)},
+        )
+        assert login.status_code == 200
+        first = client.get("/api/control/v1/chats?limit=2")
+        assert first.status_code == 200
+        assert [item["chat_id"] for item in first.json()["items"]] == [-1003, -1002]
+        assert first.json()["has_more"] is True
+        assert isinstance(first.json()["next_cursor"], int)
+
+        second = client.get(f"/api/control/v1/chats?limit=2&cursor={first.json()['next_cursor']}")
+        assert second.status_code == 200
+        assert [item["chat_id"] for item in second.json()["items"]] == [-1001]
+        assert second.json()["next_cursor"] is None
+        assert second.json()["has_more"] is False
+
+
+def test_phase6_mini_app_validation_errors_use_the_safe_envelope(tmp_path: Path) -> None:
+    _context, app = build_test_app(tmp_path)
+
+    with TestClient(app, base_url=ORIGIN) as client:
+        invalid_login = client.post(
+            "/api/control/v1/auth/mini-app", headers={"Origin": ORIGIN}, json={}
+        )
+        assert invalid_login.status_code == 422
+        assert invalid_login.json()["error"]["code"] == "validation_failed"
+        assert "init_data" in invalid_login.json()["error"]["field_errors"]
+
+        login = client.post(
+            "/api/control/v1/auth/mini-app",
+            headers={"Origin": ORIGIN},
+            json={"init_data": signed_init_data(111)},
+        )
+        headers = {"Origin": ORIGIN, "X-CSRF-Token": login.json()["csrf_token"]}
+        invalid_step_up = client.post(
+            "/api/control/v1/auth/step-up/mini-app", headers=headers, json={}
+        )
+        assert invalid_step_up.status_code == 422
+        assert invalid_step_up.json()["error"]["code"] == "validation_failed"
+        assert "init_data" in invalid_step_up.json()["error"]["field_errors"]
 
 
 async def _seed_phase6_scoped_authorization_matrix(context: AppContext) -> None:
@@ -885,7 +969,7 @@ def test_phase6_scoped_authorization_matrix_matches_browser_and_mini_app_session
             headers = {"Origin": ORIGIN, "X-CSRF-Token": csrf}
 
             visible_chat_ids = {
-                item["chat_id"] for item in client.get("/api/control/v1/chats").json()
+                item["chat_id"] for item in client.get("/api/control/v1/chats").json()["items"]
             }
             assert visible_chat_ids == {-1001, -1003}
             assert (
@@ -913,7 +997,7 @@ def test_phase6_scoped_authorization_matrix_matches_browser_and_mini_app_session
             )
             assert detached.status_code == 200
             assert client.get("/api/control/v1/chats/-1003/settings").status_code == 403
-            assert client.get("/api/control/v1/chats").json() == []
+            assert client.get("/api/control/v1/chats").json()["items"] == []
 
 
 async def _grant_bot_admin(context, user_id: int) -> None:

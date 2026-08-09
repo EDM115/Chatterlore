@@ -69,6 +69,7 @@ EXPECTED_MEMORY_SERVICE_METHODS = {
     "set_learning",
     "set_memory_profile",
     "set_runtime_settings",
+    "set_runtime_setting_versioned",
     "set_scope_metadata",
     "set_scope_access_filter",
     "set_scope_settings",
@@ -81,6 +82,7 @@ EXPECTED_MEMORY_SERVICE_METHODS = {
     "summarize_idle",
     "summarize_now",
     "summarize_range",
+    "update_scope_configuration",
 }
 
 EXPECTED_REPOSITORY_EXPORTS = {

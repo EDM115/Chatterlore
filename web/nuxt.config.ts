@@ -1,3 +1,5 @@
+import { TELEGRAM_WEB_APP_SCRIPT } from "./telegram";
+
 const apiDevelopmentOrigin = process.env.PZP_API_DEV_ORIGIN ?? "http://127.0.0.1:8000";
 const developmentProxyTarget = (pathname: string) =>
   new URL(pathname, apiDevelopmentOrigin).toString();
@@ -20,6 +22,7 @@ export default defineNuxtConfig({
         { name: "color-scheme", content: "dark light" },
         { name: "theme-color", content: "#08131f" },
       ],
+      script: [{ src: TELEGRAM_WEB_APP_SCRIPT, defer: true }],
     },
   },
   runtimeConfig: {

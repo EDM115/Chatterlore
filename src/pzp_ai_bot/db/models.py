@@ -193,6 +193,7 @@ class ScopeSettings(Base):
     review_before_compact: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     updated_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
 
 class MemoryReviewItem(Base):

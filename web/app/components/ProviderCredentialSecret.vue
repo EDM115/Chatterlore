@@ -36,6 +36,11 @@ async function copy() {
     error.value = controlErrorMessage(caught, "The credential could not be copied.");
   }
 }
+
+function mask() {
+  error.value = null;
+  sensitive.clear();
+}
 </script>
 
 <template>
@@ -50,7 +55,10 @@ async function copy() {
     >
       Reveal
     </button>
-    <button v-else data-testid="copy-secret" type="button" @click="copy">Copy</button>
+    <template v-else>
+      <button data-testid="copy-secret" type="button" @click="copy">Copy</button>
+      <button data-testid="mask-secret" type="button" @click="mask">Mask</button>
+    </template>
     <p v-if="error" role="alert">{{ error }}</p>
   </div>
 </template>

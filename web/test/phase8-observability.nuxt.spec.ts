@@ -45,7 +45,7 @@ const overview = {
   },
   runtime: {
     uptime_seconds: 3661,
-    schema_revision: "0016",
+    schema_revision: "0017",
     scheduler: [
       {
         name: "pzp-idle-summarizer",
@@ -112,7 +112,7 @@ describe("Phase 8 observability and operations", () => {
     expect(wrapper.text()).toContain("2026-08-01");
     expect(wrapper.text()).toContain("4 active");
     expect(wrapper.text()).toContain("1 paused");
-    expect(wrapper.text()).toContain("Schema 0016");
+    expect(wrapper.text()).toContain("Schema 0017");
   });
 
   it("presents bounded safe audit and AI-usage records with scoped filters", async () => {

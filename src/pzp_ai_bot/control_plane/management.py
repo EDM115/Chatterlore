@@ -65,6 +65,7 @@ class ManagedChatView:
     status: str
     version: int
     updated_at: datetime
+    audit_event_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,6 +85,7 @@ class ScopeSettingsView:
     effective: dict[str, Any]
     inherited: dict[str, Any]
     overrides: dict[str, Any]
+    version: int
 
 
 class ControlPlaneManagementService:
@@ -314,6 +316,18 @@ class ControlPlaneManagementService:
             rows = await ControlPlaneAccessRepository(session).list_managed_chats()
         return [_managed_chat_view(row) for row in rows]
 
+    async def list_managed_chats_page(
+        self, *, limit: int, before_id: int | None = None
+    ) -> tuple[list[ManagedChatView], int | None, bool]:
+        async with session_scope(self.session_factory) as session:
+            rows = await ControlPlaneAccessRepository(session).list_managed_chats_page(
+                limit=limit + 1, before_id=before_id
+            )
+        has_more = len(rows) > limit
+        page = rows[:limit]
+        next_cursor = page[-1].id if has_more and page else None
+        return [_managed_chat_view(row) for row in page], next_cursor, has_more
+
     async def get_managed_chat(self, chat_id: int) -> ManagedChatView:
         async with session_scope(self.session_factory) as session:
             row = await ControlPlaneAccessRepository(session).get_managed_chat(chat_id)
@@ -353,14 +367,14 @@ class ControlPlaneManagementService:
             managed.paused_at = current if status == "paused" else None
             managed.removed_at = current if status == "detached" else None
             managed.version += 1
-            await EventRepository(session).add(
+            event = await EventRepository(session).add(
                 event_type="control_plane.managed_chat.status_changed",
                 scope=Scope(chat_id, None),
                 user_id=actor_user_id,
                 payload={"before": before, "after": status, "version": managed.version},
             )
             await session.flush()
-            view = _managed_chat_view(managed)
+            view = _managed_chat_view(managed, audit_event_id=event.id)
         self.admins.set_managed_chat_active(chat_id, status == "active")
         return view
 
@@ -579,7 +593,9 @@ class ControlPlaneManagementService:
             else:
                 inherited_values = defaults.as_dict()
         inherited = {key: value for key, value in inherited_values.items() if key not in overrides}
-        return ScopeSettingsView(scope.key, effective, inherited, overrides)
+        return ScopeSettingsView(
+            scope.key, effective, inherited, overrides, exact.version if exact is not None else 0
+        )
 
 
 def _bot_admin_view(grant: BotAdminGrant) -> BotAdminView:
@@ -603,7 +619,7 @@ def _chat_admin_view(grant: ChatAdminGrant) -> ChatAdminView:
     )
 
 
-def _managed_chat_view(row: ManagedChat) -> ManagedChatView:
+def _managed_chat_view(row: ManagedChat, *, audit_event_id: int | None = None) -> ManagedChatView:
     return ManagedChatView(
         chat_id=row.chat_id,
         title=row.title,
@@ -611,6 +627,7 @@ def _managed_chat_view(row: ManagedChat) -> ManagedChatView:
         status=row.status,
         version=row.version,
         updated_at=_as_aware(row.updated_at),
+        audit_event_id=audit_event_id,
     )
 
 
