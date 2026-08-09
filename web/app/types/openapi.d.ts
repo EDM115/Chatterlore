@@ -1078,6 +1078,35 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** ManagedChatMutationResponse */
+        ManagedChatMutationResponse: {
+            /** Audit Event Id */
+            audit_event_id: number;
+            /** Chat Id */
+            chat_id: number;
+            /** Status */
+            status: string;
+            /** Title */
+            title: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Username */
+            username: string | null;
+            /** Version */
+            version: number;
+        };
+        /** ManagedChatPage */
+        ManagedChatPage: {
+            /** Has More */
+            has_more: boolean;
+            /** Items */
+            items: components["schemas"]["ManagedChatResponse"][];
+            /** Next Cursor */
+            next_cursor: number | null;
+        };
         /** ManagedChatResponse */
         ManagedChatResponse: {
             /** Chat Id */
@@ -1804,12 +1833,23 @@ export interface components {
             /** Version */
             version: number | null;
         };
+        /** RuntimeSettingsMutationResponse */
+        RuntimeSettingsMutationResponse: {
+            /** Audit Event Id */
+            audit_event_id: number;
+            /** Items */
+            items: components["schemas"]["RuntimeSettingResponse"][];
+            /** Version */
+            version: number;
+        };
         /** RuntimeSettingsUpdateRequest */
         RuntimeSettingsUpdateRequest: {
             /** Updates */
             updates: {
                 [key: string]: unknown;
             };
+            /** Version */
+            version: number;
         };
         /** SchedulerTaskResponse */
         SchedulerTaskResponse: {
@@ -1835,6 +1875,28 @@ export interface components {
             /** Learning Enabled */
             learning_enabled: boolean;
         };
+        /** ScopeSettingsMutationResponse */
+        ScopeSettingsMutationResponse: {
+            /** Audit Event Id */
+            audit_event_id: number;
+            /** Effective */
+            effective: {
+                [key: string]: unknown;
+            };
+            /** Inherited */
+            inherited: {
+                [key: string]: unknown;
+            };
+            /** Overrides */
+            overrides: {
+                [key: string]: unknown;
+            };
+            policy: components["schemas"]["ScopePolicyResponse"];
+            /** Scope */
+            scope: string;
+            /** Version */
+            version: number;
+        };
         /** ScopeSettingsResponse */
         ScopeSettingsResponse: {
             /** Effective */
@@ -1852,6 +1914,8 @@ export interface components {
             policy: components["schemas"]["ScopePolicyResponse"];
             /** Scope */
             scope: string;
+            /** Version */
+            version: number;
         };
         /** ScopeSettingsUpdateRequest */
         ScopeSettingsUpdateRequest: {
@@ -1863,6 +1927,8 @@ export interface components {
             settings?: {
                 [key: string]: number | string | boolean | null;
             };
+            /** Version */
+            version: number;
         };
         /** StatsAIUsageResponse */
         StatsAIUsageResponse: {
@@ -2317,13 +2383,13 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Entity */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
                 };
             };
             /** @description Too Many Requests */
@@ -2377,13 +2443,13 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Entity */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
                 };
             };
             /** @description Too Many Requests */
@@ -2686,7 +2752,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RuntimeSettingResponse"][];
+                    "application/json": components["schemas"]["RuntimeSettingsMutationResponse"];
                 };
             };
             /** @description Unauthorized */
@@ -2738,7 +2804,10 @@ export interface operations {
     };
     list_managed_chats_api_control_v1_chats_get: {
         parameters: {
-            query?: never;
+            query?: {
+                cursor?: number | null;
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2751,7 +2820,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ManagedChatResponse"][];
+                    "application/json": components["schemas"]["ManagedChatPage"];
                 };
             };
             /** @description Unauthorized */
@@ -3381,7 +3450,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ScopeSettingsResponse"];
+                    "application/json": components["schemas"]["ScopeSettingsMutationResponse"];
                 };
             };
             /** @description Unauthorized */
@@ -3452,7 +3521,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ManagedChatResponse"];
+                    "application/json": components["schemas"]["ManagedChatMutationResponse"];
                 };
             };
             /** @description Unauthorized */
@@ -3557,6 +3626,15 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
                 };
             };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
         };
     };
     list_memory_items_api_control_v1_memory_items_get: {
@@ -3611,6 +3689,15 @@ export interface operations {
             };
             /** @description Unprocessable Entity */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3676,6 +3763,15 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
                 };
             };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
         };
     };
     delete_memory_item_api_control_v1_memory_items__item_id__delete: {
@@ -3727,6 +3823,15 @@ export interface operations {
             };
             /** @description Unprocessable Entity */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3796,6 +3901,15 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
                 };
             };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
         };
     };
     get_memory_item_sources_api_control_v1_memory_items__item_id__sources_post: {
@@ -3847,6 +3961,15 @@ export interface operations {
             };
             /** @description Unprocessable Entity */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3914,6 +4037,15 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
                 };
             };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
         };
     };
     approve_memory_review_api_control_v1_memory_reviews__review_id__approve_post: {
@@ -3972,6 +4104,15 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
                 };
             };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
         };
     };
     reject_memory_review_api_control_v1_memory_reviews__review_id__reject_post: {
@@ -4023,6 +4164,15 @@ export interface operations {
             };
             /** @description Unprocessable Entity */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4968,6 +5118,15 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
                 };
             };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
         };
     };
     query_catalog_api_control_v1_query_catalog_get: {
@@ -5019,6 +5178,15 @@ export interface operations {
             };
             /** @description Unprocessable Entity */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5079,6 +5247,15 @@ export interface operations {
             };
             /** @description Unprocessable Entity */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

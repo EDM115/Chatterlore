@@ -93,6 +93,14 @@ describe("ProviderCredentialSecret", () => {
     await wrapper.get('[data-testid="copy-secret"]').trigger("click");
     expect(copy).toHaveBeenCalledWith("sk-sensitive-1234");
 
+    await wrapper.get('[data-testid="mask-secret"]').trigger("click");
+    expect(wrapper.text()).toContain("•••• •••• 1234");
+    expect(wrapper.text()).not.toContain("sk-sensitive-1234");
+
+    await wrapper.get('[data-testid="reveal-secret"]').trigger("click");
+    await flushPromises();
+    expect(wrapper.text()).toContain("sk-sensitive-1234");
+
     await vi.advanceTimersByTimeAsync(30_000);
     expect(wrapper.text()).toContain("•••• •••• 1234");
     expect(wrapper.text()).not.toContain("sk-sensitive-1234");

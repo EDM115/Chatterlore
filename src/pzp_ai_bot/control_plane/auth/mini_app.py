@@ -11,6 +11,7 @@ from .identity import TelegramIdentity
 
 MAX_INIT_DATA_BYTES = 16_384
 MAX_INIT_DATA_FIELDS = 64
+HEX_DIGITS = frozenset("0123456789abcdefABCDEF")
 
 
 class MiniAppValidationError(ValueError):
@@ -29,6 +30,7 @@ def validate_mini_app_init_data(
         raise MiniAppValidationError("Mini App init data has an invalid size")
     if not bot_token:
         raise MiniAppValidationError("Mini App validation is not configured")
+    _validate_percent_encoding(raw_init_data)
     try:
         pairs = parse_qsl(
             raw_init_data,
@@ -63,6 +65,18 @@ def validate_mini_app_init_data(
     if age_seconds > max_age_seconds:
         raise MiniAppValidationError("Mini App authentication data has expired")
     return _telegram_identity(fields.get("user"), authenticated_at=authenticated_at)
+
+
+def _validate_percent_encoding(raw: str) -> None:
+    for index, character in enumerate(raw):
+        if character != "%":
+            continue
+        if (
+            index + 2 >= len(raw)
+            or raw[index + 1] not in HEX_DIGITS
+            or raw[index + 2] not in HEX_DIGITS
+        ):
+            raise MiniAppValidationError("Mini App init data is malformed")
 
 
 def _auth_date(raw: str | None) -> datetime:

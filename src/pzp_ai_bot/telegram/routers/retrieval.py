@@ -81,7 +81,7 @@ def register_query_handlers(router: Router, context: AppContext, guards: RouterG
             return
         await safe_answer(message, format_results(results)[:3900])
 
-    @router.message(Command("help"))
+    @router.message(Command("start", "help"))
     async def help_command(message: Message) -> None:
         await safe_answer(message, command_help_text()[:3900])
 

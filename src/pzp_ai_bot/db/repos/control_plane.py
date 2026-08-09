@@ -452,6 +452,16 @@ class ControlPlaneAccessRepository:
             ).all()
         )
 
+    async def list_managed_chats_page(
+        self, *, limit: int, before_id: int | None = None
+    ) -> list[ManagedChat]:
+        if limit <= 0:
+            raise ValueError("managed chat page limit must be positive")
+        stmt = select(ManagedChat).order_by(ManagedChat.id.desc()).limit(limit)
+        if before_id is not None:
+            stmt = stmt.where(ManagedChat.id < before_id)
+        return list((await self.session.scalars(stmt)).all())
+
     async def add_enrollment_request(
         self,
         *,

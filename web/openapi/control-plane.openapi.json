@@ -899,6 +899,97 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "ManagedChatMutationResponse": {
+        "properties": {
+          "audit_event_id": {
+            "title": "Audit Event Id",
+            "type": "integer"
+          },
+          "chat_id": {
+            "title": "Chat Id",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "chat_id",
+          "title",
+          "username",
+          "status",
+          "version",
+          "updated_at",
+          "audit_event_id"
+        ],
+        "title": "ManagedChatMutationResponse",
+        "type": "object"
+      },
+      "ManagedChatPage": {
+        "properties": {
+          "has_more": {
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ManagedChatResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor",
+          "has_more"
+        ],
+        "title": "ManagedChatPage",
+        "type": "object"
+      },
       "ManagedChatResponse": {
         "properties": {
           "chat_id": {
@@ -3245,19 +3336,51 @@
         "title": "RuntimeSettingResponse",
         "type": "object"
       },
+      "RuntimeSettingsMutationResponse": {
+        "properties": {
+          "audit_event_id": {
+            "title": "Audit Event Id",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RuntimeSettingResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "version",
+          "audit_event_id"
+        ],
+        "title": "RuntimeSettingsMutationResponse",
+        "type": "object"
+      },
       "RuntimeSettingsUpdateRequest": {
         "additionalProperties": false,
         "properties": {
           "updates": {
             "additionalProperties": true,
-            "maxProperties": 50,
+            "maxProperties": 1,
             "minProperties": 1,
             "title": "Updates",
             "type": "object"
+          },
+          "version": {
+            "minimum": 0.0,
+            "title": "Version",
+            "type": "integer"
           }
         },
         "required": [
-          "updates"
+          "updates",
+          "version"
         ],
         "title": "RuntimeSettingsUpdateRequest",
         "type": "object"
@@ -3346,6 +3469,51 @@
         "title": "ScopePolicyResponse",
         "type": "object"
       },
+      "ScopeSettingsMutationResponse": {
+        "properties": {
+          "audit_event_id": {
+            "title": "Audit Event Id",
+            "type": "integer"
+          },
+          "effective": {
+            "additionalProperties": true,
+            "title": "Effective",
+            "type": "object"
+          },
+          "inherited": {
+            "additionalProperties": true,
+            "title": "Inherited",
+            "type": "object"
+          },
+          "overrides": {
+            "additionalProperties": true,
+            "title": "Overrides",
+            "type": "object"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/ScopePolicyResponse"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "scope",
+          "effective",
+          "inherited",
+          "overrides",
+          "policy",
+          "version",
+          "audit_event_id"
+        ],
+        "title": "ScopeSettingsMutationResponse",
+        "type": "object"
+      },
       "ScopeSettingsResponse": {
         "properties": {
           "effective": {
@@ -3369,6 +3537,10 @@
           "scope": {
             "title": "Scope",
             "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
           }
         },
         "required": [
@@ -3376,7 +3548,8 @@
           "effective",
           "inherited",
           "overrides",
-          "policy"
+          "policy",
+          "version"
         ],
         "title": "ScopeSettingsResponse",
         "type": "object"
@@ -3426,8 +3599,16 @@
             "maxProperties": 20,
             "title": "Settings",
             "type": "object"
+          },
+          "version": {
+            "minimum": 0.0,
+            "title": "Version",
+            "type": "integer"
           }
         },
+        "required": [
+          "version"
+        ],
         "title": "ScopeSettingsUpdateRequest",
         "type": "object"
       },
@@ -4294,11 +4475,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Unprocessable Entity"
           },
           "429": {
             "content": {
@@ -4363,11 +4544,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Unprocessable Entity"
           },
           "429": {
             "content": {
@@ -4725,11 +4906,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/RuntimeSettingResponse"
-                  },
-                  "title": "Response Update Runtime Settings Api Control V1 Bot Settings Runtime Patch",
-                  "type": "array"
+                  "$ref": "#/components/schemas/RuntimeSettingsMutationResponse"
                 }
               }
             },
@@ -4796,16 +4973,43 @@
     "/api/control/v1/chats": {
       "get": {
         "operationId": "list_managed_chats_api_control_v1_chats_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/ManagedChatResponse"
-                  },
-                  "title": "Response List Managed Chats Api Control V1 Chats Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/ManagedChatPage"
                 }
               }
             },
@@ -5642,7 +5846,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ScopeSettingsResponse"
+                  "$ref": "#/components/schemas/ScopeSettingsMutationResponse"
                 }
               }
             },
@@ -5735,7 +5939,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ManagedChatResponse"
+                  "$ref": "#/components/schemas/ManagedChatMutationResponse"
                 }
               }
             },
@@ -5872,6 +6076,16 @@
               }
             },
             "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
           }
         },
         "summary": "Export Memory",
@@ -5988,6 +6202,16 @@
               }
             },
             "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
           }
         },
         "summary": "List Memory Items",
@@ -6061,6 +6285,16 @@
               }
             },
             "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
           }
         },
         "summary": "Delete Memory Item",
@@ -6132,6 +6366,16 @@
               }
             },
             "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
           }
         },
         "summary": "Get Memory Item",
@@ -6215,6 +6459,16 @@
               }
             },
             "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
           }
         },
         "summary": "Refresh Memory Item",
@@ -6288,6 +6542,16 @@
               }
             },
             "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
           }
         },
         "summary": "Get Memory Item Sources",
@@ -6386,6 +6650,16 @@
               }
             },
             "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
           }
         },
         "summary": "List Memory Reviews",
@@ -6459,6 +6733,16 @@
               }
             },
             "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
           }
         },
         "summary": "Approve Memory Review",
@@ -6532,6 +6816,16 @@
               }
             },
             "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
           }
         },
         "summary": "Reject Memory Review",
@@ -7769,6 +8063,16 @@
               }
             },
             "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
           }
         },
         "summary": "Query Ask",
@@ -7844,6 +8148,16 @@
               }
             },
             "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
           }
         },
         "summary": "Query Catalog",
@@ -7916,6 +8230,16 @@
               }
             },
             "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
           }
         },
         "summary": "Query Search",

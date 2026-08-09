@@ -61,7 +61,7 @@ def test_revision_0015_creates_the_admin_alert_outbox(tmp_path: Path) -> None:
             ).fetchall()
         }
 
-    assert revision == ("0016_managed_chat_enrollment_requests",)
+    assert revision == ("0017_scope_settings_versions",)
     assert "admin_alerts" in tables
     assert {
         "uq_admin_alerts_dedupe_key",

@@ -11,6 +11,7 @@ from pzp_ai_bot.control_plane.auth.identity import TelegramIdentity
 from pzp_ai_bot.control_plane.auth.sessions import (
     ControlPlaneSessionService,
     SessionAuthenticationError,
+    has_fresh_step_up,
 )
 from pzp_ai_bot.control_plane.auth.transactions import OIDCTransactionError, OIDCTransactionService
 from pzp_ai_bot.db.models import ControlPlaneSession, OIDCAuthTransaction
@@ -148,5 +149,70 @@ async def test_sessions_persist_only_hashes_and_enforce_rotation_csrf_and_expiry
 
     with pytest.raises(SessionAuthenticationError, match="invalid or expired"):
         await service.authenticate(switched.session_token, now=NOW + timedelta(seconds=153))
+
+    await factory.kw["bind"].dispose()
+
+
+async def test_sessions_enforce_absolute_expiry_even_when_idle_expiry_is_refreshed(
+    tmp_path: Path,
+) -> None:
+    settings = settings_for(
+        tmp_path, control_plane_session_idle_seconds=90, control_plane_session_absolute_seconds=120
+    )
+    await create_schema(settings)
+    factory = create_session_factory(settings)
+    service = ControlPlaneSessionService(factory, settings)
+    issued = await service.issue(identity(), client_kind="browser", now=NOW)
+
+    active = await service.authenticate(issued.session_token, now=NOW + timedelta(seconds=60))
+    assert active.idle_expires_at == NOW + timedelta(seconds=120)
+    with pytest.raises(SessionAuthenticationError, match="invalid or expired"):
+        await service.authenticate(issued.session_token, now=NOW + timedelta(seconds=120))
+
+    await factory.kw["bind"].dispose()
+
+
+async def test_step_up_is_action_bound_expires_and_session_revocation_is_immediate(
+    tmp_path: Path,
+) -> None:
+    settings = settings_for(tmp_path)
+    await create_schema(settings)
+    factory = create_session_factory(settings)
+    service = ControlPlaneSessionService(factory, settings)
+    first = await service.issue(identity(), client_kind="browser", now=NOW)
+    second = await service.issue(identity(), client_kind="mini_app", now=NOW)
+
+    await service.mark_step_up(
+        first.session_token, now=NOW + timedelta(seconds=10), action="credential:reveal"
+    )
+    authenticated = await service.authenticate(first.session_token, now=NOW + timedelta(seconds=11))
+    assert has_fresh_step_up(
+        authenticated,
+        action="credential:reveal",
+        now=NOW + timedelta(seconds=40),
+        max_age_seconds=30,
+    )
+    assert not has_fresh_step_up(
+        authenticated,
+        action="credential:delete",
+        now=NOW + timedelta(seconds=40),
+        max_age_seconds=30,
+    )
+    assert not has_fresh_step_up(
+        authenticated,
+        action="credential:reveal",
+        now=NOW + timedelta(seconds=41),
+        max_age_seconds=30,
+    )
+
+    assert (
+        await service.revoke_user(
+            identity().telegram_user_id, now=NOW + timedelta(seconds=12), reason="bot_admin_removed"
+        )
+        == 2
+    )
+    for token in (first.session_token, second.session_token):
+        with pytest.raises(SessionAuthenticationError, match="invalid or expired"):
+            await service.authenticate(token, now=NOW + timedelta(seconds=13))
 
     await factory.kw["bind"].dispose()

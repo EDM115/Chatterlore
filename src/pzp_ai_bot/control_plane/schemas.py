@@ -277,7 +277,8 @@ class BotAdminResponse(BaseModel):
 class RuntimeSettingsUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    updates: dict[str, Any] = Field(min_length=1, max_length=50)
+    updates: dict[str, Any] = Field(min_length=1, max_length=1)
+    version: int = Field(ge=0)
 
 
 class RuntimeSettingResponse(BaseModel):
@@ -290,6 +291,12 @@ class RuntimeSettingResponse(BaseModel):
     version: int | None
 
 
+class RuntimeSettingsMutationResponse(BaseModel):
+    items: list[RuntimeSettingResponse]
+    version: int
+    audit_event_id: int
+
+
 class ManagedChatResponse(BaseModel):
     chat_id: int
     title: str | None
@@ -297,6 +304,16 @@ class ManagedChatResponse(BaseModel):
     status: str
     version: int
     updated_at: datetime
+
+
+class ManagedChatPage(BaseModel):
+    items: list[ManagedChatResponse]
+    next_cursor: int | None
+    has_more: bool
+
+
+class ManagedChatMutationResponse(ManagedChatResponse):
+    audit_event_id: int
 
 
 class ManagedChatStatusRequest(VersionedMutationRequest):
@@ -340,6 +357,7 @@ class ScopeSettingsUpdateRequest(BaseModel):
     settings: dict[str, int | str | bool | None] = Field(default_factory=dict, max_length=20)
     learning_enabled: bool | None = None
     allow_admins: bool | None = None
+    version: int = Field(ge=0)
 
 
 class ScopePolicyResponse(BaseModel):
@@ -353,6 +371,11 @@ class ScopeSettingsResponse(BaseModel):
     inherited: dict[str, Any]
     overrides: dict[str, Any]
     policy: ScopePolicyResponse
+    version: int
+
+
+class ScopeSettingsMutationResponse(ScopeSettingsResponse):
+    audit_event_id: int
 
 
 class ConfirmedChatActionRequest(VersionedMutationRequest):

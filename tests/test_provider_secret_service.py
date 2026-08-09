@@ -339,3 +339,45 @@ async def test_rewrap_verifies_every_credential_before_any_database_write(
     assert await service.rewrap("next", actor_user_id=111) == 2
     assert await key_ids() == ["next", "next"]
     assert await service.reveal_credential("managed", 1, actor_user_id=111) == "secret-one"
+
+
+@pytest.mark.asyncio
+async def test_provider_profile_accepts_exactly_ten_credentials_and_rejects_the_eleventh(
+    tmp_path: Path,
+) -> None:
+    settings = service_settings(
+        tmp_path, control_plane_max_credentials_per_profile=10, openai_api_key=""
+    )
+    await create_schema(settings)
+    factory = create_session_factory(settings)
+    service = ProviderSecretService(settings, factory, ProviderRegistry(settings))
+    await service.create_profile(
+        {
+            "name": "bounded",
+            "provider_kind": "openai_compatible",
+            "base_url": "https://api.openai.com/v1",
+            "chat_model": "gpt-5.6-terra",
+            "embedding_model": "text-embedding-3-small",
+            "chat_capable": True,
+            "embedding_capable": True,
+            "reasoning_capable": True,
+            "local": False,
+            "redact_before_ai": True,
+            "redaction_patterns": [],
+            "fake_embedding_dimensions": 64,
+        },
+        actor_user_id=111,
+        now=NOW,
+    )
+
+    for index in range(10):
+        await service.create_credential(
+            "bounded", label=f"key-{index}", value=f"secret-{index}", actor_user_id=111, now=NOW
+        )
+    assert len(await service.list_credentials("bounded")) == 10
+    with pytest.raises(ValueError, match="credential limit"):
+        await service.create_credential(
+            "bounded", label="key-10", value="secret-10", actor_user_id=111, now=NOW
+        )
+
+    await factory.kw["bind"].dispose()

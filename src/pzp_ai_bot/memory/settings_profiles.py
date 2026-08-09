@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from dataclasses import dataclass
 from datetime import timedelta
 from secrets import token_urlsafe
 from typing import Any
@@ -10,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from pzp_ai_bot.config import Settings
 from pzp_ai_bot.db.repos.challenges import SettingsChallengeRepository
 from pzp_ai_bot.db.repos.events import EventRepository
+from pzp_ai_bot.db.repos.policy import PolicyRepository
 from pzp_ai_bot.db.repos.profiles import MemoryProfileRepository
 from pzp_ai_bot.db.repos.settings import (
     RuntimeSettingRepository,
@@ -28,6 +30,7 @@ from pzp_ai_bot.memory.contracts import (
     SummaryTemplatePreview,
     SystemPromptTemplatePreview,
 )
+from pzp_ai_bot.memory.policy import PolicyService
 from pzp_ai_bot.memory.prompts import BUILTIN_SYSTEM_PROMPTS, PROMPT_VERSION, PromptTemplate
 from pzp_ai_bot.memory.scope import Scope
 
@@ -49,6 +52,19 @@ SAFE_RUNTIME_SETTING_TYPES: dict[str, str] = {
     "knowledge_retention_days": "optional_positive_int",
     "review_before_compact": "bool",
 }
+
+
+class SettingsVersionConflictError(ValueError):
+    def __init__(self, current_version: int) -> None:
+        self.current_version = current_version
+        super().__init__("the settings resource changed concurrently")
+
+
+@dataclass(frozen=True, slots=True)
+class VersionedSettingsMutation:
+    version: int
+    audit_event_id: int
+
 
 BUILTIN_SUMMARY_TEMPLATES: dict[str, str] = {
     "general": "Keep stable facts, decisions, preferences, todos, and open questions.",
@@ -191,6 +207,46 @@ class MemorySettingsService:
             )
             return await repo.effective(scope, self.default_scope_settings())
 
+    async def update_scope_configuration(
+        self,
+        scope: Scope,
+        settings_updates: dict[str, int | str | bool | None],
+        *,
+        learning_enabled: bool | None,
+        allow_admins: bool | None,
+        expected_version: int,
+        updated_by: int | None,
+    ) -> VersionedSettingsMutation:
+        validate_scope_settings(settings_updates, self.settings)
+        async with session_scope(self.session_factory) as session:
+            settings_repo = ScopeSettingsRepository(session)
+            row = await settings_repo.set_settings_versioned(
+                scope, settings_updates, updated_by, expected_version=expected_version
+            )
+            if row is None:
+                raise SettingsVersionConflictError(await settings_repo.current_version(scope))
+            policy = PolicyService(
+                self.settings,
+                PolicyRepository(session),
+                learning_default_enabled=self.runtime_setting("learning_default_enabled"),
+            )
+            if learning_enabled is not None:
+                await policy.set_learning(scope, learning_enabled, updated_by)
+            if allow_admins is not None:
+                await policy.set_allow_admins(scope, allow_admins, updated_by)
+            event = await EventRepository(session).add(
+                event_type="control_plane.scope_settings.updated",
+                scope=scope,
+                user_id=updated_by,
+                payload={
+                    "settings": settings_updates,
+                    "learning_enabled": learning_enabled,
+                    "allow_admins": allow_admins,
+                    "version": row.version,
+                },
+            )
+            return VersionedSettingsMutation(version=row.version, audit_event_id=event.id)
+
     def settings_token_hash(self, scope: Scope, user_id: int, token: str) -> str:
         payload = f"settings:{scope.key}:{user_id}:{token}".encode()
         return hashlib.sha256(payload).hexdigest()
@@ -287,6 +343,29 @@ class MemorySettingsService:
             )
         await self.refresh_runtime_settings()
         return [self._runtime_setting_preview(row) for row in rows]
+
+    async def set_runtime_setting_versioned(
+        self, updates: dict[str, Any], *, expected_version: int, updated_by: int | None = None
+    ) -> VersionedSettingsMutation:
+        validated = validate_runtime_settings_values(updates, self.settings)
+        if len(validated) != 1:
+            raise ValueError("exactly one runtime setting must be updated")
+        key, value = next(iter(validated.items()))
+        async with session_scope(self.session_factory) as session:
+            repo = RuntimeSettingRepository(session)
+            row = await repo.set_value_versioned(
+                key=key, value=value, expected_version=expected_version, updated_by=updated_by
+            )
+            if row is None:
+                raise SettingsVersionConflictError(await repo.current_version(key))
+            event = await EventRepository(session).add(
+                event_type="control_plane.runtime_setting.updated",
+                user_id=updated_by,
+                payload={"key": key, "value": value, "version": row.version},
+            )
+            result = VersionedSettingsMutation(version=row.version, audit_event_id=event.id)
+        await self.refresh_runtime_settings()
+        return result
 
     async def list_runtime_settings(self) -> list[RuntimeSettingPreview]:
         async with session_scope(self.session_factory) as session:

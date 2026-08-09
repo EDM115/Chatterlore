@@ -204,18 +204,15 @@ def _identity_from_claims(
     if not isinstance(subject, str) or not subject:
         raise OIDCValidationError("OIDC subject is invalid")
     telegram_user_id = _telegram_user_id(claims.get("id"))
-    is_premium = claims.get("is_premium")
-    if is_premium is not None and not isinstance(is_premium, bool):
-        raise OIDCValidationError("OIDC premium claim is invalid")
     return TelegramIdentity(
         telegram_user_id=telegram_user_id,
-        first_name=_required_string(claims, "first_name", maximum=255),
-        last_name=_optional_string(claims, "last_name", maximum=255),
-        username=_optional_string(claims, "username", maximum=255),
-        language_code=_optional_string(claims, "language_code", maximum=32),
+        first_name=_required_string(claims, "given_name", maximum=255),
+        last_name=_optional_string(claims, "family_name", maximum=255),
+        username=_optional_string(claims, "preferred_username", maximum=255),
+        language_code=None,
         photo_url=_optional_string(claims, "picture", maximum=512),
         is_bot=False,
-        is_premium=is_premium,
+        is_premium=None,
         authenticated_at=datetime.fromtimestamp(issued_at, tz=UTC),
     )
 

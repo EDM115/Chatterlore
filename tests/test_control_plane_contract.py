@@ -2,29 +2,23 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest
-
 from pzp_ai_bot.app_context import AppContext
 from pzp_ai_bot.control_plane.app import create_control_plane_schema_app
 from pzp_ai_bot.telegram.webhook import create_webhook_app
 
-pending_contract = pytest.mark.xfail(
-    strict=True,
-    reason="Plan 021 control-plane contracts stay red until their API slices are implemented",
-)
-
 AUTHORIZATION_MATRIX = {
     ("get", "/auth/telegram/start"): "public_oidc",
     ("get", "/auth/telegram/callback"): "public_oidc",
+    ("get", "/auth/telegram/step-up/start"): "authenticated_same_identity",
     ("post", "/api/control/v1/auth/mini-app"): "telegram_identity",
     ("get", "/api/control/v1/session"): "authenticated",
     ("post", "/api/control/v1/auth/logout"): "authenticated",
     ("post", "/api/control/v1/auth/step-up/mini-app"): "authenticated_same_identity",
-    ("get", "/api/control/v1/bot/settings"): "bot_admin",
-    ("patch", "/api/control/v1/bot/settings"): "bot_admin",
-    ("get", "/api/control/v1/bot/admins"): "bot_admin",
-    ("post", "/api/control/v1/bot/admins"): "bot_admin",
-    ("delete", "/api/control/v1/bot/admins/{telegram_id}"): "bot_admin_step_up",
+    ("get", "/api/control/v1/bot-settings/runtime"): "bot_admin",
+    ("patch", "/api/control/v1/bot-settings/runtime"): "bot_admin",
+    ("get", "/api/control/v1/bot-settings/admins"): "bot_admin",
+    ("post", "/api/control/v1/bot-settings/admins"): "bot_admin",
+    ("delete", "/api/control/v1/bot-settings/admins/{telegram_user_id}"): "bot_admin_step_up",
     ("get", "/api/control/v1/providers"): "bot_admin",
     ("post", "/api/control/v1/providers"): "bot_admin",
     ("get", "/api/control/v1/providers/{name}"): "bot_admin",
@@ -44,35 +38,33 @@ AUTHORIZATION_MATRIX = {
     ): "bot_admin_step_up",
     ("post", "/api/control/v1/providers/{name}/credentials/{credential_id}/test"): "bot_admin",
     ("delete", "/api/control/v1/providers/{name}/credentials/{credential_id}"): "bot_admin_step_up",
-    ("get", "/api/control/v1/chats"): "scope_admin_or_bot_admin",
-    ("post", "/api/control/v1/chats/enrollments"): "bot_admin",
-    ("get", "/api/control/v1/chats/{chat_id}"): "scope_admin",
-    ("patch", "/api/control/v1/chats/{chat_id}"): "scope_admin",
-    ("post", "/api/control/v1/chats/{chat_id}/pause"): "scope_admin",
-    ("post", "/api/control/v1/chats/{chat_id}/resume"): "scope_admin",
-    ("post", "/api/control/v1/chats/{chat_id}/detach"): "bot_admin",
+    ("get", "/api/control/v1/chats"): "authenticated_admin",
+    ("post", "/api/control/v1/chats/enrollment-requests"): "bot_admin",
+    ("get", "/api/control/v1/chats/enrollment-requests/{request_id}"): "authenticated",
+    ("patch", "/api/control/v1/chats/{chat_id}/status"): "chat_admin",
+    ("get", "/api/control/v1/chats/{chat_id}/settings"): "chat_admin",
+    ("patch", "/api/control/v1/chats/{chat_id}/settings"): "chat_admin",
     ("post", "/api/control/v1/chats/{chat_id}/leave"): "bot_admin_step_up",
-    ("get", "/api/control/v1/chats/{chat_id}/admins"): "bot_admin",
-    ("post", "/api/control/v1/chats/{chat_id}/admins"): "bot_admin",
-    ("delete", "/api/control/v1/chats/{chat_id}/admins/{telegram_id}"): "bot_admin",
-    ("get", "/api/control/v1/scopes/{scope_key}/settings"): "scope_admin",
-    ("patch", "/api/control/v1/scopes/{scope_key}/settings"): "scope_admin",
-    ("get", "/api/control/v1/scopes/{scope_key}/policy"): "scope_admin",
-    ("patch", "/api/control/v1/scopes/{scope_key}/policy"): "scope_admin",
-    ("post", "/api/control/v1/query/search"): "scope_admin",
-    ("post", "/api/control/v1/query/ask"): "scope_admin",
+    ("post", "/api/control/v1/chats/{chat_id}/forget"): "bot_admin_step_up",
+    ("get", "/api/control/v1/chats/{chat_id}/admins"): "chat_admin",
+    ("post", "/api/control/v1/chats/{chat_id}/admins"): "chat_admin",
+    ("delete", "/api/control/v1/chats/{chat_id}/admins/{telegram_user_id}"): "chat_admin",
+    ("get", "/api/control/v1/query/catalog"): "chat_admin",
+    ("post", "/api/control/v1/query/search"): "chat_admin",
+    ("post", "/api/control/v1/query/ask"): "chat_admin",
     ("get", "/api/control/v1/memory/items"): "scope_admin",
-    ("get", "/api/control/v1/memory/items/{item_id}"): "scope_admin",
-    ("post", "/api/control/v1/memory/items/{item_id}/sources"): "scope_admin",
-    ("delete", "/api/control/v1/memory/items/{item_id}"): "scope_admin",
-    ("post", "/api/control/v1/memory/items/{item_id}/refresh"): "scope_admin",
+    ("get", "/api/control/v1/memory/items/{item_id}"): "persisted_scope_admin",
+    ("post", "/api/control/v1/memory/items/{item_id}/sources"): "persisted_scope_admin",
+    ("delete", "/api/control/v1/memory/items/{item_id}"): "persisted_scope_admin",
+    ("post", "/api/control/v1/memory/items/{item_id}/refresh"): "persisted_scope_admin",
     ("get", "/api/control/v1/memory/reviews"): "scope_admin",
-    ("post", "/api/control/v1/memory/reviews/{review_id}/approve"): "scope_admin",
-    ("post", "/api/control/v1/memory/reviews/{review_id}/reject"): "scope_admin",
+    ("post", "/api/control/v1/memory/reviews/{review_id}/approve"): "persisted_scope_admin",
+    ("post", "/api/control/v1/memory/reviews/{review_id}/reject"): "persisted_scope_admin",
     ("get", "/api/control/v1/memory/export"): "scope_admin",
-    ("get", "/api/control/v1/stats/overview"): "scope_admin_or_bot_admin",
-    ("get", "/api/control/v1/stats/timeseries"): "scope_admin_or_bot_admin",
-    ("get", "/api/control/v1/audit/events"): "scope_admin_or_bot_admin",
+    ("get", "/api/control/v1/stats/overview"): "scope_admin",
+    ("get", "/api/control/v1/stats/timeseries"): "scope_admin",
+    ("get", "/api/control/v1/audit/events"): "scope_admin",
+    ("get", "/api/control/v1/audit/ai-usage"): "scope_admin",
     ("get", "/api/control/v1/operations/health"): "bot_admin",
     ("post", "/api/control/v1/operations/checks/{name}"): "bot_admin",
     ("get", "/api/control/v1/alerts"): "bot_admin",
@@ -88,17 +80,17 @@ PAGINATED_OPERATIONS = {
 }
 
 VERSIONED_MUTATIONS = {
-    ("patch", "/api/control/v1/bot/settings"),
+    ("patch", "/api/control/v1/bot-settings/runtime"),
     ("patch", "/api/control/v1/providers/{name}"),
     ("patch", "/api/control/v1/providers/{name}/credentials/{credential_id}"),
-    ("patch", "/api/control/v1/chats/{chat_id}"),
-    ("patch", "/api/control/v1/scopes/{scope_key}/settings"),
-    ("patch", "/api/control/v1/scopes/{scope_key}/policy"),
+    ("patch", "/api/control/v1/chats/{chat_id}/status"),
+    ("patch", "/api/control/v1/chats/{chat_id}/settings"),
 }
 
 RATE_LIMITED_OPERATIONS = {
     ("get", "/auth/telegram/start"),
     ("get", "/auth/telegram/callback"),
+    ("get", "/auth/telegram/step-up/start"),
     ("post", "/api/control/v1/auth/mini-app"),
     ("post", "/api/control/v1/auth/step-up/mini-app"),
     ("delete", "/api/control/v1/providers/{name}"),
@@ -180,18 +172,23 @@ def _response_schema(
     return schema
 
 
-@pending_contract
 def test_control_plane_openapi_declares_every_reviewed_route_and_capability(
     context: AppContext,
 ) -> None:
     openapi = _openapi(context)
+    actual_operations = {
+        (method, path)
+        for path, path_item in openapi["paths"].items()
+        for method in path_item
+        if method in {"delete", "get", "patch", "post", "put"}
+    }
 
+    assert actual_operations == set(AUTHORIZATION_MATRIX)
     for (method, path), capability in AUTHORIZATION_MATRIX.items():
         operation = _operation(openapi, method, path)
         assert operation["x-pzp-capability"] == capability
 
 
-@pending_contract
 def test_control_plane_list_contract_uses_bounded_cursor_pagination(context: AppContext) -> None:
     openapi = _openapi(context)
 
@@ -208,7 +205,6 @@ def test_control_plane_list_contract_uses_bounded_cursor_pagination(context: App
         assert response_schema["properties"]["has_more"]["type"] == "boolean"
 
 
-@pending_contract
 def test_control_plane_errors_and_version_conflicts_have_one_safe_envelope(
     context: AppContext,
 ) -> None:
@@ -248,7 +244,6 @@ def test_control_plane_errors_and_version_conflicts_have_one_safe_envelope(
         assert _response_schema(openapi, operation, "409") == conflict_envelope
 
 
-@pending_contract
 def test_control_plane_versioned_mutations_require_and_return_versions(context: AppContext) -> None:
     openapi = _openapi(context)
 

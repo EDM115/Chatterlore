@@ -5,6 +5,7 @@ from typing import Any
 from aiogram.types import BotCommand
 
 COMMAND_DESCRIPTIONS: tuple[tuple[str, str], ...] = (
+    ("start", "Show welcome and command help"),
     ("ask", "Answer from current chat/topic memory"),
     ("memory_search", "Search scoped memory"),
     ("memory_export", "Export memory as Markdown or JSONL"),

@@ -1,19 +1,22 @@
-{$CONTROL_PLANE_PUBLIC_ORIGIN:https://localhost} {
-    encode zstd gzip
-    header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+{$CADDY_SITE_ADDRESS:https://localhost} {
+	encode zstd gzip
+	header >Strict-Transport-Security "max-age=31536000; includeSubDomains"
 
-    @backend path /api /api/* /auth /auth/* /telegram/webhook /health
-    handle @backend {
-        reverse_proxy bot:8080
-    }
+	@insecure_forwarded header X-Forwarded-Proto http
+	redir @insecure_forwarded https://{host}{uri} permanent
 
-    handle {
-        @assets path /_nuxt/*
-        header @assets Cache-Control "public, max-age=31536000, immutable"
-        reverse_proxy frontend:3000 {
-            header_up -Cookie
-            header_up -Authorization
-            header_up -X-CSRF-Token
-        }
-    }
+	@backend path /api /api/* /auth /auth/* /telegram/webhook /health
+	handle @backend {
+		reverse_proxy bot:8080
+	}
+
+	handle {
+		@assets path /_nuxt/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+		reverse_proxy frontend:3000 {
+			header_up -Cookie
+			header_up -Authorization
+			header_up -X-CSRF-Token
+		}
+	}
 }

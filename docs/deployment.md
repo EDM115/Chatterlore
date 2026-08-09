@@ -46,7 +46,7 @@ With `CONTROL_PLANE_DEV_USER_ID` set and `WEBHOOK_URL` empty, the combined runti
 
 The bot image uses a multi-stage `python:3.12-slim` build, pins uv 0.12.0, installs the exact production dependency set from `uv.lock` through frozen syncs, installs the project non-editably so the copied runtime environment is self-contained, runs as the non-root `pzp` user and includes a `pzp-bot doctor` image healthcheck. The dependency layer copies `pyproject.toml`, `uv.lock` and `README.md` before application source so ordinary source edits reuse the locked dependency layer.
 
-The frontend image uses dependency, build and runtime stages based on `node:24.18.0-bookworm-slim`, activates pnpm 11.18.0, installs the frozen frontend lock, runs `pnpm build`, copies only Nuxt's `.output` directory and runs `.output/server/index.mjs` as the non-root `node` user. Caddy is pinned to `caddy:2.11.4-alpine`; only that service publishes host ports 80 and 443, while Nuxt port 3000 and FastAPI port 8080 remain internal.
+The frontend image uses dependency, build and runtime stages based on `node:24.18.0-bookworm-slim`, activates pnpm 11.18.0, installs the frozen production dependency graph with a persistent BuildKit pnpm store and bounded install/build memory, runs `pnpm build`, copies only Nuxt's `.output` directory and runs `.output/server/index.mjs` as the non-root `node` user. Caddy is pinned to `caddy:2.11.4-alpine`; only that service publishes host ports 80 and 443, while Nuxt port 3000 and FastAPI port 8080 remain internal.
 
 ```powershell
 docker build --tag pzp-ai:local .
@@ -61,7 +61,7 @@ docker compose config
 docker compose run --rm bot pzp-bot doctor
 ```
 
-The main Compose topology is a production webhook stack, not a polling stack. Before starting it, create `.env` and configure at least `TELEGRAM_BOT_TOKEN`, `BOT_ADMINS`, `WEBHOOK_URL=<CONTROL_PLANE_PUBLIC_ORIGIN>/telegram/webhook`, a non-default `WEBHOOK_SECRET`, `CONTROL_PLANE_ENABLED=true`, the exact HTTPS `CONTROL_PLANE_PUBLIC_ORIGIN`, Telegram OIDC credentials, the control-plane master-key map and provider settings. Optional `PZP_HTTP_PORT` and `PZP_HTTPS_PORT` values change the published host ports without changing the internal contract.
+The main Compose topology is a production webhook stack, not a polling stack. Before starting it, create `.env` and configure at least `TELEGRAM_BOT_TOKEN`, `BOT_ADMINS`, `WEBHOOK_URL=<CONTROL_PLANE_PUBLIC_ORIGIN>/telegram/webhook`, a non-default `WEBHOOK_SECRET`, `CONTROL_PLANE_ENABLED=true`, the exact HTTPS `CONTROL_PLANE_PUBLIC_ORIGIN`, Telegram OIDC credentials, the control-plane master-key map and provider settings. Optional `PZP_HTTP_PORT` and `PZP_HTTPS_PORT` values change the published host ports without changing the internal contract. `CADDY_SITE_ADDRESS` defaults to the public control-plane origin; set it separately to `:80` only when a trusted external ingress such as cloudflared terminates public TLS and forwards to the otherwise private/local Caddy listener, while `CONTROL_PLANE_PUBLIC_ORIGIN` remains the exact external HTTPS origin used for browser, Mini App and OIDC validation.
 
 Build and start all three services with:
 

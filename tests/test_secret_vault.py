@@ -59,6 +59,8 @@ def test_enabled_control_plane_requires_a_valid_active_master_key(tmp_path: Path
         )
     with pytest.raises(ValidationError, match="active"):
         enabled_settings(tmp_path, control_plane_active_master_key_id="missing")
+    with pytest.raises(ValidationError, match="less than or equal to 10"):
+        enabled_settings(tmp_path, control_plane_max_credentials_per_profile=11)
 
     settings = enabled_settings(
         tmp_path,
@@ -101,6 +103,9 @@ def test_envelope_encryption_round_trips_and_binds_every_identity_field() -> Non
         replace(encrypted, secret_nonce=_flip(encrypted.secret_nonce)),
         replace(encrypted, wrapped_dek=_flip(encrypted.wrapped_dek)),
         replace(encrypted, wrap_nonce=_flip(encrypted.wrap_nonce)),
+        replace(encrypted, fingerprint="0" * len(encrypted.fingerprint)),
+        replace(encrypted, last_four="nope"),
+        replace(encrypted, master_key_id="primary"),
         replace(encrypted, master_key_id="missing"),
     ]
     for tampered in tampered_values:
@@ -111,6 +116,12 @@ def test_envelope_encryption_round_trips_and_binds_every_identity_field() -> Non
     for profile_name, credential_id in [("other-profile", 42), ("primary-profile", 43)]:
         with pytest.raises(SecretVaultError, match="credential cannot be decrypted"):
             vault.decrypt(encrypted, profile_name=profile_name, credential_id=credential_id)
+
+    wrong_key_vault = ProviderSecretVault(
+        MasterKeyring(keys={"old": bytes([9]) * 32}, active_key_id="old")
+    )
+    with pytest.raises(SecretVaultError, match="credential cannot be decrypted"):
+        wrong_key_vault.decrypt(encrypted, profile_name="primary-profile", credential_id=42)
 
 
 def test_rewrap_preserves_secret_ciphertext_and_verifies_the_new_wrapping() -> None:

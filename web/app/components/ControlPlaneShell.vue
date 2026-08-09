@@ -2,6 +2,7 @@
 const route = useRoute();
 const controlSession = useControlSession();
 const hydrated = ref(false);
+const mobileMenu = ref<HTMLDetailsElement | null>(null);
 
 onMounted(() => {
   hydrated.value = true;
@@ -50,6 +51,10 @@ const accessLabel = computed(() => {
 });
 
 const isCurrent = (to: string) => route.path === to;
+
+function closeMobileMenu() {
+  if (mobileMenu.value) mobileMenu.value.open = false;
+}
 </script>
 
 <template>
@@ -96,7 +101,7 @@ const isCurrent = (to: string) => route.path === to;
           <span class="brand-mark" aria-hidden="true">PZP</span>
           <strong>Control Plane</strong>
         </NuxtLink>
-        <details class="mobile-menu">
+        <details ref="mobileMenu" class="mobile-menu">
           <summary>Menu</summary>
           <nav aria-label="Mobile navigation">
             <NuxtLink
@@ -105,6 +110,7 @@ const isCurrent = (to: string) => route.path === to;
               class="navigation-link"
               :to="item.to"
               :aria-current="isCurrent(item.to) ? 'page' : undefined"
+              @click="closeMobileMenu"
             >
               {{ item.label }}
             </NuxtLink>

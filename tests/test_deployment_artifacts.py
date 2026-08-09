@@ -157,7 +157,18 @@ def test_frontend_image_is_frozen_multi_stage_and_non_root() -> None:
 
 def test_caddy_reserves_backend_paths_and_strips_frontend_credentials() -> None:
     caddyfile = (ROOT / "Caddyfile").read_text(encoding="utf-8")
+    proxy_environment = load_compose()["services"]["proxy"]["environment"]
 
+    assert "{$CADDY_SITE_ADDRESS:https://localhost}" in caddyfile
+    assert proxy_environment["CADDY_SITE_ADDRESS"] == (
+        "${CADDY_SITE_ADDRESS:-${CONTROL_PLANE_PUBLIC_ORIGIN:-https://localhost}}"
+    )
+    assert (
+        'header >Strict-Transport-Security "max-age=31536000; includeSubDomains"'
+        in caddyfile
+    )
+    assert "@insecure_forwarded header X-Forwarded-Proto http" in caddyfile
+    assert "redir @insecure_forwarded https://{host}{uri} permanent" in caddyfile
     assert "@backend path /api /api/* /auth /auth/* /telegram/webhook /health" in caddyfile
     assert "handle @backend" in caddyfile
     assert "reverse_proxy bot:8080" in caddyfile

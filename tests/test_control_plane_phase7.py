@@ -655,6 +655,7 @@ def test_stats_overview_and_timeseries_are_bounded_scoped_and_provider_side_effe
     tmp_path: Path,
 ) -> None:
     context, app = _build_phase7_app(tmp_path)
+    stats_now = datetime.now(UTC)
 
     async def seed() -> int:
         await _seed_managed_chat(context)
@@ -666,7 +667,7 @@ def test_stats_overview_and_timeseries_are_bounded_scoped_and_provider_side_effe
                 user_id=111,
                 username="owner",
                 text="A learned message for statistics.",
-                created_at=NOW,
+                created_at=stats_now,
             )
         )
         await context.memory.remember(Scope(-1001, None), "A durable statistics item.")
@@ -694,7 +695,7 @@ def test_stats_overview_and_timeseries_are_bounded_scoped_and_provider_side_effe
     }
     assert payload["ai_usage"]["total"] == usage_before
     assert payload["runtime"]["uptime_seconds"] >= 0
-    assert payload["runtime"]["schema_revision"] == ("0016_managed_chat_enrollment_requests")
+    assert payload["runtime"]["schema_revision"] == ("0017_scope_settings_versions")
     assert payload["runtime"]["scheduler"] == []
     assert payload["storage"]["database_bytes"] > 0
     assert payload["storage"]["memory_bytes"] > 0
@@ -709,7 +710,7 @@ def test_stats_overview_and_timeseries_are_bounded_scoped_and_provider_side_effe
     series = timeseries.json()
     assert series["scope"] == "-1001:main"
     assert series["days"] == 7
-    point = next(item for item in series["points"] if item["date"] == "2026-08-02")
+    point = next(item for item in series["points"] if item["date"] == stats_now.date().isoformat())
     assert point["messages"] == 1
     assert point["learned"] == 1
     assert point["knowledge_items"] == 1

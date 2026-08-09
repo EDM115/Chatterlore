@@ -4,9 +4,12 @@ useSeoMeta({
 });
 
 const route = useRoute();
+const requestUrl = useRequestURL();
 const controlSession = useControlSession();
 const sessionExpired = computed(() => route.query.expired === "1");
-const returnTo = computed(() => safeReturnTo(route.query.return_to));
+const returnTo = computed(() =>
+  safeReturnTo(route.query.return_to ?? requestUrl.searchParams.get("return_to")),
+);
 const browserLoginHref = computed(
   () => `/auth/telegram/start?return_to=${encodeURIComponent(returnTo.value)}`,
 );
@@ -23,13 +26,20 @@ onMounted(async () => {
 function safeReturnTo(value: unknown): string {
   if (
     typeof value !== "string" ||
+    value.length > 512 ||
     !value.startsWith("/") ||
     value.startsWith("//") ||
-    value.includes("\\")
+    value.includes("\\") ||
+    value.includes("#") ||
+    hasControlCharacter(value)
   ) {
     return "/";
   }
   return value;
+}
+
+function hasControlCharacter(value: string): boolean {
+  return [...value].some((character) => character.charCodeAt(0) < 32);
 }
 </script>
 

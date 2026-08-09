@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineComponent } from "vue";
 import LoginPage from "../app/pages/login.vue";
 import { useControlSession } from "../app/composables/useControlSession";
+import { TELEGRAM_WEB_APP_READY_EVENT, waitForTelegramInitData } from "../app/utils/telegramWebApp";
 
 const Harness = defineComponent({
   setup() {
@@ -38,9 +39,31 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
   delete window.Telegram;
+  window.history.replaceState(null, "", "/");
 });
 
 describe("useControlSession", () => {
+  it("waits for Telegram launch data before its SDK script element exists", async () => {
+    document
+      .querySelectorAll('script[src^="https://telegram.org/js/telegram-web-app.js"]')
+      .forEach((script) => script.remove());
+    window.history.replaceState(null, "", "/#tgWebAppData=placeholder");
+
+    const pending = waitForTelegramInitData();
+    await Promise.resolve();
+    window.Telegram = {
+      WebApp: {
+        initData: "early-launch-data",
+        colorScheme: "dark",
+        ready: vi.fn(),
+        expand: vi.fn(),
+      },
+    };
+    window.dispatchEvent(new Event(TELEGRAM_WEB_APP_READY_EVENT));
+
+    expect(await pending).toBe("early-launch-data");
+  });
+
   it("restores a regular-browser session with credentialed same-origin requests", async () => {
     const request = vi.fn().mockResolvedValue(sessionPayload);
     vi.stubGlobal("$fetch", request);
@@ -87,6 +110,38 @@ describe("useControlSession", () => {
       timeout: 5_000,
     });
     expect(wrapper.vm.clientKind).toBe("mini_app");
+  });
+
+  it("waits for late Telegram SDK init data before its head script exists", async () => {
+    window.history.replaceState(null, "", "/#tgWebAppData=placeholder");
+    const request = vi.fn().mockResolvedValue({
+      ...sessionPayload,
+      client_kind: "mini_app",
+    });
+    vi.stubGlobal("$fetch", request);
+    const wrapper = await mountSuspended(Harness);
+
+    const bootstrapping = wrapper.vm.bootstrap();
+    await Promise.resolve();
+    window.Telegram = {
+      WebApp: {
+        initData: "late-signed-init-data",
+        colorScheme: "dark",
+        ready: vi.fn(),
+        expand: vi.fn(),
+      },
+    };
+    window.dispatchEvent(new Event("pzp:telegram-web-app-ready"));
+
+    expect(await bootstrapping).toBe(true);
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request).toHaveBeenCalledWith("/api/control/v1/auth/mini-app", {
+      body: { init_data: "late-signed-init-data" },
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+      timeout: 5_000,
+    });
   });
 
   it("uses development login only after an exact anonymous session response", async () => {
@@ -186,6 +241,27 @@ describe("useControlSession", () => {
 describe("login page", () => {
   it("uses the server OIDC start route in a regular browser", async () => {
     const wrapper = await mountSuspended(LoginPage);
+
+    expect(wrapper.get('a[data-testid="telegram-browser-login"]').attributes("href")).toBe(
+      "/auth/telegram/start?return_to=%2F",
+    );
+  });
+
+  it("preserves a bounded direct-route destination in the OIDC start link", async () => {
+    const wrapper = await mountSuspended(LoginPage, {
+      route: "/login?return_to=%2Fquery",
+    });
+
+    expect(wrapper.get('a[data-testid="telegram-browser-login"]').attributes("href")).toBe(
+      "/auth/telegram/start?return_to=%2Fquery",
+    );
+  });
+
+  it("drops an oversized Mini App fallback destination before starting OIDC", async () => {
+    const oversized = `/${"a".repeat(512)}`;
+    const wrapper = await mountSuspended(LoginPage, {
+      route: `/login?return_to=${encodeURIComponent(oversized)}`,
+    });
 
     expect(wrapper.get('a[data-testid="telegram-browser-login"]').attributes("href")).toBe(
       "/auth/telegram/start?return_to=%2F",

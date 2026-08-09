@@ -38,6 +38,15 @@ class NativeAdminBot:
         return [SimpleNamespace(user=SimpleNamespace(id=444))]
 
 
+class MutableNativeAdminBot:
+    def __init__(self, user_ids: set[int]) -> None:
+        self.user_ids = user_ids
+
+    async def get_chat_administrators(self, chat_id: int):
+        assert chat_id == -100123
+        return [SimpleNamespace(user=SimpleNamespace(id=user_id)) for user_id in self.user_ids]
+
+
 async def test_capabilities_merge_bootstrap_managed_delegated_and_native_admins(
     tmp_path: Path,
 ) -> None:
@@ -116,4 +125,48 @@ async def test_delegated_admin_loses_access_when_managed_chat_is_paused(tmp_path
     actor = await authorization.resolve(333)
 
     assert actor.capabilities_for_chat(-100123) == set()
+    await factory.kw["bind"].dispose()
+
+
+async def test_revoked_delegated_and_removed_native_admins_lose_access_on_resolution(
+    tmp_path: Path,
+) -> None:
+    settings = settings_for(tmp_path)
+    await create_schema(settings)
+    factory = create_session_factory(settings)
+    authorization = ControlPlaneAuthorizationService(
+        factory, telegram_admins=AdminService(settings.bot_admin_ids, ttl_seconds=-1)
+    )
+    native_bot = MutableNativeAdminBot({444})
+    async with session_scope(factory) as session:
+        repository = ControlPlaneAccessRepository(session)
+        await repository.upsert_managed_chat(
+            chat_id=-100123,
+            title="Test group",
+            username=None,
+            status="active",
+            actor_user_id=111,
+            now=NOW,
+        )
+        await repository.grant_chat_admin(
+            chat_id=-100123, telegram_user_id=333, actor_user_id=111, now=NOW
+        )
+
+    delegated = await authorization.resolve(333)
+    native = await authorization.resolve(444, bot=native_bot, chat_id=-100123)
+    assert delegated.capabilities_for_chat(-100123) == {CAPABILITY_CHAT_ADMIN}
+    assert native.capabilities_for_chat(-100123) == {CAPABILITY_CHAT_ADMIN}
+
+    async with session_scope(factory) as session:
+        revoked = await ControlPlaneAccessRepository(session).revoke_chat_admin(
+            chat_id=-100123, telegram_user_id=333, actor_user_id=111, now=NOW
+        )
+        assert revoked
+    native_bot.user_ids.clear()
+
+    delegated = await authorization.resolve(333)
+    native = await authorization.resolve(444, bot=native_bot, chat_id=-100123)
+    assert delegated.capabilities_for_chat(-100123) == set()
+    assert native.capabilities_for_chat(-100123) == set()
+
     await factory.kw["bind"].dispose()

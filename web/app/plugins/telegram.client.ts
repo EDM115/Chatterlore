@@ -1,4 +1,7 @@
-export const TELEGRAM_WEB_APP_SCRIPT = "https://telegram.org/js/telegram-web-app.js?63";
+import {
+  TELEGRAM_WEB_APP_READY_EVENT,
+  TELEGRAM_WEB_APP_SCRIPT_SELECTOR,
+} from "../utils/telegramWebApp";
 
 interface TelegramButton {
   hide?: () => void;
@@ -82,24 +85,27 @@ export default defineNuxtPlugin(() => {
     });
   };
 
-  const stop = watch(() => [route.path, ...controlSession.capabilities.value], prepareTelegram);
-  if (window.Telegram?.WebApp) prepareTelegram();
+  const markTelegramReady = () => {
+    prepareTelegram();
+    window.dispatchEvent(new Event(TELEGRAM_WEB_APP_READY_EVENT));
+  };
 
-  useHead({
-    script: [
-      {
-        key: "telegram-web-app",
-        src: TELEGRAM_WEB_APP_SCRIPT,
-        defer: true,
-        onload: prepareTelegram,
-      },
-    ],
-  });
+  const stop = watch(() => [route.path, ...controlSession.capabilities.value], prepareTelegram);
+  const telegramScript = document.querySelector<HTMLScriptElement>(
+    TELEGRAM_WEB_APP_SCRIPT_SELECTOR,
+  );
+  if (window.Telegram?.WebApp) markTelegramReady();
+  else {
+    telegramScript?.addEventListener("load", markTelegramReady, { once: true });
+    telegramScript?.addEventListener("error", markTelegramReady, { once: true });
+  }
 
   if (import.meta.hot) {
     import.meta.hot.dispose(() => {
       stop();
       cleanup();
+      telegramScript?.removeEventListener("load", markTelegramReady);
+      telegramScript?.removeEventListener("error", markTelegramReady);
     });
   }
 });

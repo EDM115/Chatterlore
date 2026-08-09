@@ -24,6 +24,12 @@ interface RuntimeSetting {
   version: number | null;
 }
 
+interface RuntimeSettingsMutation {
+  items: RuntimeSetting[];
+  version: number;
+  audit_event_id: number;
+}
+
 type QueryCatalog = components["schemas"]["QueryCatalogResponse"];
 
 const api = useControlApi();
@@ -129,12 +135,14 @@ async function saveRuntimeSetting(setting: RuntimeSetting) {
   activeOperation.value = `runtime:${setting.key}`;
   error.value = null;
   try {
-    runtimeSettings.value = await api.request<RuntimeSetting[]>("/bot-settings/runtime", {
+    const mutation = await api.request<RuntimeSettingsMutation>("/bot-settings/runtime", {
       body: {
         updates: { [setting.key]: parseDraft(runtimeDraft.value[setting.key] ?? "", setting) },
+        version: setting.version ?? 0,
       },
       method: "PATCH",
     });
+    runtimeSettings.value = mutation.items;
     runtimeDraft.value = Object.fromEntries(
       runtimeSettings.value.map((item) => [item.key, formatDraft(item.value)]),
     );

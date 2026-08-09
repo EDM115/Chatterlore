@@ -14,6 +14,12 @@ interface ManagedChat {
   updated_at: string;
 }
 
+interface ManagedChatPage {
+  items: ManagedChat[];
+  next_cursor: number | null;
+  has_more: boolean;
+}
+
 interface ChatAdmin {
   chat_id: number;
   telegram_user_id: number;
@@ -39,6 +45,7 @@ interface ScopeSettings {
   inherited: Record<string, unknown>;
   overrides: Record<string, unknown>;
   policy: { learning_enabled: boolean; allow_admins: boolean };
+  version: number;
 }
 
 const api = useControlApi();
@@ -95,7 +102,8 @@ onBeforeUnmount(() => syncTelegramClosingConfirmation(window.Telegram?.WebApp, f
 async function refreshChats() {
   error.value = null;
   try {
-    chats.value = await api.request<ManagedChat[]>("/chats");
+    const page = await api.request<ManagedChatPage>("/chats?limit=100");
+    chats.value = page.items;
     if (!chats.value.some((chat) => chat.chat_id === selectedChatId.value)) {
       selectedChatId.value = chats.value[0]?.chat_id ?? null;
     }
@@ -289,6 +297,7 @@ async function saveScopeSettings() {
           allow_admins: allowAdmins.value,
           learning_enabled: learningEnabled.value,
           settings,
+          version: scopeSettings.value?.version ?? 0,
         },
         method: "PATCH",
       },

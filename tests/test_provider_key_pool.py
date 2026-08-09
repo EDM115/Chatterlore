@@ -275,7 +275,8 @@ async def test_invalid_request_never_rotates_or_degrades_a_credential(tmp_path: 
 
 @pytest.mark.asyncio
 async def test_pool_exhaustion_attempts_each_eligible_key_once(tmp_path: Path) -> None:
-    pool, _ = await create_pool(tmp_path, labels=("first", "second", "third"))
+    expected_labels = tuple(f"key-{index}" for index in range(10))
+    pool, _ = await create_pool(tmp_path, labels=expected_labels)
     labels: list[str] = []
 
     async def dead_key(lease):
@@ -285,9 +286,9 @@ async def test_pool_exhaustion_attempts_each_eligible_key_once(tmp_path: Path) -
     with pytest.raises(ProviderPoolExhaustedError) as caught:
         await pool.execute("pooled", dead_key)
 
-    assert labels == ["first", "second", "third"]
+    assert labels == list(expected_labels)
     assert caught.value.profile_name == "pooled"
-    assert caught.value.attempted_count == 3
+    assert caught.value.attempted_count == 10
     assert caught.value.earliest_retry_at is None
     assert "credential" not in str(caught.value).lower()
 

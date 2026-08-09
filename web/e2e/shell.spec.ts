@@ -47,7 +47,7 @@ async function stubDashboard(page: Page): Promise<void> {
           memory_files: 3,
           memory_scan_truncated: false,
         },
-        runtime: { uptime_seconds: 3661, schema_revision: "0016", scheduler: [] },
+        runtime: { uptime_seconds: 3661, schema_revision: "0017", scheduler: [] },
         administration: {
           bot_admins: 2,
           delegated_chat_admins: 3,
@@ -73,7 +73,7 @@ async function stubDashboard(page: Page): Promise<void> {
         generated_at: "2026-08-02T12:00:00Z",
         checks: ["db-integrity", "provider-profile"],
         provider_calls_performed: false,
-        runtime: { uptime_seconds: 3661, schema_revision: "0016", scheduler: [] },
+        runtime: { uptime_seconds: 3661, schema_revision: "0017", scheduler: [] },
         storage: {
           database_bytes: 1048576,
           memory_bytes: 2048,
@@ -178,8 +178,11 @@ async function stubManagement(page: Page): Promise<void> {
       contentType: "application/json",
     }),
   );
-  await page.route("**/api/control/v1/chats", (route) =>
-    route.fulfill({ body: "[]", contentType: "application/json" }),
+  await page.route("**/api/control/v1/chats*", (route) =>
+    route.fulfill({
+      body: JSON.stringify({ items: [], next_cursor: null, has_more: false }),
+      contentType: "application/json",
+    }),
   );
 }
 
@@ -258,8 +261,11 @@ test("bot administrators can hydrate bot settings and managed-chat direct routes
 
 test("regular browsers use the bounded bot-DM enrollment fallback", async ({ page }) => {
   await stubAuthenticatedSession(page);
-  await page.route("**/api/control/v1/chats", (route) =>
-    route.fulfill({ body: "[]", contentType: "application/json" }),
+  await page.route("**/api/control/v1/chats*", (route) =>
+    route.fulfill({
+      body: JSON.stringify({ items: [], next_cursor: null, has_more: false }),
+      contentType: "application/json",
+    }),
   );
   await page.route("**/api/control/v1/chats/enrollment-requests", async (route) => {
     expect(route.request().postDataJSON()).toEqual({ delivery: "telegram_dm" });

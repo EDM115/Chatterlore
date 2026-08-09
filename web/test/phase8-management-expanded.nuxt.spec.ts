@@ -87,33 +87,37 @@ describe("Phase 8 settings and chat reconciliation", () => {
 
   it("filters lifecycle states while retaining totals and topic-scope administration", async () => {
     const request = vi.fn(async (input: string) => {
-      if (input.endsWith("/chats"))
-        return [
-          {
-            chat_id: -1001,
-            title: "Active group",
-            username: "active",
-            status: "active",
-            version: 1,
-            updated_at: "2026-08-02T10:00:00Z",
-          },
-          {
-            chat_id: -1002,
-            title: "Paused group",
-            username: null,
-            status: "paused",
-            version: 2,
-            updated_at: "2026-08-02T10:00:00Z",
-          },
-          {
-            chat_id: -1003,
-            title: "Detached group",
-            username: null,
-            status: "detached",
-            version: 3,
-            updated_at: "2026-08-02T10:00:00Z",
-          },
-        ];
+      if (input.endsWith("/chats?limit=100"))
+        return {
+          items: [
+            {
+              chat_id: -1001,
+              title: "Active group",
+              username: "active",
+              status: "active",
+              version: 1,
+              updated_at: "2026-08-02T10:00:00Z",
+            },
+            {
+              chat_id: -1002,
+              title: "Paused group",
+              username: null,
+              status: "paused",
+              version: 2,
+              updated_at: "2026-08-02T10:00:00Z",
+            },
+            {
+              chat_id: -1003,
+              title: "Detached group",
+              username: null,
+              status: "detached",
+              version: 3,
+              updated_at: "2026-08-02T10:00:00Z",
+            },
+          ],
+          next_cursor: null,
+          has_more: false,
+        };
       if (input.endsWith("/chats/-1001/admins")) return [];
       if (input.endsWith("/chats/-1001/settings"))
         return {
@@ -122,6 +126,7 @@ describe("Phase 8 settings and chat reconciliation", () => {
           inherited: { retrieval_top_k: 6 },
           overrides: {},
           policy: { learning_enabled: true, allow_admins: false },
+          version: 0,
         };
       if (input.endsWith("/chats/-1001/settings?thread_id=22"))
         return {
@@ -130,6 +135,7 @@ describe("Phase 8 settings and chat reconciliation", () => {
           inherited: { retrieval_top_k: 6 },
           overrides: { retrieval_top_k: 9 },
           policy: { learning_enabled: true, allow_admins: false },
+          version: 1,
         };
       throw new Error(`Unexpected request: ${input}`);
     });

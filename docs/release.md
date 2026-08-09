@@ -32,7 +32,7 @@ Include:
 ## Current Release Notes
 
 - Package version is `0.11.0`.
-- Migration head is `0016_managed_chat_enrollment_requests`.
+- Migration head is `0017_scope_settings_versions`.
 - The Python and Nuxt Dockerfiles are multi-stage and non-root, Caddy is pinned to 2.11.4 Alpine, Compose publishes only the ingress and the frontend/backend build independently. The prior bot-image Docker smoke is verified, but the new Nuxt/Caddy three-service build, TLS, routing, health and replacement acceptance remains pending until Docker Desktop is available.
 - `.github/workflows/ci.yml` runs format, lint, type check, tests, migration, CLI and bot Docker smoke gates, builds the independent frontend image and runs the Nuxt SSR build/secret-scan/production-smoke gates on GitHub Actions; hosted results must be confirmed again after these workflow changes are pushed.
 - The 2026-08-01 non-Docker SSR transition checkpoint passed Oxfmt, type-aware Oxlint/tsgolint, raw Nuxt typecheck, 11 unit/component tests, OpenAPI drift, a 2.75 MB production server build, a 17-text-asset secret scan, nonce-aware SSR smoke and 10 desktop/mobile Playwright checks. Whole-project Ruff format/lint, `ty` and the fresh offline suite also passed with 272 tests, 1 skipped live Telegram test and 4 strict expected failures.
