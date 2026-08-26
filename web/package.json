@@ -1,13 +1,12 @@
 {
   "name": "@pzp-ai/control-plane",
-  "version": "0.1.0",
+  "version": "0.11.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "node ./scripts/dev.mjs",
     "dev:web": "nuxt dev",
     "format": "oxfmt .",
-    "format:check": "oxfmt --check .",
     "postinstall": "nuxt prepare",
     "lint": "oxlint --type-aware --deny-warnings .",
     "runtime:check": "node --version",
@@ -22,36 +21,36 @@
     "scan:generated": "node ./scripts/scan-generated-assets.mjs ./.output"
   },
   "dependencies": {
-    "@nuxt/ui": "4.10.0",
-    "nuxt": "4.5.1",
-    "tailwindcss": "4.3.3",
-    "vue": "3.5.40",
-    "vue-router": "5.2.0"
+    "@nuxt/ui": "~4.11.0",
+    "nuxt": "~4.5.2",
+    "tailwindcss": "~4.3.3",
+    "vue": "~3.5.41",
+    "vue-router": "~5.2.0"
   },
   "devDependencies": {
-    "@nuxt/test-utils": "4.1.0",
-    "@playwright/test": "1.62.0",
-    "@testing-library/vue": "8.1.0",
-    "@types/node": "24.13.3",
-    "@vue/test-utils": "2.4.11",
-    "happy-dom": "20.11.1",
-    "openapi-typescript": "7.13.0",
-    "oxfmt": "0.61.0",
-    "oxlint": "1.76.0",
-    "oxlint-tsgolint": "7.0.2001",
-    "typescript": "6.0.3",
-    "vitest": "4.1.10",
-    "vue-tsc": "3.3.8"
+    "@nuxt/test-utils": "~4.1.0",
+    "@playwright/test": "~1.62.1",
+    "@testing-library/vue": "~8.1.0",
+    "@types/node": "^26.3.0",
+    "@vue/test-utils": "~2.4.11",
+    "happy-dom": "~20.11.6",
+    "openapi-typescript": "~7.13.0",
+    "oxfmt": "~0.65.0",
+    "oxlint": "~1.80.0",
+    "oxlint-tsgolint": "~7.0.2001",
+    "typescript": "~7.0.2",
+    "vitest": "~4.1.11",
+    "vue-tsc": "~3.3.11"
   },
   "devEngines": {
     "runtime": {
       "name": "node",
-      "version": "24.18.0",
+      "version": "24.19.0",
       "onFail": "download"
     }
   },
   "engines": {
-    "node": "24.18.0"
+    "node": "24.19.0"
   },
-  "packageManager": "pnpm@11.18.0"
+  "packageManager": "pnpm@11.24.0"
 }
