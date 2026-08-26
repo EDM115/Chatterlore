@@ -1,8 +1,6 @@
 allowBuilds:
   esbuild: true
-  vue-demi: true
-
-confirmModulesPurge: false
+  vue-demi: false
 
 peerDependencyRules:
   allowedVersions:
