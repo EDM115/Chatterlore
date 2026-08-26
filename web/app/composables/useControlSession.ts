@@ -33,10 +33,23 @@ export function useControlSession() {
   const status = useState<SessionStatus>("control-plane-session-status", () => "idle");
   const error = useState<string | null>("control-plane-session-error", () => null);
   const bootstrapped = useState<boolean>("control-plane-session-bootstrapped", () => false);
+  const miniAppProof = useState<string | null>("control-plane-mini-app-proof", () => null);
 
   const user = computed(() => session.value?.user ?? null);
   const clientKind = computed(() => session.value?.client_kind ?? null);
   const capabilities = computed(() => session.value?.capabilities ?? []);
+  const accessLabel = computed(() => {
+    if (status.value !== "authenticated") return "Authentication required";
+    if (capabilities.value.includes("bot.admin")) return "Bot administrator";
+    if (
+      Object.values(session.value?.chat_capabilities ?? {}).some((items) =>
+        items.includes("chat.admin"),
+      )
+    ) {
+      return "Scoped administrator";
+    }
+    return "Authenticated user";
+  });
 
   function accept(next: ControlPlaneSession) {
     session.value = next;
@@ -48,6 +61,7 @@ export function useControlSession() {
   function clear(nextStatus: SessionStatus = "anonymous") {
     session.value = null;
     api.csrfToken.value = null;
+    miniAppProof.value = null;
     status.value = nextStatus;
   }
 
@@ -67,12 +81,12 @@ export function useControlSession() {
   async function exchangeMiniApp(initData: string): Promise<boolean> {
     status.value = "loading";
     try {
-      accept(
-        await api.request<ControlPlaneSession>("/auth/mini-app", {
-          body: { init_data: initData },
-          method: "POST",
-        }),
-      );
+      const authenticated = await api.request<ControlPlaneSession>("/auth/mini-app", {
+        body: { init_data: initData },
+        method: "POST",
+      });
+      accept(authenticated);
+      miniAppProof.value = initData;
       return true;
     } catch {
       clear("error");
@@ -110,7 +124,7 @@ export function useControlSession() {
   }
 
   async function ensureStepUp(action: string, returnTo = "/"): Promise<boolean> {
-    const initData = import.meta.client ? readTelegramInitData() : "";
+    const initData = import.meta.client ? (miniAppProof.value ?? readTelegramInitData()) : "";
     try {
       let verified: StepUpResponse;
       if (session.value?.client_kind === "mini_app" && initData) {
@@ -136,8 +150,11 @@ export function useControlSession() {
         session.value = { ...session.value, step_up_at: verified.verified_at };
       }
       return true;
-    } catch {
-      error.value = "Fresh Telegram verification could not be completed.";
+    } catch (caught) {
+      error.value =
+        controlResponseCode(caught) === "mini_app_step_up_rejected"
+          ? "Telegram verification could not be completed in this Mini App. Open the control plane in a regular browser to retry securely."
+          : "Fresh Telegram verification could not be completed.";
       return false;
     }
   }
@@ -157,6 +174,7 @@ export function useControlSession() {
   }
 
   return {
+    accessLabel,
     bootstrap,
     capabilities,
     clientKind,

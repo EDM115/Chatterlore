@@ -113,6 +113,65 @@ describe("Phase 6 management pages", () => {
     expect(wrapper.text()).not.toContain("openai_api_key");
   });
 
+  it("shows Mini App step-up rejection instead of making Remove appear inert", async () => {
+    useState("control-plane-session").value = { ...session, client_kind: "mini_app" };
+    window.Telegram = {
+      WebApp: {
+        initData: "signed-init-data",
+        colorScheme: "dark",
+        ready: vi.fn(),
+        expand: vi.fn(),
+      },
+    };
+    const envelope = {
+      error: {
+        code: "mini_app_step_up_rejected",
+        message: "Telegram Mini App identity could not be verified.",
+      },
+    };
+    const request = vi.fn(async (input: string, options?: { method?: string }) => {
+      if (input.endsWith("/bot-settings/admins"))
+        return [
+          {
+            telegram_user_id: 111,
+            source: "bootstrap",
+            version: null,
+            granted_by: null,
+            granted_at: null,
+          },
+          {
+            telegram_user_id: 222,
+            source: "managed",
+            version: 1,
+            granted_by: 111,
+            granted_at: "2026-08-01T12:00:00Z",
+          },
+        ];
+      if (input.endsWith("/bot-settings/runtime")) return [];
+      if (input.endsWith("/chats?limit=100"))
+        return { items: [], next_cursor: null, has_more: false };
+      if (input.endsWith("/auth/step-up/mini-app"))
+        throw { data: envelope, response: { status: 401, _data: envelope } };
+      throw new Error(`Unexpected request: ${input} ${options?.method ?? "GET"}`);
+    });
+    vi.stubGlobal("$fetch", request);
+    const wrapper = await mountSuspended(BotSettingsPage);
+    await vi.waitFor(() => expect(wrapper.text()).toContain("Managed grant v1"));
+    const remove = wrapper.findAll("button").find((button) => button.text() === "Remove");
+
+    await remove?.trigger("click");
+
+    await vi.waitFor(() =>
+      expect(wrapper.text()).toContain(
+        "Telegram verification could not be completed in this Mini App. Open the control plane in a regular browser to retry securely.",
+      ),
+    );
+    expect(request).not.toHaveBeenCalledWith(
+      expect.stringContaining("/bot-settings/admins/222"),
+      expect.objectContaining({ method: "DELETE" }),
+    );
+  });
+
   it("uses Telegram requestChat and polls the bound enrollment request", async () => {
     const requestChat = vi.fn((_id: string, callback?: (sent: boolean) => void) =>
       callback?.(true),

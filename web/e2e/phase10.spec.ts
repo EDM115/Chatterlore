@@ -64,7 +64,7 @@ const overview = {
 };
 
 const catalog = {
-  scope: "all",
+  scope: "-1001",
   chat_models: ["gpt-5.6-terra"],
   embedding_models: ["text-embedding-3-small"],
   reasoning_levels: ["low", "medium", "high"],
@@ -182,12 +182,33 @@ test("signed Mini App initData establishes a scoped session without browser fall
 test("scoped and ordinary identities cannot hydrate bot-wide or foreign-scope operations", async ({
   page,
 }) => {
+  let chatListCount = 0;
   await page.route("**/api/control/v1/**", async (route) => {
     const path = new URL(route.request().url()).pathname.replace("/api/control/v1", "");
     if (path === "/session")
       return fulfillJson(route, session({ chatCapabilities: { "-1001": ["chat.admin"] } }));
-    if (path === "/chats")
-      return fulfillJson(route, { items: [], next_cursor: null, has_more: false });
+    if (path === "/chats") {
+      chatListCount += 1;
+      return fulfillJson(
+        route,
+        chatListCount === 1
+          ? { items: [], next_cursor: null, has_more: false }
+          : {
+              items: [
+                {
+                  chat_id: -1001,
+                  title: "Scoped group",
+                  username: null,
+                  status: "active",
+                  version: 1,
+                  updated_at: "2026-08-09T12:00:00Z",
+                },
+              ],
+              next_cursor: null,
+              has_more: false,
+            },
+      );
+    }
     if (path === "/query/catalog")
       return fulfillJson(
         route,
@@ -244,6 +265,21 @@ test("browser feedback distinguishes 409, 422, 429, 403 and session-expiring 401
       ]);
     if (path === "/bot-settings/runtime" && request.method() === "PATCH")
       return fulfillJson(route, { error: { code: "version_conflict", message: "Stale." } }, 409);
+    if (path === "/chats")
+      return fulfillJson(route, {
+        items: [
+          {
+            chat_id: -1001,
+            title: "Active group",
+            username: null,
+            status: "active",
+            version: 1,
+            updated_at: "2026-08-09T12:00:00Z",
+          },
+        ],
+        next_cursor: null,
+        has_more: false,
+      });
     if (path === "/query/catalog")
       return catalogStatus === 200
         ? fulfillJson(route, catalog)

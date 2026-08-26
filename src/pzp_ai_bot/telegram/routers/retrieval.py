@@ -249,9 +249,33 @@ def _extract_summary_args(raw: str | None) -> tuple[dict[str, str], AIRequestOpt
 
 def _shlex_tokens(raw: str | None) -> list[str]:
     try:
-        return shlex.split(raw or "")
+        return shlex.split(_escape_word_apostrophes(raw or ""))
     except ValueError as exc:
         raise ValueError(f"invalid quoted arguments: {exc}") from exc
+
+
+def _escape_word_apostrophes(raw: str) -> str:
+    escaped: list[str] = []
+    quote: str | None = None
+    index = 0
+    while index < len(raw):
+        char = raw[index]
+        if char == "\\" and quote != "'" and index + 1 < len(raw):
+            escaped.extend((char, raw[index + 1]))
+            index += 2
+            continue
+        if char in {"'", '"'}:
+            if quote == char:
+                quote = None
+            elif quote is None:
+                previous = raw[index - 1] if index else ""
+                if char == "'" and previous and not previous.isspace() and previous != "=":
+                    escaped.append("\\")
+                else:
+                    quote = char
+        escaped.append(char)
+        index += 1
+    return "".join(escaped)
 
 
 def export_documents(

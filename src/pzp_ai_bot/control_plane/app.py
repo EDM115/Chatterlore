@@ -23,7 +23,11 @@ from pzp_ai_bot.memory.scope import Scope, parse_scope
 from pzp_ai_bot.memory.settings_profiles import SettingsVersionConflictError
 from pzp_ai_bot.memory.transfer import MemoryExportFormat
 
-from .auth.mini_app import MiniAppValidationError, validate_mini_app_init_data
+from .auth.mini_app import (
+    MiniAppValidationError,
+    classify_mini_app_validation_error,
+    validate_mini_app_init_data,
+)
 from .auth.oidc import OIDCValidationError, TelegramOIDCClient
 from .auth.sessions import (
     SENSITIVE_ACTIONS,
@@ -514,7 +518,12 @@ def _build_auth_router(development_auth: DevelopmentAuthConfig | None = None) ->
                 max_age_seconds=context.settings.control_plane_auth_max_age_seconds,
             )
         except MiniAppValidationError as exc:
-            await _audit(context, method="mini_app", outcome="rejected", reason="signature")
+            await _audit(
+                context,
+                method="mini_app",
+                outcome="rejected",
+                reason=f"validation_{classify_mini_app_validation_error(exc)}",
+            )
             raise ControlPlaneAPIError(
                 401,
                 "mini_app_identity_rejected",
@@ -619,6 +628,13 @@ def _build_auth_router(development_auth: DevelopmentAuthConfig | None = None) ->
                 max_age_seconds=context.settings.control_plane_step_up_max_age_seconds,
             )
         except MiniAppValidationError as exc:
+            await _audit(
+                context,
+                method="mini_app",
+                outcome="rejected",
+                reason=f"step_up_{classify_mini_app_validation_error(exc)}",
+                user_id=authenticated.identity.telegram_user_id,
+            )
             raise ControlPlaneAPIError(
                 401,
                 "mini_app_step_up_rejected",

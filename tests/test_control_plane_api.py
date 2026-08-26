@@ -4,7 +4,7 @@ import asyncio
 import hashlib
 import hmac
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -48,9 +48,9 @@ def settings_for(tmp_path: Path, **overrides: object) -> Settings:
     return Settings.model_validate(values)
 
 
-def signed_init_data(user_id: int = 887_758_628) -> str:
+def signed_init_data(user_id: int = 887_758_628, *, authenticated_at: datetime = NOW) -> str:
     fields = {
-        "auth_date": str(int(NOW.timestamp())),
+        "auth_date": str(int(authenticated_at.timestamp())),
         "query_id": f"query-{user_id}",
         "user": json.dumps(
             {
@@ -316,6 +316,45 @@ def test_invalid_auth_never_falls_back_and_step_up_requires_the_same_identity(
         assert "bot.admin" in client.get("/api/control/v1/session").json()["capabilities"]
         asyncio.run(_revoke_bot_admin(context, 887_758_628))
         assert "bot.admin" not in client.get("/api/control/v1/session").json()["capabilities"]
+
+
+def test_stale_mini_app_step_up_preserves_session_and_audits_rejection(tmp_path: Path) -> None:
+    context, app = build_test_app(tmp_path)
+
+    with TestClient(app, base_url=ORIGIN) as client:
+        login = client.post(
+            "/api/control/v1/auth/mini-app",
+            headers={"Origin": ORIGIN},
+            json={"init_data": signed_init_data()},
+        )
+        csrf = login.json()["csrf_token"]
+        rejected = client.post(
+            "/api/control/v1/auth/step-up/mini-app",
+            headers={"Origin": ORIGIN, "X-CSRF-Token": csrf},
+            json={
+                "init_data": signed_init_data(authenticated_at=NOW - timedelta(seconds=301)),
+                "action": "bot_admin:delete",
+            },
+        )
+
+        assert rejected.status_code == 401
+        assert rejected.json()["error"]["code"] == "mini_app_step_up_rejected"
+        active = client.get("/api/control/v1/session")
+        assert active.status_code == 200
+        assert active.json()["user"]["telegram_user_id"] == 887_758_628
+
+    async def verify_audit() -> None:
+        events = await context.memory.audit_events(
+            event_type="control_plane.auth.rejected", limit=10
+        )
+        assert events[0].user_id == 887_758_628
+        assert events[0].payload == {
+            "method": "mini_app",
+            "outcome": "rejected",
+            "reason": "step_up_expired",
+        }
+
+    asyncio.run(verify_audit())
 
 
 def test_auth_entry_points_have_independent_rate_limit_buckets(tmp_path: Path) -> None:

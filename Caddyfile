@@ -5,7 +5,7 @@
 	@insecure_forwarded header X-Forwarded-Proto http
 	redir @insecure_forwarded https://{host}{uri} permanent
 
-	@backend path /api /api/* /auth /auth/* /telegram/webhook /health
+	@backend path /api/control /api/control/* /auth /auth/* /telegram/webhook /health
 	handle @backend {
 		reverse_proxy bot:8080
 	}

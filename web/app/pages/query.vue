@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { components } from "../types/openapi";
 import { syncTelegramClosingConfirmation } from "../plugins/telegram.client";
+import { resolveQueryCatalogScope } from "../utils/queryCatalogScope";
 
 definePageMeta({ middleware: "auth" });
 useSeoMeta({ title: "Query · PZP AI Control Plane" });
@@ -11,13 +12,8 @@ type QuerySearchResponse = components["schemas"]["QuerySearchResponse"];
 type QueryAskResponse = components["schemas"]["QueryAskResponse"];
 
 const api = useControlApi();
-const controlSession = useControlSession();
 const mode = ref<"search" | "ask">("search");
-const scope = ref(
-  controlSession.hasCapability("bot.admin")
-    ? "all"
-    : (Object.keys(controlSession.session.value?.chat_capabilities ?? {})[0] ?? "all"),
-);
+const scope = ref("");
 const memoryProfile = ref("");
 const queryText = ref("");
 const topK = ref(6);
@@ -84,8 +80,17 @@ async function loadCatalog() {
   loadingCatalog.value = true;
   error.value = null;
   try {
+    if (!scope.value.trim() || scope.value.trim() === "all") {
+      const resolvedScope = await resolveQueryCatalogScope(api);
+      if (!resolvedScope) {
+        catalog.value = null;
+        error.value = "Enroll or resume an active managed chat before querying memory.";
+        return;
+      }
+      scope.value = resolvedScope;
+    }
     catalog.value = await api.request<QueryCatalog>(
-      `/query/catalog?scope=${encodeURIComponent(scope.value)}`,
+      `/query/catalog?scope=${encodeURIComponent(scope.value.trim())}`,
     );
     const retrieval =
       embeddingProfiles.value.find((profile) => profile.name === retrievalProfileName.value) ??

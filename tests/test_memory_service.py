@@ -72,6 +72,58 @@ async def test_remember_search_and_ask_are_scoped(context: AppContext) -> None:
 
 
 @pytest.mark.asyncio
+async def test_remember_emits_content_free_create_audit_event(context: AppContext) -> None:
+    scope = Scope(-100, 3)
+    content = "Sensitive durable note content must stay out of audit metadata."
+
+    item_id = await context.memory.remember(
+        scope,
+        content,
+        source_message_id=42,
+        tags=["private"],
+        priority=8,
+        source="https://example.invalid/private-note",
+    )
+
+    events = await context.memory.audit_events(
+        scope=scope, event_type="manual_note_created", limit=5
+    )
+    assert len(events) == 1
+    assert events[0].scope == scope
+    assert events[0].payload == {"knowledge_item_id": item_id}
+    assert content not in json.dumps(events[0].payload)
+
+
+@pytest.mark.asyncio
+async def test_edit_note_emits_content_free_audit_event(context: AppContext) -> None:
+    scope = Scope(-100, 4)
+    original_content = "Original durable note content."
+    updated_content = "Updated durable note content must stay out of audit metadata."
+    item_id = await context.memory.remember(scope, original_content)
+
+    await context.memory.edit_note(
+        scope,
+        item_id,
+        content=updated_content,
+        tags=["private-tag"],
+        priority=7,
+        source="https://example.invalid/note?token=private-value",
+    )
+
+    events = await context.memory.audit_events(
+        scope=scope, event_type="manual_note_updated", limit=5
+    )
+    assert len(events) == 1
+    assert events[0].scope == scope
+    assert events[0].payload == {"knowledge_item_id": item_id}
+    serialized_payload = json.dumps(events[0].payload)
+    assert original_content not in serialized_payload
+    assert updated_content not in serialized_payload
+    assert "private-tag" not in serialized_payload
+    assert "private-value" not in serialized_payload
+
+
+@pytest.mark.asyncio
 async def test_forget_requires_confirmation_and_deletes_scope(context: AppContext) -> None:
     scope = Scope(-100, 1)
     await context.memory.remember(scope, "Delete me.")

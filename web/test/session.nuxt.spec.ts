@@ -43,6 +43,26 @@ afterEach(() => {
 });
 
 describe("useControlSession", () => {
+  it.each([
+    ["Authenticated user", [], {}],
+    ["Scoped administrator", [], { "-1004148019329": ["chat.admin"] }],
+    ["Bot administrator", ["bot.admin"], {}],
+  ])(
+    "labels an authenticated session from its effective authorization as %s",
+    async (expected, capabilities, chatCapabilities) => {
+      const wrapper = await mountSuspended(Harness);
+      wrapper.vm.session = {
+        ...sessionPayload,
+        capabilities,
+        chat_capabilities: chatCapabilities,
+      };
+      wrapper.vm.status = "authenticated";
+      await wrapper.vm.$nextTick();
+
+      expect(wrapper.vm.accessLabel).toBe(expected);
+    },
+  );
+
   it("waits for Telegram launch data before its SDK script element exists", async () => {
     document
       .querySelectorAll('script[src^="https://telegram.org/js/telegram-web-app.js"]')
@@ -110,6 +130,39 @@ describe("useControlSession", () => {
       timeout: 5_000,
     });
     expect(wrapper.vm.clientKind).toBe("mini_app");
+  });
+
+  it("reuses the exact Mini App proof accepted at login when the SDK value later diverges", async () => {
+    window.Telegram = {
+      WebApp: {
+        initData: "accepted-signed-init-data",
+        colorScheme: "dark",
+        ready: vi.fn(),
+        expand: vi.fn(),
+      },
+    };
+    const request = vi
+      .fn()
+      .mockResolvedValueOnce({ ...sessionPayload, client_kind: "mini_app" })
+      .mockResolvedValueOnce({
+        step_up: true,
+        verified_at: "2026-08-01T12:00:00Z",
+        action: "bot_admin:delete",
+      });
+    vi.stubGlobal("$fetch", request);
+    const wrapper = await mountSuspended(Harness);
+
+    expect(await wrapper.vm.bootstrap()).toBe(true);
+    window.Telegram.WebApp.initData = "later%malformed-sdk-value";
+    expect(await wrapper.vm.ensureStepUp("bot_admin:delete", "/bot-settings")).toBe(true);
+
+    expect(request).toHaveBeenNthCalledWith(2, "/api/control/v1/auth/step-up/mini-app", {
+      body: { action: "bot_admin:delete", init_data: "accepted-signed-init-data" },
+      credentials: "include",
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": "csrf-token" },
+      method: "POST",
+      timeout: 5_000,
+    });
   });
 
   it("waits for late Telegram SDK init data before its head script exists", async () => {
@@ -235,6 +288,42 @@ describe("useControlSession", () => {
       method: "POST",
       timeout: 5_000,
     });
+  });
+
+  it("keeps the session and offers secure browser fallback when Mini App step-up fails", async () => {
+    window.Telegram = {
+      WebApp: {
+        initData: "stale-signed-init-data",
+        colorScheme: "dark",
+        ready: vi.fn(),
+        expand: vi.fn(),
+      },
+    };
+    const envelope = {
+      error: {
+        code: "mini_app_step_up_rejected",
+        message: "Telegram Mini App identity could not be verified.",
+      },
+    };
+    vi.stubGlobal(
+      "$fetch",
+      vi.fn().mockRejectedValue({
+        data: envelope,
+        response: { status: 401, _data: envelope },
+      }),
+    );
+    const wrapper = await mountSuspended(Harness);
+    wrapper.vm.session = { ...sessionPayload, client_kind: "mini_app" };
+    wrapper.vm.status = "authenticated";
+    useState("control-plane-csrf").value = "csrf-token";
+
+    expect(await wrapper.vm.ensureStepUp("bot_admin:delete", "/bot-settings")).toBe(false);
+
+    expect(wrapper.vm.status).toBe("authenticated");
+    expect(wrapper.vm.session.user.telegram_user_id).toBe(887758628);
+    expect(wrapper.vm.error).toBe(
+      "Telegram verification could not be completed in this Mini App. Open the control plane in a regular browser to retry securely.",
+    );
   });
 });
 

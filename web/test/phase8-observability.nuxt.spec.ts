@@ -180,9 +180,24 @@ describe("Phase 8 observability and operations", () => {
           providers: overview.providers,
           alerts: overview.alerts,
         };
-      if (input.endsWith("/query/catalog?scope=all"))
+      if (input.endsWith("/chats?limit=100"))
         return {
-          scope: "all",
+          items: [
+            {
+              chat_id: -1001,
+              title: "Active group",
+              username: null,
+              status: "active",
+              version: 1,
+              updated_at: "2026-08-02T10:00:00Z",
+            },
+          ],
+          next_cursor: null,
+          has_more: false,
+        };
+      if (input.endsWith("/query/catalog?scope=-1001"))
+        return {
+          scope: "-1001",
           chat_models: ["gpt-5.6-terra"],
           embedding_models: ["text-embedding-3-small", "all-MiniLM-L6-v2"],
           reasoning_levels: ["medium"],

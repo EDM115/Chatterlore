@@ -23,7 +23,7 @@ const session = {
 };
 
 const catalog = {
-  scope: "all",
+  scope: "-1001",
   chat_models: ["gpt-5.6-terra", "gpt-5.4-mini"],
   embedding_models: ["text-embedding-3-small", "all-MiniLM-L6-v2"],
   reasoning_levels: ["low", "medium", "high"],
@@ -69,11 +69,26 @@ describe("Phase 8 query workspace", () => {
   it("runs split-profile Search and Ask requests and renders bounded source references", async () => {
     const request = vi.fn(
       async (input: string, options?: { body?: Record<string, unknown>; method?: string }) => {
-        if (input.endsWith("/query/catalog?scope=all")) return catalog;
+        if (input.endsWith("/chats?limit=100"))
+          return {
+            items: [
+              {
+                chat_id: -1001,
+                title: "Active group",
+                username: null,
+                status: "active",
+                version: 1,
+                updated_at: "2026-08-02T10:00:00Z",
+              },
+            ],
+            next_cursor: null,
+            has_more: false,
+          };
+        if (input.endsWith("/query/catalog?scope=-1001")) return catalog;
         if (input.endsWith("/query/search")) {
           expect(options?.body).toMatchObject({
             query: "What did we decide?",
-            scope: "all",
+            scope: "-1001",
             retrieval_provider_profile: "local",
             chat_provider_profile: "primary",
             embedding_model: "all-MiniLM-L6-v2",
@@ -81,7 +96,7 @@ describe("Phase 8 query workspace", () => {
             reasoning_level: "medium",
           });
           return {
-            destination_scope: "all",
+            destination_scope: "-1001",
             source_scopes: ["-1001"],
             memory_profile: null,
             selection: {
@@ -158,7 +173,22 @@ describe("Phase 8 query workspace", () => {
   it("cancels an in-flight query without presenting it as a backend failure", async () => {
     let requestSignal: AbortSignal | undefined;
     const request = vi.fn((input: string, options?: { signal?: AbortSignal }) => {
-      if (input.endsWith("/query/catalog?scope=all")) return Promise.resolve(catalog);
+      if (input.endsWith("/chats?limit=100"))
+        return Promise.resolve({
+          items: [
+            {
+              chat_id: -1001,
+              title: "Active group",
+              username: null,
+              status: "active",
+              version: 1,
+              updated_at: "2026-08-02T10:00:00Z",
+            },
+          ],
+          next_cursor: null,
+          has_more: false,
+        });
+      if (input.endsWith("/query/catalog?scope=-1001")) return Promise.resolve(catalog);
       if (input.endsWith("/query/search")) {
         requestSignal = options?.signal;
         return new Promise((_resolve, reject) => {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { components } from "../types/openapi";
 import { syncTelegramClosingConfirmation } from "../plugins/telegram.client";
+import { resolveQueryCatalogScope } from "../utils/queryCatalogScope";
 
 definePageMeta({ middleware: "auth" });
 
@@ -72,7 +73,12 @@ async function refreshPage() {
     );
     savedRuntimeDraft.value = { ...runtimeDraft.value };
     try {
-      catalog.value = await api.request<QueryCatalog>("/query/catalog?scope=all");
+      const catalogScope = await resolveQueryCatalogScope(api);
+      catalog.value = catalogScope
+        ? await api.request<QueryCatalog>(
+            `/query/catalog?scope=${encodeURIComponent(catalogScope)}`,
+          )
+        : null;
     } catch {
       catalog.value = null;
     }
@@ -108,11 +114,16 @@ async function addBotAdmin() {
 }
 
 async function removeBotAdmin(admin: BotAdmin) {
-  if (admin.version === null) return;
-  if (!(await controlSession.ensureStepUp("bot_admin:delete", "/bot-settings"))) return;
+  if (admin.version === null || activeOperation.value !== null) return;
   activeOperation.value = `admin:remove:${admin.telegram_user_id}`;
   error.value = null;
+  notice.value = null;
   try {
+    if (!(await controlSession.ensureStepUp("bot_admin:delete", "/bot-settings"))) {
+      error.value =
+        controlSession.error.value ?? "Fresh Telegram verification could not be completed.";
+      return;
+    }
     await api.request(`/bot-settings/admins/${admin.telegram_user_id}`, {
       body: { version: admin.version },
       method: "DELETE",
@@ -233,6 +244,7 @@ function parseDraft(value: string, setting: RuntimeSetting): unknown {
             color="error"
             variant="soft"
             size="sm"
+            :disabled="activeOperation !== null"
             :loading="activeOperation === `admin:remove:${admin.telegram_user_id}`"
             @click="removeBotAdmin(admin)"
             >Remove</UButton
