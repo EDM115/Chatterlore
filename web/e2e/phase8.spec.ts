@@ -57,7 +57,7 @@ const overview = {
   alerts,
 };
 const catalog = {
-  scope: "all",
+  scope: "-1001",
   chat_models: ["gpt-5.6-terra"],
   embedding_models: ["text-embedding-3-small", "all-MiniLM-L6-v2"],
   reasoning_levels: ["low", "medium", "high"],
@@ -101,6 +101,21 @@ async function stubPhase8Api(page: Page): Promise<string[]> {
     const path = `${url.pathname.replace("/api/control/v1", "")}${url.search}`;
 
     if (path === "/session") return fulfillJson(route, session);
+    if (path === "/chats?limit=100")
+      return fulfillJson(route, {
+        items: [
+          {
+            chat_id: -1001,
+            title: "Active group",
+            username: null,
+            status: "active",
+            version: 1,
+            updated_at: "2026-08-02T10:00:00Z",
+          },
+        ],
+        next_cursor: null,
+        has_more: false,
+      });
     if (path === "/stats/overview?scope=all") return fulfillJson(route, overview);
     if (path === "/stats/timeseries?scope=all&days=14")
       return fulfillJson(route, { scope: "all", days: 14, points: [] });
@@ -130,10 +145,11 @@ async function stubPhase8Api(page: Page): Promise<string[]> {
         providers,
         alerts,
       });
-    if (path === "/query/catalog?scope=all") return fulfillJson(route, catalog);
-    if (path === "/query/search" && request.method() === "POST")
+    if (path === "/query/catalog?scope=-1001") return fulfillJson(route, catalog);
+    if (path === "/query/search" && request.method() === "POST") {
+      expect(request.postDataJSON()).toMatchObject({ scope: "-1001" });
       return fulfillJson(route, {
-        destination_scope: "all",
+        destination_scope: "-1001",
         source_scopes: ["-1001"],
         memory_profile: null,
         selection: {
@@ -154,10 +170,11 @@ async function stubPhase8Api(page: Page): Promise<string[]> {
         ],
         elapsed_ms: 18,
       });
+    }
     if (path === "/query/ask" && request.method() === "POST") {
       expect(request.postDataJSON()).toMatchObject({
         question: "Why preserve one public origin?",
-        scope: "all",
+        scope: "-1001",
         retrieval_provider_profile: "local",
         embedding_model: "all-MiniLM-L6-v2",
         chat_provider_profile: "primary",
@@ -165,7 +182,7 @@ async function stubPhase8Api(page: Page): Promise<string[]> {
         reasoning_level: "high",
       });
       return fulfillJson(route, {
-        destination_scope: "all",
+        destination_scope: "-1001",
         source_scopes: ["-1001"],
         memory_profile: null,
         selection: {

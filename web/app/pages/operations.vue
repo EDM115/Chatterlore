@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { components } from "../types/openapi";
+import { resolveQueryCatalogScope } from "../utils/queryCatalogScope";
 
 definePageMeta({ middleware: "auth" });
 useSeoMeta({ title: "Operations · PZP AI Control Plane" });
@@ -48,10 +49,14 @@ async function loadOperations() {
   loading.value = true;
   error.value = null;
   try {
-    [health.value, catalog.value] = await Promise.all([
+    const [nextHealth, catalogScope] = await Promise.all([
       api.request<OperationsHealth>("/operations/health"),
-      api.request<QueryCatalog>("/query/catalog?scope=all"),
+      resolveQueryCatalogScope(api),
     ]);
+    health.value = nextHealth;
+    catalog.value = catalogScope
+      ? await api.request<QueryCatalog>(`/query/catalog?scope=${encodeURIComponent(catalogScope)}`)
+      : null;
     providerProfile.value =
       providerProfiles.value.find((profile) => profile.name === providerProfile.value)?.name ??
       providerProfiles.value[0]?.name ??
@@ -60,6 +65,9 @@ async function loadOperations() {
       localProfiles.value.find((profile) => profile.name === localProfile.value)?.name ??
       localProfiles.value[0]?.name ??
       "";
+    if (!catalogScope) {
+      error.value = "Enroll or resume an active managed chat before running provider checks.";
+    }
   } catch (caught) {
     error.value = controlErrorMessage(caught, "Operational status could not be loaded.");
   } finally {

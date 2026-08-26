@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -142,17 +143,24 @@ def test_compose_exposes_only_caddy_and_keeps_upstreams_independent() -> None:
 def test_frontend_image_is_frozen_multi_stage_and_non_root() -> None:
     dockerfile = (ROOT / "web" / "Dockerfile").read_text(encoding="utf-8")
     ignored = set((ROOT / "web" / ".dockerignore").read_text(encoding="utf-8").splitlines())
+    package = json.loads((ROOT / "web" / "package.json").read_text(encoding="utf-8"))
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 
-    assert "FROM node:24.18.0-bookworm-slim AS dependencies" in dockerfile
+    assert "FROM node:24.19.0-bookworm-slim AS dependencies" in dockerfile
     assert "FROM dependencies AS build" in dockerfile
-    assert "FROM node:24.18.0-bookworm-slim AS runtime" in dockerfile
-    assert "corepack prepare pnpm@11.18.0 --activate" in dockerfile
+    assert "FROM node:24.19.0-bookworm-slim AS runtime" in dockerfile
+    assert "corepack prepare pnpm@11.24.0 --activate" in dockerfile
+    assert "NODE_OPTIONS=--max-old-space-size=1024" in dockerfile
     assert "pnpm install --frozen-lockfile" in dockerfile
     assert "RUN pnpm build" in dockerfile
     assert "COPY --from=build --chown=node:node /app/.output ./.output" in dockerfile
     assert "USER node" in dockerfile
     assert 'CMD ["node", ".output/server/index.mjs"]' in dockerfile
     assert {".env", ".nuxt", ".output", "node_modules", "test-results"} <= ignored
+    assert package["scripts"]["format:check"] == "oxfmt --check ."
+    assert package["packageManager"] == "pnpm@11.24.0"
+    assert package["devEngines"]["runtime"]["version"] == "24.19.0"
+    assert "          version: 11.24.0" in workflow
 
 
 def test_caddy_reserves_backend_paths_and_strips_frontend_credentials() -> None:
@@ -163,13 +171,14 @@ def test_caddy_reserves_backend_paths_and_strips_frontend_credentials() -> None:
     assert proxy_environment["CADDY_SITE_ADDRESS"] == (
         "${CADDY_SITE_ADDRESS:-${CONTROL_PLANE_PUBLIC_ORIGIN:-https://localhost}}"
     )
-    assert (
-        'header >Strict-Transport-Security "max-age=31536000; includeSubDomains"'
-        in caddyfile
-    )
+    assert 'header >Strict-Transport-Security "max-age=31536000; includeSubDomains"' in caddyfile
     assert "@insecure_forwarded header X-Forwarded-Proto http" in caddyfile
     assert "redir @insecure_forwarded https://{host}{uri} permanent" in caddyfile
-    assert "@backend path /api /api/* /auth /auth/* /telegram/webhook /health" in caddyfile
+    assert (
+        "@backend path /api/control /api/control/* /auth /auth/* /telegram/webhook /health"
+        in caddyfile
+    )
+    assert "@backend path /api /api/*" not in caddyfile
     assert "handle @backend" in caddyfile
     assert "reverse_proxy bot:8080" in caddyfile
     assert "reverse_proxy frontend:3000" in caddyfile

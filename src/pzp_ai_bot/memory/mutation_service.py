@@ -130,6 +130,11 @@ class MemoryMutationService:
                 model=selection.embedding_model,
                 vector=embedding_generation.vectors[0],
             )
+            await EventRepository(session).add(
+                event_type="manual_note_created",
+                scope=scope,
+                payload={"knowledge_item_id": item.id},
+            )
             item_id = item.id
         await self.compact_memory(dirty_scopes={scope})
         return item_id
@@ -225,7 +230,7 @@ class MemoryMutationService:
             await EventRepository(session).add(
                 event_type="manual_note_updated",
                 scope=scope,
-                payload={"knowledge_item_id": item.id, "metadata": item.metadata_json or {}},
+                payload={"knowledge_item_id": item.id},
             )
             preview = memory_note_preview(item)
         await self.compact_memory(dirty_scopes={item_scope})

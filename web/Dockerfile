@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM node:24.18.0-bookworm-slim AS dependencies
+FROM node:24.19.0-bookworm-slim AS dependencies
 
 ENV PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH \
@@ -10,17 +10,19 @@ ENV PNPM_HOME=/pnpm \
 
 WORKDIR /app
 
-RUN corepack enable && corepack prepare pnpm@11.18.0 --activate
+RUN corepack enable && corepack prepare pnpm@11.24.0 --activate
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN --mount=type=cache,id=pzp-ai-web-pnpm,target=/pnpm/store pnpm install --frozen-lockfile --prod
 
 FROM dependencies AS build
 
+ENV NODE_OPTIONS=--max-old-space-size=1024
+
 COPY . .
 RUN pnpm build
 
-FROM node:24.18.0-bookworm-slim AS runtime
+FROM node:24.19.0-bookworm-slim AS runtime
 
 ENV NITRO_HOST=0.0.0.0 \
     NITRO_PORT=3000 \

@@ -10,6 +10,7 @@ import pytest
 
 from pzp_ai_bot.control_plane.auth.mini_app import (
     MiniAppValidationError,
+    classify_mini_app_validation_error,
     validate_mini_app_init_data,
 )
 
@@ -139,3 +140,39 @@ def test_mini_app_validation_rejects_a_valid_shape_signed_by_another_bot() -> No
 
     with pytest.raises(MiniAppValidationError, match="signature"):
         validate_mini_app_init_data(raw, bot_token=BOT_TOKEN, now=NOW, max_age_seconds=300)
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("Mini App authentication data has expired", "expired"),
+        ("Mini App authentication date is in the future", "future"),
+        ("Mini App signature is invalid", "signature"),
+        ("Mini App signature is missing or malformed", "signature"),
+        ("Telegram user ID is invalid", "identity"),
+        ("Telegram user first_name is invalid", "identity"),
+        ("Mini App validation is not configured", "configuration"),
+        ("validation time must be timezone-aware", "configuration"),
+        ("Mini App init data has an invalid size", "size"),
+        ("Mini App init data is malformed", "encoding"),
+        ("duplicate Mini App field: attacker-controlled-name", "duplicate"),
+        ("Mini App auth_date is invalid", "auth_date"),
+        ("unexpected internal validator detail", "malformed"),
+    ],
+)
+def test_mini_app_validation_error_classification_is_bounded(message: str, expected: str) -> None:
+    classification = classify_mini_app_validation_error(MiniAppValidationError(message))
+
+    assert classification == expected
+    assert classification in {
+        "configuration",
+        "auth_date",
+        "duplicate",
+        "encoding",
+        "expired",
+        "future",
+        "identity",
+        "malformed",
+        "signature",
+        "size",
+    }

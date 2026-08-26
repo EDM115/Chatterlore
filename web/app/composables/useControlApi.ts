@@ -28,7 +28,10 @@ export function useControlApi() {
         timeout: options.timeout ?? 5_000,
       });
     } catch (error) {
-      if (controlResponseStatus(error) === 401) {
+      if (
+        controlResponseStatus(error) === 401 &&
+        controlResponseCode(error) !== "mini_app_step_up_rejected"
+      ) {
         useState("control-plane-session").value = null;
         useState("control-plane-session-status").value = "anonymous";
         csrfToken.value = null;

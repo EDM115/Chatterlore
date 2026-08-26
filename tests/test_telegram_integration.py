@@ -22,6 +22,7 @@ from pzp_ai_bot.db.repositories import EffectiveScopeSettings, MemoryProfileView
 from pzp_ai_bot.db.session import session_scope
 from pzp_ai_bot.memory.scope import Scope
 from pzp_ai_bot.memory.service import (
+    AIRequestOptions,
     AuditEventPreview,
     MemoryExportChunk,
     MemoryItemPreview,
@@ -153,6 +154,7 @@ class RouterMemoryDouble:
     def __init__(self, review_scopes: dict[int, Scope] | None = None) -> None:
         self.calls: list[tuple[str, Scope | None]] = []
         self.allow_admin_values: list[bool] = []
+        self.ask_requests: list[tuple[str, AIRequestOptions]] = []
         self.review_scopes = {1: Scope(-10012345, None)} if review_scopes is None else review_scopes
 
     def _record(self, name: str, scope: Scope | None = None) -> None:
@@ -175,6 +177,7 @@ class RouterMemoryDouble:
 
     async def ask(self, scope: Scope, question: str, **kwargs: Any) -> str:
         self._record("ask", scope)
+        self.ask_requests.append((question, kwargs["ai_options"]))
         return "answer"
 
     async def search(self, scope: Scope, query: str, **kwargs: Any) -> list[Any]:
@@ -664,6 +667,37 @@ async def test_all_commands_have_success_dispatch_paths(
     )
 
     assert {"sendMessage", "sendDocument"}.intersection(session.call_names())
+
+
+@pytest.mark.asyncio
+async def test_ask_preserves_word_apostrophe_beside_quoted_prompt_override(
+    context: AppContext,
+) -> None:
+    memory = RouterMemoryDouble()
+    test_context = cast(Any, context)
+    test_context.memory = memory
+    test_context.admins = AllowingAdmins(allow=True)
+    session = RecordingTelegramSession(chat_admin_ids={111})
+    bot = Bot(context.settings.telegram_bot_token, session=session)
+    dispatcher = build_dispatcher(context)
+
+    await feed(
+        dispatcher,
+        bot,
+        message_update(
+            "/ask prompt='Answer from memory only' What is Project "
+            "Juniper's corrected staging codename?",
+            update_id=199,
+            message_id=199,
+            user_id=111,
+        ),
+    )
+
+    assert len(memory.ask_requests) == 1
+    question, options = memory.ask_requests[0]
+    assert question == "What is Project Juniper's corrected staging codename?"
+    assert options.system_prompt_override == "Answer from memory only"
+    assert "answer" in session.sent_texts()
 
 
 @pytest.mark.parametrize(

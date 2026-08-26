@@ -4,7 +4,7 @@ import hashlib
 import hmac
 import json
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import parse_qsl
 
 from .identity import TelegramIdentity
@@ -16,6 +16,48 @@ HEX_DIGITS = frozenset("0123456789abcdefABCDEF")
 
 class MiniAppValidationError(ValueError):
     pass
+
+
+MiniAppValidationClassification = Literal[
+    "auth_date",
+    "configuration",
+    "duplicate",
+    "encoding",
+    "expired",
+    "future",
+    "identity",
+    "malformed",
+    "signature",
+    "size",
+]
+
+
+def classify_mini_app_validation_error(
+    error: MiniAppValidationError,
+) -> MiniAppValidationClassification:
+    message = str(error)
+    if message == "Mini App authentication data has expired":
+        return "expired"
+    if message == "Mini App authentication date is in the future":
+        return "future"
+    if message.startswith("Mini App signature "):
+        return "signature"
+    if message.startswith("Telegram user "):
+        return "identity"
+    if message == "Mini App init data has an invalid size":
+        return "size"
+    if message == "Mini App init data is malformed":
+        return "encoding"
+    if message.startswith("duplicate Mini App field:"):
+        return "duplicate"
+    if message == "Mini App auth_date is invalid":
+        return "auth_date"
+    if message in {
+        "Mini App validation is not configured",
+        "validation time must be timezone-aware",
+    }:
+        return "configuration"
+    return "malformed"
 
 
 def validate_mini_app_init_data(

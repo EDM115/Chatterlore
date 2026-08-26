@@ -1,6 +1,7 @@
 <script setup lang="ts">
 const route = useRoute();
 const controlSession = useControlSession();
+const accessLabel = controlSession.accessLabel;
 const hydrated = ref(false);
 const mobileMenu = ref<HTMLDetailsElement | null>(null);
 
@@ -41,13 +42,6 @@ const navigation = computed(() => {
     ];
   }
   return [{ label: "Sign in", to: "/login" }];
-});
-
-const accessLabel = computed(() => {
-  if (!hydrated.value) return "Authentication required";
-  if (controlSession.hasCapability("bot.admin")) return "Bot administrator";
-  if (authenticated.value) return "Scoped administrator";
-  return "Authentication required";
 });
 
 const isCurrent = (to: string) => route.path === to;
