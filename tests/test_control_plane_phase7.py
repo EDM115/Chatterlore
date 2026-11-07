@@ -37,7 +37,7 @@ def local_dependency_available(request: pytest.FixtureRequest, monkeypatch: pyte
     original_find_spec = importlib.util.find_spec
 
     def find_spec(name: str, package: str | None = None):
-        if name == "sentence_transformers":
+        if name in {"sentence_transformers", "torch", "transformers"}:
             return ModuleSpec(name, loader=None) if available else None
         return original_find_spec(name, package)
 
@@ -58,6 +58,7 @@ def _build_phase7_app(tmp_path: Path, **overrides: object):
                 "local": {
                     "provider": "local",
                     "chat_model": "fake-chat",
+                    "chat_capable": False,
                     "embedding_model": (
                         "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
                     ),
@@ -159,15 +160,21 @@ def test_query_catalog_is_scope_authorized_capability_accurate_and_secret_free(
         assert profiles["local"]["local_state"] == {
             "dependency_available": local_dependency_available,
             "model_loaded": False,
+            "chat_dependency_available": local_dependency_available,
+            "embedding_dependency_available": local_dependency_available,
+            "chat_model_loaded": False,
+            "embedding_model_loaded": False,
+            "server_configured": False,
         }
         assert profiles["local"]["availability"] == (
-            "ready" if local_dependency_available else "unavailable"
+            "preparation_required" if local_dependency_available else "unavailable"
         )
         assert profiles["managed-openai"]["capabilities"] == ["chat", "embedding", "reasoning"]
         assert profiles["managed-openai"]["availability"] == "unavailable"
         assert profiles["managed-openai"]["pool"] == {"eligible": 0, "total": 0}
         serialized = json.dumps(payload).lower()
-        assert "api_key" not in serialized
+        assert '"api_key":' not in serialized
+        assert "openai_api_key" not in serialized
         assert "credential_id" not in serialized
         assert "fingerprint" not in serialized
         assert "last_four" not in serialized
@@ -214,6 +221,12 @@ def test_one_shot_query_profiles_split_retrieval_and_chat_while_legacy_shorthand
             chat_id=-1001, title="Split providers", username=None, actor_user_id=111, now=NOW
         )
         await context.memory.remember(scope, "The deployment codename is kestrel.")
+        for profile in ("legacy", "retrieval"):
+            job = await context.memory.embedding_indexes.create_job(
+                scope, profile, actor_user_id=111
+            )
+            ready = await context.memory.embedding_indexes.run_job(job["id"])
+            assert ready["status"] == "ready"
         await context.memory.ask(
             scope,
             "What is the deployment codename?",
@@ -287,6 +300,7 @@ def test_search_and_ask_api_return_safe_split_selection_and_source_metadata(tmp_
         "local": {
             "provider": "local",
             "chat_model": "local-chat-unavailable",
+            "chat_capable": False,
             "embedding_model": "local-embedding",
         },
     }
@@ -309,6 +323,11 @@ def test_search_and_ask_api_return_safe_split_selection_and_source_metadata(tmp_
         await context.memory.remember(
             Scope(-1001, None), "The Phase 7 launch codename is kestrel.", source_message_id=77
         )
+        job = await context.memory.embedding_indexes.create_job(
+            Scope(-1001, None), "retrieval", actor_user_id=111
+        )
+        ready = await context.memory.embedding_indexes.run_job(job["id"])
+        assert ready["status"] == "ready"
 
     asyncio.run(seed())
     common = {
@@ -714,7 +733,7 @@ def test_stats_overview_and_timeseries_are_bounded_scoped_and_provider_side_effe
     }
     assert payload["ai_usage"]["total"] == usage_before
     assert payload["runtime"]["uptime_seconds"] >= 0
-    assert payload["runtime"]["schema_revision"] == ("0017_scope_settings_versions")
+    assert payload["runtime"]["schema_revision"] == "0019_embedding_spaces"
     assert payload["runtime"]["scheduler"] == []
     assert payload["storage"]["database_bytes"] > 0
     assert payload["storage"]["memory_bytes"] > 0

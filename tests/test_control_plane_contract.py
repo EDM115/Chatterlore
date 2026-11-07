@@ -7,6 +7,7 @@ import pytest
 
 from pzp_ai_bot.app_context import AppContext
 from pzp_ai_bot.control_plane.app import create_control_plane_schema_app
+from pzp_ai_bot.control_plane.auth.sessions import SENSITIVE_ACTIONS
 from pzp_ai_bot.telegram.webhook import create_webhook_app
 
 
@@ -42,6 +43,16 @@ AUTHORIZATION_MATRIX = {
     ("get", "/api/control/v1/providers/{name}"): "bot_admin",
     ("patch", "/api/control/v1/providers/{name}"): "bot_admin",
     ("delete", "/api/control/v1/providers/{name}"): "bot_admin_step_up",
+    ("post", "/api/control/v1/providers/{name}/test"): "bot_admin",
+    ("post", "/api/control/v1/providers/{name}/prepare-local"): "bot_admin",
+    ("get", "/api/control/v1/embedding-indexes"): "bot_admin",
+    ("get", "/api/control/v1/embedding-indexes/preview"): "bot_admin",
+    ("post", "/api/control/v1/embedding-indexes/jobs"): "bot_admin",
+    ("get", "/api/control/v1/embedding-indexes/jobs/{job_id}"): "bot_admin",
+    ("post", "/api/control/v1/embedding-indexes/jobs/{job_id}/run"): "bot_admin",
+    ("post", "/api/control/v1/embedding-indexes/jobs/{job_id}/resume"): "bot_admin",
+    ("post", "/api/control/v1/embedding-indexes/jobs/{job_id}/cancel"): "bot_admin",
+    ("post", "/api/control/v1/embedding-indexes/jobs/{job_id}/activate"): "bot_admin_step_up",
     ("get", "/api/control/v1/providers/{name}/credentials"): "bot_admin",
     ("get", "/api/control/v1/providers/{name}/pool"): "bot_admin",
     ("post", "/api/control/v1/providers/{name}/credentials"): "bot_admin_step_up",
@@ -105,6 +116,12 @@ VERSIONED_MUTATIONS = {
     ("patch", "/api/control/v1/chats/{chat_id}/settings"),
 }
 
+INDEX_VERSIONED_MUTATIONS = {
+    ("post", "/api/control/v1/embedding-indexes/jobs/{job_id}/resume"),
+    ("post", "/api/control/v1/embedding-indexes/jobs/{job_id}/cancel"),
+    ("post", "/api/control/v1/embedding-indexes/jobs/{job_id}/activate"),
+}
+
 RATE_LIMITED_OPERATIONS = {
     ("get", "/auth/telegram/start"),
     ("get", "/auth/telegram/callback"),
@@ -112,6 +129,13 @@ RATE_LIMITED_OPERATIONS = {
     ("post", "/api/control/v1/auth/mini-app"),
     ("post", "/api/control/v1/auth/step-up/mini-app"),
     ("delete", "/api/control/v1/providers/{name}"),
+    ("post", "/api/control/v1/providers/{name}/test"),
+    ("post", "/api/control/v1/providers/{name}/prepare-local"),
+    ("post", "/api/control/v1/embedding-indexes/jobs"),
+    ("post", "/api/control/v1/embedding-indexes/jobs/{job_id}/run"),
+    ("post", "/api/control/v1/embedding-indexes/jobs/{job_id}/resume"),
+    ("post", "/api/control/v1/embedding-indexes/jobs/{job_id}/cancel"),
+    ("post", "/api/control/v1/embedding-indexes/jobs/{job_id}/activate"),
     ("post", "/api/control/v1/providers/{name}/credentials"),
     ("post", "/api/control/v1/providers/{name}/credentials/{credential_id}/reveal"),
     ("post", "/api/control/v1/providers/{name}/credentials/{credential_id}/test"),
@@ -256,7 +280,7 @@ def test_control_plane_errors_and_version_conflicts_have_one_safe_envelope(
             assert "429" in operation["responses"]
             assert _response_schema(openapi, operation, "429") == error_envelope
 
-    for method, path in VERSIONED_MUTATIONS:
+    for method, path in VERSIONED_MUTATIONS | INDEX_VERSIONED_MUTATIONS:
         operation = _operation(openapi, method, path)
         assert "409" in operation["responses"]
         assert _response_schema(openapi, operation, "409") == conflict_envelope
@@ -293,3 +317,32 @@ def test_provider_credentials_are_masked_except_for_the_isolated_reveal_response
     serialized = str(openapi)
     assert "sk-" not in serialized
     assert "Bearer " not in serialized
+
+
+def test_embedding_job_contract_requires_versions_and_explicit_activation(
+    context: AppContext,
+) -> None:
+    openapi = _openapi(context)
+    for method, path in INDEX_VERSIONED_MUTATIONS:
+        operation = _operation(openapi, method, path)
+        request_name = operation["requestBody"]["content"]["application/json"]["schema"][
+            "$ref"
+        ].rsplit("/", 1)[-1]
+        request_model = _schema(openapi, request_name)
+        assert "version" in request_model["required"]
+        assert request_model["properties"]["version"]["type"] == "integer"
+        assert "version" in _response_schema(openapi, operation, "200")["required"]
+    activate = _operation(
+        openapi, "post", "/api/control/v1/embedding-indexes/jobs/{job_id}/activate"
+    )
+    assert activate["x-pzp-step-up-action"] == "embedding:activate"
+    assert {"version", "confirmation"} <= set(
+        _schema(openapi, "EmbeddingJobActivateRequest")["required"]
+    )
+    prepare = _operation(openapi, "post", "/api/control/v1/providers/{name}/prepare-local")
+    assert prepare["x-pzp-download-step-up-action"] == "local_model:download"
+    assert (
+        _schema(openapi, "LocalModelPrepareRequest")["properties"]["allow_download"]["default"]
+        is False
+    )
+    assert {"embedding:activate", "local_model:download"} <= SENSITIVE_ACTIONS

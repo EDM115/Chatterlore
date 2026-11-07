@@ -568,6 +568,7 @@ class ControlPlaneManagementService:
             return _enrollment_view(row)
 
     async def scope_settings(self, scope: Scope) -> ScopeSettingsView:
+        await self.memory._refresh_provider_profiles()
         defaults = self.memory._default_scope_settings()
         async with session_scope(self.session_factory) as session:
             repository = ScopeSettingsRepository(session)

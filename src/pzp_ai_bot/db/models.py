@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
+    DDL,
     JSON,
     BigInteger,
     Boolean,
@@ -15,6 +16,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    event,
     text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -63,6 +65,7 @@ class Message(Base):
     message_permalink: Mapped[str | None] = mapped_column(String(512), nullable=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     normalized_text: Mapped[str] = mapped_column(Text, nullable=False)
+    embedding_source_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     learned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     skip_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
     reply_to_message_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -86,10 +89,25 @@ class KnowledgeItem(Base):
     message_thread_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     kind: Mapped[str] = mapped_column(String(64), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    embedding_source_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     source_message_ids: Mapped[list[int]] = mapped_column(JSON, nullable=False, default=list)
     metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+for source_table_name, source_table, source_column in (
+    ("messages", Message.__table__, "normalized_text"),
+    ("knowledge_items", KnowledgeItem.__table__, "content"),
+):
+    # Trigger identifiers come only from these fixed schema names
+    event.listen(
+        source_table,
+        "after_create",
+        DDL(
+            f"CREATE TRIGGER IF NOT EXISTS trg_{source_table_name}_embedding_hash AFTER UPDATE OF {source_column} ON {source_table_name} WHEN NEW.{source_column} IS NOT OLD.{source_column} BEGIN UPDATE {source_table_name} SET embedding_source_hash=NULL WHERE id=NEW.id; END"  # noqa: E501, S608
+        ).execute_if(dialect="sqlite"),
+    )
 
 
 class CanonicalScopeSnapshot(Base):
@@ -115,6 +133,8 @@ class Embedding(Base):
     __table_args__ = (
         Index("ix_embeddings_target", "target_type", "target_id"),
         Index("ix_embeddings_scope", "chat_id", "message_thread_id"),
+        UniqueConstraint("target_type", "target_id", "space_id", name="uq_embeddings_target_space"),
+        Index("ix_embeddings_space_scope", "space_id", "chat_id", "message_thread_id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -126,7 +146,67 @@ class Embedding(Base):
     model: Mapped[str] = mapped_column(String(255), nullable=False)
     dimension: Mapped[int] = mapped_column(Integer, nullable=False)
     vector: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    space_id: Mapped[int | None] = mapped_column(ForeignKey("embedding_spaces.id"), nullable=True)
+    source_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    provenance_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="legacy_unverified", server_default="legacy_unverified"
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class EmbeddingSpace(Base):
+    __tablename__ = "embedding_spaces"
+    __table_args__ = (Index("ix_embedding_spaces_config_hash", "config_hash"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    provider_profile: Mapped[str] = mapped_column(String(64), nullable=False)
+    provider_kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    model: Mapped[str] = mapped_column(String(255), nullable=False)
+    dimension: Mapped[int] = mapped_column(Integer, nullable=False)
+    config_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    config_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class EmbeddingRoutingState(Base):
+    __tablename__ = "embedding_routing_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    epoch: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    content_revision: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+
+
+class EmbeddingIndexJob(Base):
+    __tablename__ = "embedding_index_jobs"
+    __table_args__ = (
+        Index("ix_embedding_jobs_scope_status", "chat_id", "message_thread_id", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    chat_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    message_thread_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    provider_profile: Mapped[str] = mapped_column(String(64), nullable=False)
+    model: Mapped[str] = mapped_column(String(255), nullable=False)
+    space_id: Mapped[int | None] = mapped_column(ForeignKey("embedding_spaces.id"), nullable=True)
+    config_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    config_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    settings_snapshot: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="queued")
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    processed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    lease_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    lease_fence: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    actor_user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class LearningPolicy(Base):
@@ -185,6 +265,9 @@ class ScopeSettings(Base):
     summary_model: Mapped[str | None] = mapped_column(String(255), nullable=True)
     system_prompt_template: Mapped[str | None] = mapped_column(String(64), nullable=True)
     provider_profile: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    chat_provider_profile: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    summary_provider_profile: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    embedding_provider_profile: Mapped[str | None] = mapped_column(String(64), nullable=True)
     chat_model: Mapped[str | None] = mapped_column(String(255), nullable=True)
     embedding_model: Mapped[str | None] = mapped_column(String(255), nullable=True)
     reasoning_level: Mapped[str | None] = mapped_column(String(32), nullable=True)
@@ -573,6 +656,18 @@ class AIProviderProfile(Base):
     embedding_capable: Mapped[bool] = mapped_column(Boolean, nullable=False)
     reasoning_capable: Mapped[bool] = mapped_column(Boolean, nullable=False)
     local: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    api_dialect: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="auto", server_default="auto"
+    )
+    auth_mode: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="api_key", server_default="api_key"
+    )
+    local_chat_options: Mapped[dict[str, Any]] = mapped_column(
+        JSON, nullable=False, default=dict, server_default="{}"
+    )
+    local_embedding_options: Mapped[dict[str, Any]] = mapped_column(
+        JSON, nullable=False, default=dict, server_default="{}"
+    )
     redact_before_ai: Mapped[bool] = mapped_column(Boolean, nullable=False)
     redaction_patterns: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     fake_embedding_dimensions: Mapped[int] = mapped_column(Integer, nullable=False, default=64)

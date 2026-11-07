@@ -886,6 +886,387 @@
         "title": "DeleteMutationResponse",
         "type": "object"
       },
+      "EmbeddingIndexesView": {
+        "properties": {
+          "active": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EmbeddingSpaceView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/EmbeddingJobView"
+            },
+            "title": "Jobs",
+            "type": "array"
+          },
+          "legacy_unverified": {
+            "default": 0,
+            "title": "Legacy Unverified",
+            "type": "integer"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "spaces": {
+            "items": {
+              "$ref": "#/components/schemas/EmbeddingSpaceCoverage"
+            },
+            "title": "Spaces",
+            "type": "array"
+          }
+        },
+        "required": [
+          "scope",
+          "active",
+          "spaces",
+          "jobs"
+        ],
+        "title": "EmbeddingIndexesView",
+        "type": "object"
+      },
+      "EmbeddingJobActivateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "confirmation": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Confirmation",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "confirmation"
+        ],
+        "title": "EmbeddingJobActivateRequest",
+        "type": "object"
+      },
+      "EmbeddingJobCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "provider_profile": {
+            "pattern": "^[a-z0-9_-]{1,64}$",
+            "title": "Provider Profile",
+            "type": "string"
+          },
+          "scope": {
+            "default": "all",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider_profile"
+        ],
+        "title": "EmbeddingJobCreateRequest",
+        "type": "object"
+      },
+      "EmbeddingJobRunRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "max_batches": {
+            "default": 1,
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Max Batches",
+            "type": "integer"
+          }
+        },
+        "title": "EmbeddingJobRunRequest",
+        "type": "object"
+      },
+      "EmbeddingJobVersionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "title": "EmbeddingJobVersionRequest",
+        "type": "object"
+      },
+      "EmbeddingJobView": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "processed": {
+            "title": "Processed",
+            "type": "integer"
+          },
+          "provider_profile": {
+            "title": "Provider Profile",
+            "type": "string"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "space_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Space Id"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "ready",
+              "failed",
+              "cancelled",
+              "activated"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "scope",
+          "provider_profile",
+          "model",
+          "space_id",
+          "status",
+          "version",
+          "processed",
+          "total",
+          "error_code",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "EmbeddingJobView",
+        "type": "object"
+      },
+      "EmbeddingPreviewView": {
+        "properties": {
+          "cost_warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Warning"
+          },
+          "eligible": {
+            "title": "Eligible",
+            "type": "integer"
+          },
+          "expected_batches": {
+            "default": 0,
+            "title": "Expected Batches",
+            "type": "integer"
+          },
+          "indexed": {
+            "title": "Indexed",
+            "type": "integer"
+          },
+          "local_preparation_required": {
+            "title": "Local Preparation Required",
+            "type": "boolean"
+          },
+          "missing": {
+            "title": "Missing",
+            "type": "integer"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "provider_profile": {
+            "title": "Provider Profile",
+            "type": "string"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope",
+          "provider_profile",
+          "model",
+          "eligible",
+          "indexed",
+          "missing",
+          "cost_warning",
+          "local_preparation_required"
+        ],
+        "title": "EmbeddingPreviewView",
+        "type": "object"
+      },
+      "EmbeddingSpaceCoverage": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "dimension": {
+            "title": "Dimension",
+            "type": "integer"
+          },
+          "eligible": {
+            "title": "Eligible",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "indexed": {
+            "title": "Indexed",
+            "type": "integer"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "missing": {
+            "title": "Missing",
+            "type": "integer"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "provider_profile": {
+            "title": "Provider Profile",
+            "type": "string"
+          },
+          "stale": {
+            "title": "Stale",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "key",
+          "provider_profile",
+          "model",
+          "dimension",
+          "created_at",
+          "eligible",
+          "indexed",
+          "missing",
+          "stale"
+        ],
+        "title": "EmbeddingSpaceCoverage",
+        "type": "object"
+      },
+      "EmbeddingSpaceView": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "dimension": {
+            "title": "Dimension",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "provider_profile": {
+            "title": "Provider Profile",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "key",
+          "provider_profile",
+          "model",
+          "dimension",
+          "created_at"
+        ],
+        "title": "EmbeddingSpaceView",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -897,6 +1278,77 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "LocalModelPrepareRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "allow_download": {
+            "default": false,
+            "title": "Allow Download",
+            "type": "boolean"
+          },
+          "mode": {
+            "enum": [
+              "chat",
+              "embedding"
+            ],
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "title": "LocalModelPrepareRequest",
+        "type": "object"
+      },
+      "LocalModelPrepareView": {
+        "properties": {
+          "download_bytes": {
+            "title": "Download Bytes",
+            "type": "integer"
+          },
+          "downloaded": {
+            "title": "Downloaded",
+            "type": "boolean"
+          },
+          "loaded": {
+            "title": "Loaded",
+            "type": "boolean"
+          },
+          "mode": {
+            "enum": [
+              "chat",
+              "embedding"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "provider_profile": {
+            "title": "Provider Profile",
+            "type": "string"
+          },
+          "resolved_revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved Revision"
+          }
+        },
+        "required": [
+          "provider_profile",
+          "mode",
+          "loaded",
+          "downloaded",
+          "download_bytes"
+        ],
+        "title": "LocalModelPrepareView",
         "type": "object"
       },
       "ManagedChatMutationResponse": {
@@ -1572,12 +2024,37 @@
       },
       "ProviderCatalogLocalState": {
         "properties": {
+          "chat_dependency_available": {
+            "default": false,
+            "title": "Chat Dependency Available",
+            "type": "boolean"
+          },
+          "chat_model_loaded": {
+            "default": false,
+            "title": "Chat Model Loaded",
+            "type": "boolean"
+          },
           "dependency_available": {
             "title": "Dependency Available",
             "type": "boolean"
           },
+          "embedding_dependency_available": {
+            "default": false,
+            "title": "Embedding Dependency Available",
+            "type": "boolean"
+          },
+          "embedding_model_loaded": {
+            "default": false,
+            "title": "Embedding Model Loaded",
+            "type": "boolean"
+          },
           "model_loaded": {
             "title": "Model Loaded",
+            "type": "boolean"
+          },
+          "server_configured": {
+            "default": false,
+            "title": "Server Configured",
             "type": "boolean"
           }
         },
@@ -1608,6 +2085,16 @@
       },
       "ProviderCatalogProfile": {
         "properties": {
+          "api_dialect": {
+            "default": "auto",
+            "title": "Api Dialect",
+            "type": "string"
+          },
+          "auth_mode": {
+            "default": "api_key",
+            "title": "Auth Mode",
+            "type": "string"
+          },
           "availability": {
             "title": "Availability",
             "type": "string"
@@ -1629,6 +2116,11 @@
           },
           "enabled": {
             "title": "Enabled",
+            "type": "boolean"
+          },
+          "local": {
+            "default": false,
+            "title": "Local",
             "type": "boolean"
           },
           "local_state": {
@@ -2357,6 +2849,26 @@
       "ProviderProfileCreateRequest": {
         "additionalProperties": false,
         "properties": {
+          "api_dialect": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "openai",
+              "deepseek",
+              "generic"
+            ],
+            "title": "Api Dialect",
+            "type": "string"
+          },
+          "auth_mode": {
+            "default": "api_key",
+            "enum": [
+              "api_key",
+              "none"
+            ],
+            "title": "Auth Mode",
+            "type": "string"
+          },
           "base_url": {
             "maxLength": 512,
             "minLength": 1,
@@ -2369,8 +2881,8 @@
             "type": "boolean"
           },
           "chat_model": {
+            "default": "",
             "maxLength": 255,
-            "minLength": 1,
             "title": "Chat Model",
             "type": "string"
           },
@@ -2380,8 +2892,8 @@
             "type": "boolean"
           },
           "embedding_model": {
+            "default": "",
             "maxLength": 255,
-            "minLength": 1,
             "title": "Embedding Model",
             "type": "string"
           },
@@ -2396,6 +2908,16 @@
             "default": false,
             "title": "Local",
             "type": "boolean"
+          },
+          "local_chat_options": {
+            "additionalProperties": true,
+            "title": "Local Chat Options",
+            "type": "object"
+          },
+          "local_embedding_options": {
+            "additionalProperties": true,
+            "title": "Local Embedding Options",
+            "type": "object"
           },
           "name": {
             "maxLength": 64,
@@ -2429,9 +2951,7 @@
         "required": [
           "name",
           "provider_kind",
-          "base_url",
-          "chat_model",
-          "embedding_model"
+          "base_url"
         ],
         "title": "ProviderProfileCreateRequest",
         "type": "object"
@@ -2453,9 +2973,29 @@
       },
       "ProviderProfileMutationResponse": {
         "properties": {
+          "api_dialect": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "openai",
+              "deepseek",
+              "generic"
+            ],
+            "title": "Api Dialect",
+            "type": "string"
+          },
           "audit_event_id": {
             "title": "Audit Event Id",
             "type": "integer"
+          },
+          "auth_mode": {
+            "default": "api_key",
+            "enum": [
+              "api_key",
+              "none"
+            ],
+            "title": "Auth Mode",
+            "type": "string"
           },
           "base_url": {
             "title": "Base Url",
@@ -2488,6 +3028,16 @@
           "local": {
             "title": "Local",
             "type": "boolean"
+          },
+          "local_chat_options": {
+            "additionalProperties": true,
+            "title": "Local Chat Options",
+            "type": "object"
+          },
+          "local_embedding_options": {
+            "additionalProperties": true,
+            "title": "Local Embedding Options",
+            "type": "object"
           },
           "name": {
             "title": "Name",
@@ -2542,8 +3092,73 @@
         "title": "ProviderProfileMutationResponse",
         "type": "object"
       },
+      "ProviderProfileProbeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "enum": [
+              "chat",
+              "embedding"
+            ],
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "title": "ProviderProfileProbeRequest",
+        "type": "object"
+      },
+      "ProviderProfileProbeView": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "chat",
+              "embedding"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "mode",
+          "detail"
+        ],
+        "title": "ProviderProfileProbeView",
+        "type": "object"
+      },
       "ProviderProfileResponse": {
         "properties": {
+          "api_dialect": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "openai",
+              "deepseek",
+              "generic"
+            ],
+            "title": "Api Dialect",
+            "type": "string"
+          },
+          "auth_mode": {
+            "default": "api_key",
+            "enum": [
+              "api_key",
+              "none"
+            ],
+            "title": "Auth Mode",
+            "type": "string"
+          },
           "base_url": {
             "title": "Base Url",
             "type": "string"
@@ -2575,6 +3190,16 @@
           "local": {
             "title": "Local",
             "type": "boolean"
+          },
+          "local_chat_options": {
+            "additionalProperties": true,
+            "title": "Local Chat Options",
+            "type": "object"
+          },
+          "local_embedding_options": {
+            "additionalProperties": true,
+            "title": "Local Embedding Options",
+            "type": "object"
           },
           "name": {
             "title": "Name",
@@ -2631,6 +3256,38 @@
       "ProviderProfileUpdateRequest": {
         "additionalProperties": false,
         "properties": {
+          "api_dialect": {
+            "anyOf": [
+              {
+                "enum": [
+                  "auto",
+                  "openai",
+                  "deepseek",
+                  "generic"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Dialect"
+          },
+          "auth_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "api_key",
+                  "none"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auth Mode"
+          },
           "base_url": {
             "anyOf": [
               {
@@ -2659,7 +3316,6 @@
             "anyOf": [
               {
                 "maxLength": 255,
-                "minLength": 1,
                 "type": "string"
               },
               {
@@ -2683,7 +3339,6 @@
             "anyOf": [
               {
                 "maxLength": 255,
-                "minLength": 1,
                 "type": "string"
               },
               {
@@ -2726,6 +3381,30 @@
               }
             ],
             "title": "Local"
+          },
+          "local_chat_options": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Chat Options"
+          },
+          "local_embedding_options": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Embedding Options"
           },
           "provider_kind": {
             "anyOf": [
@@ -6003,6 +6682,827 @@
         "x-pzp-capability": "chat_admin"
       }
     },
+    "/api/control/v1/embedding-indexes": {
+      "get": {
+        "operationId": "status_api_control_v1_embedding_indexes_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "maxLength": 128,
+              "title": "Scope",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmbeddingIndexesView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneConflictEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "summary": "Status",
+        "tags": [
+          "embedding-indexes"
+        ],
+        "x-pzp-capability": "bot_admin"
+      }
+    },
+    "/api/control/v1/embedding-indexes/jobs": {
+      "post": {
+        "operationId": "start_api_control_v1_embedding_indexes_jobs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmbeddingJobCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmbeddingJobView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneConflictEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "summary": "Start",
+        "tags": [
+          "embedding-indexes"
+        ],
+        "x-pzp-capability": "bot_admin"
+      }
+    },
+    "/api/control/v1/embedding-indexes/jobs/{job_id}": {
+      "get": {
+        "operationId": "job_api_control_v1_embedding_indexes_jobs__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Job Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmbeddingJobView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneConflictEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "summary": "Job",
+        "tags": [
+          "embedding-indexes"
+        ],
+        "x-pzp-capability": "bot_admin"
+      }
+    },
+    "/api/control/v1/embedding-indexes/jobs/{job_id}/activate": {
+      "post": {
+        "operationId": "activate_api_control_v1_embedding_indexes_jobs__job_id__activate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Job Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmbeddingJobActivateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmbeddingJobView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneConflictEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "summary": "Activate",
+        "tags": [
+          "embedding-indexes"
+        ],
+        "x-pzp-capability": "bot_admin_step_up",
+        "x-pzp-step-up-action": "embedding:activate"
+      }
+    },
+    "/api/control/v1/embedding-indexes/jobs/{job_id}/cancel": {
+      "post": {
+        "operationId": "cancel_api_control_v1_embedding_indexes_jobs__job_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Job Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmbeddingJobVersionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmbeddingJobView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneConflictEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "summary": "Cancel",
+        "tags": [
+          "embedding-indexes"
+        ],
+        "x-pzp-capability": "bot_admin"
+      }
+    },
+    "/api/control/v1/embedding-indexes/jobs/{job_id}/resume": {
+      "post": {
+        "operationId": "resume_api_control_v1_embedding_indexes_jobs__job_id__resume_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Job Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmbeddingJobVersionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmbeddingJobView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneConflictEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "summary": "Resume",
+        "tags": [
+          "embedding-indexes"
+        ],
+        "x-pzp-capability": "bot_admin"
+      }
+    },
+    "/api/control/v1/embedding-indexes/jobs/{job_id}/run": {
+      "post": {
+        "operationId": "run_api_control_v1_embedding_indexes_jobs__job_id__run_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Job Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmbeddingJobRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmbeddingJobView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneConflictEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "summary": "Run",
+        "tags": [
+          "embedding-indexes"
+        ],
+        "x-pzp-capability": "bot_admin"
+      }
+    },
+    "/api/control/v1/embedding-indexes/preview": {
+      "get": {
+        "operationId": "preview_api_control_v1_embedding_indexes_preview_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "provider_profile",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z0-9_-]{1,64}$",
+              "title": "Provider Profile",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "maxLength": 128,
+              "title": "Scope",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "model",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Model"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmbeddingPreviewView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneConflictEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "summary": "Preview",
+        "tags": [
+          "embedding-indexes"
+        ],
+        "x-pzp-capability": "bot_admin"
+      }
+    },
     "/api/control/v1/memory/export": {
       "get": {
         "operationId": "export_memory_api_control_v1_memory_export_get",
@@ -7996,6 +9496,213 @@
         "summary": "Get Provider Pool",
         "tags": [
           "providers"
+        ],
+        "x-pzp-capability": "bot_admin"
+      }
+    },
+    "/api/control/v1/providers/{name}/prepare-local": {
+      "post": {
+        "operationId": "prepare_api_control_v1_providers__name__prepare_local_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LocalModelPrepareRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalModelPrepareView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneConflictEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "summary": "Prepare",
+        "tags": [
+          "embedding-indexes"
+        ],
+        "x-pzp-capability": "bot_admin",
+        "x-pzp-download-step-up-action": "local_model:download"
+      }
+    },
+    "/api/control/v1/providers/{name}/test": {
+      "post": {
+        "operationId": "probe_api_control_v1_providers__name__test_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProviderProfileProbeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderProfileProbeView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneConflictEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "summary": "Probe",
+        "tags": [
+          "embedding-indexes"
         ],
         "x-pzp-capability": "bot_admin"
       }

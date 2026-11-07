@@ -49,16 +49,29 @@ def service_settings(tmp_path: Path, **overrides: object) -> Settings:
 
 @pytest.mark.asyncio
 async def test_managed_profile_overlay_preserves_environment_fallback_without_caching_managed_key(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    settings = service_settings(tmp_path)
+    monkeypatch.setenv("PZP_MANAGED_TEST_API_KEY", "explicit-endpoint-secret")
+    settings = service_settings(
+        tmp_path,
+        ai_provider_profiles=json.dumps(
+            {
+                "default": {
+                    "provider": "openai_compatible",
+                    "base_url": "https://managed.example.test/v1",
+                    "api_key_env": "PZP_MANAGED_TEST_API_KEY",
+                }
+            }
+        ),
+    )
     await create_schema(settings)
     registry = ProviderRegistry(settings)
     service = ProviderSecretService(settings, create_session_factory(settings), registry)
 
     await service.refresh_registry()
     environment = registry.select("default")
-    assert environment.profile.openai_api_key == "environment-secret"
+    assert environment.profile.openai_api_key == "explicit-endpoint-secret"
+    assert environment.profile.openai_api_key != settings.openai_api_key
 
     profile = await service.create_profile(
         {
@@ -81,7 +94,8 @@ async def test_managed_profile_overlay_preserves_environment_fallback_without_ca
     assert profile.name == "default"
     managed_without_key = registry.select("default")
     assert managed_without_key.profile.chat_model == "gpt-5.6-terra"
-    assert managed_without_key.profile.openai_api_key == "environment-secret"
+    assert managed_without_key.profile.openai_api_key == "explicit-endpoint-secret"
+    assert managed_without_key.profile.openai_api_key_env == "PZP_MANAGED_TEST_API_KEY"
     assert managed_without_key is not environment
 
     credential = await service.create_credential(
@@ -92,8 +106,9 @@ async def test_managed_profile_overlay_preserves_environment_fallback_without_ca
     assert credential.last_four == "1234"
     assert "managed-secret" not in json.dumps(credential.as_dict())
     managed_with_key = registry.select("default")
-    assert managed_with_key.profile.openai_api_key == "environment-secret"
-    assert managed_with_key is not managed_without_key
+    assert managed_with_key.profile.openai_api_key == "explicit-endpoint-secret"
+    assert managed_with_key.profile.openai_api_key != "managed-secret-1234"
+    assert managed_with_key.profile == registry.profile_by_name("default")
 
     summaries = await service.list_credentials("default")
     assert [summary.source for summary in summaries] == ["environment", "managed"]
@@ -135,6 +150,58 @@ async def test_managed_profile_overlay_preserves_environment_fallback_without_ca
     assert events
     assert "managed-secret" not in serialized
     assert "environment-secret" not in serialized
+    assert "explicit-endpoint-secret" not in serialized
+
+
+@pytest.mark.asyncio
+async def test_foreign_managed_profile_does_not_inherit_default_environment_key(
+    tmp_path: Path,
+) -> None:
+    settings = service_settings(tmp_path)
+    await create_schema(settings)
+    registry = ProviderRegistry(settings)
+    service = ProviderSecretService(settings, create_session_factory(settings), registry)
+    await service.create_profile(
+        {
+            "name": "default",
+            "provider_kind": "openai_compatible",
+            "base_url": "https://managed.example.test/v1",
+            "chat_model": "foreign-chat",
+            "embedding_model": "foreign-embedding",
+            "chat_capable": True,
+            "embedding_capable": True,
+            "reasoning_capable": False,
+            "local": False,
+            "redact_before_ai": True,
+            "redaction_patterns": [],
+            "fake_embedding_dimensions": 64,
+        },
+        actor_user_id=111,
+        now=NOW,
+    )
+
+    profile = registry.profile_by_name("default")
+    assert profile.openai_api_key == ""
+    assert profile.openai_api_key_env is None
+    assert await service.list_credentials("default") == []
+    with pytest.raises(ValueError, match="requires an API key"):
+        registry.select("default")
+
+    await service.create_credential(
+        "default",
+        label="Foreign endpoint key",
+        value="foreign-managed-secret",
+        actor_user_id=111,
+        now=NOW,
+    )
+    selected = registry.profile_by_name("default")
+    assert selected.openai_api_key == ""
+    assert selected.openai_api_key_env is None
+    summaries = await service.list_credentials("default")
+    assert [summary.source for summary in summaries] == ["managed"]
+    serialized = json.dumps([summary.as_dict() for summary in summaries])
+    assert "environment-secret" not in serialized
+    assert "foreign-managed-secret" not in serialized
 
 
 @pytest.mark.asyncio

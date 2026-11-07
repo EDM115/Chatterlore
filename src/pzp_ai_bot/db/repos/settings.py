@@ -99,6 +99,9 @@ class ScopeSettingsRepository:
         "summary_model",
         "system_prompt_template",
         "provider_profile",
+        "chat_provider_profile",
+        "summary_provider_profile",
+        "embedding_provider_profile",
         "chat_model",
         "embedding_model",
         "reasoning_level",
@@ -197,17 +200,37 @@ class ScopeSettingsRepository:
         return int(version) if version is not None else 0
 
     async def effective(
-        self, scope: Scope, defaults: EffectiveScopeSettings
+        self, scope: Scope, defaults: EffectiveScopeSettings, *, _attempt: int = 0
     ) -> EffectiveScopeSettings:
+        from pzp_ai_bot.db.repos.embedding_indexes import (
+            EmbeddingIndexRepository,
+            EmbeddingRouteChanged,
+        )
+
+        indexes = EmbeddingIndexRepository(self.session)
+        epoch = await indexes.current_epoch()
         values = defaults.as_dict()
         for candidate in _settings_resolution_order(scope):
             row = await self.get(candidate)
             if row is None:
                 continue
+            for operation in ("chat", "summary", "embedding"):
+                route_key = f"{operation}_provider_profile"
+                next_profile = getattr(row, route_key) or (
+                    row.provider_profile if values.get(route_key) is None else None
+                )
+                if next_profile is not None:
+                    pair = defaults.provider_models.get(next_profile)
+                    if pair is not None:
+                        values[f"{operation}_model"] = pair[1 if operation == "embedding" else 0]
             for key in self.SETTING_FIELDS:
                 value = getattr(row, key)
                 if value is not None:
                     values[key] = value
+        if epoch != await indexes.current_epoch():
+            if _attempt >= 2:
+                raise EmbeddingRouteChanged()
+            return await self.effective(scope, defaults, _attempt=_attempt + 1)
         return EffectiveScopeSettings(
             retrieval_top_k=_required_int(values["retrieval_top_k"]),
             summary_batch_size=_required_int(values["summary_batch_size"]),
@@ -220,6 +243,17 @@ class ScopeSettingsRepository:
             raw_message_retention_days=_optional_int(values["raw_message_retention_days"]),
             knowledge_retention_days=_optional_int(values["knowledge_retention_days"]),
             review_before_compact=bool(values["review_before_compact"]),
+            chat_provider_profile=str(values["chat_provider_profile"])
+            if values.get("chat_provider_profile") is not None
+            else None,
+            summary_provider_profile=str(values["summary_provider_profile"])
+            if values.get("summary_provider_profile") is not None
+            else None,
+            embedding_provider_profile=str(values["embedding_provider_profile"])
+            if values.get("embedding_provider_profile") is not None
+            else None,
+            provider_models=defaults.provider_models,
+            routing_epoch=epoch,
         )
 
     async def get(self, scope: Scope) -> ScopeSettings | None:

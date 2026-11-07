@@ -31,13 +31,19 @@ let activeController: AbortController | null = null;
 const embeddingProfiles = computed(
   () =>
     catalog.value?.profiles.filter(
-      (profile) => profile.enabled && profile.capabilities.includes("embedding"),
+      (profile) =>
+        profile.enabled &&
+        profile.availability === "ready" &&
+        profile.capabilities.includes("embedding"),
     ) ?? [],
 );
 const chatProfiles = computed(
   () =>
     catalog.value?.profiles.filter(
-      (profile) => profile.enabled && profile.capabilities.includes("chat"),
+      (profile) =>
+        profile.enabled &&
+        profile.availability === "ready" &&
+        profile.capabilities.includes("chat"),
     ) ?? [],
 );
 const selectedRetrievalProfile = computed(() => profileByName(retrievalProfileName.value));
@@ -67,6 +73,7 @@ watch(retrievalProfileName, () => {
 watch(chatProfileName, () => {
   const profile = selectedChatProfile.value;
   if (profile) chatModel.value = profile.chat_model;
+  if (!profile?.capabilities.includes("reasoning")) reasoningLevel.value = "";
 });
 watch(running, (dirty) => syncTelegramClosingConfirmation(window.Telegram?.WebApp, dirty));
 onBeforeUnmount(() => {
@@ -102,6 +109,7 @@ async function loadCatalog() {
     chatModel.value = chat?.chat_model ?? catalog.value.chat_models[0] ?? "";
     if (!catalog.value.reasoning_levels.includes(reasoningLevel.value))
       reasoningLevel.value = catalog.value.reasoning_levels[0] ?? "";
+    if (!chat?.capabilities.includes("reasoning")) reasoningLevel.value = "";
   } catch (caught) {
     error.value = controlErrorMessage(
       caught,
@@ -253,7 +261,7 @@ function profileByName(name: string): QueryProfile | null {
         <fieldset>
           <legend>Chat leg</legend>
           <label
-            >Profile<select v-model="chatProfileName">
+            >Profile<select v-model="chatProfileName" data-testid="chat-profile">
               <option v-for="profile in chatProfiles" :key="profile.name" :value="profile.name">
                 {{ profile.name }} · {{ profile.availability }}
               </option>
@@ -267,7 +275,11 @@ function profileByName(name: string): QueryProfile | null {
             </select></label
           >
           <label
-            >Reasoning effort<select v-model="reasoningLevel">
+            >Reasoning effort<select
+              v-model="reasoningLevel"
+              :disabled="!selectedChatProfile?.capabilities.includes('reasoning')"
+            >
+              <option value="">Provider default (no override)</option>
               <option v-for="level in catalog.reasoning_levels" :key="level" :value="level">
                 {{ level }}
               </option>

@@ -14,6 +14,7 @@ logger = structlog.get_logger(__name__)
 IDLE_SUMMARIZER_TASK_NAME = "pzp-idle-summarizer"
 RUNTIME_SETTINGS_REFRESHER_TASK_NAME = "pzp-runtime-settings-refresher"
 ADMIN_ALERT_DELIVERY_TASK_NAME = "pzp-admin-alert-delivery"
+EMBEDDING_INDEX_TASK_NAME = "pzp-embedding-index-worker"
 
 
 @dataclass(slots=True)
@@ -87,6 +88,17 @@ async def admin_alert_delivery_loop(
         interval=lambda: context.settings.control_plane_alert_delivery_interval_seconds,
         operation=deliver,
     )
+
+
+def start_embedding_index_worker(context: AppContext) -> BackgroundTaskHandle:
+    state = BackgroundTaskState(name=EMBEDDING_INDEX_TASK_NAME)
+    task = asyncio.create_task(
+        _supervised_loop(
+            state=state, interval=lambda: 2, operation=context.memory.embedding_indexes.worker_tick
+        ),
+        name=EMBEDDING_INDEX_TASK_NAME,
+    )
+    return BackgroundTaskHandle(task, state)
 
 
 async def _supervised_loop(

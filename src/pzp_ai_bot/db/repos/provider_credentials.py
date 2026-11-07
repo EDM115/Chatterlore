@@ -6,7 +6,13 @@ from typing import Any
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from pzp_ai_bot.db.models import AIProviderCredential, AIProviderPoolState, AIProviderProfile
+from pzp_ai_bot.db.models import (
+    AIProviderCredential,
+    AIProviderPoolState,
+    AIProviderProfile,
+    EmbeddingIndexJob,
+    EmbeddingSpace,
+)
 from pzp_ai_bot.db.repos.shared import normalize_profile_name
 
 _PROFILE_UPDATE_FIELDS = {
@@ -18,6 +24,10 @@ _PROFILE_UPDATE_FIELDS = {
     "embedding_capable",
     "reasoning_capable",
     "local",
+    "api_dialect",
+    "auth_mode",
+    "local_chat_options",
+    "local_embedding_options",
     "redact_before_ai",
     "redaction_patterns",
     "fake_embedding_dimensions",
@@ -45,6 +55,22 @@ class ProviderProfileRepository:
         return int(
             await self.session.scalar(select(func.count()).select_from(AIProviderProfile)) or 0
         )
+
+    async def has_embedding_dependencies(self, name: str) -> bool:
+        clean = normalize_profile_name(name)
+        space = await self.session.scalar(
+            select(EmbeddingSpace.id).where(EmbeddingSpace.provider_profile == clean).limit(1)
+        )
+        if space is not None:
+            return True
+        job = await self.session.scalar(
+            select(EmbeddingIndexJob.id)
+            .where(
+                EmbeddingIndexJob.provider_profile == clean, EmbeddingIndexJob.status != "cancelled"
+            )
+            .limit(1)
+        )
+        return job is not None
 
     async def get_by_id(self, profile_id: int) -> AIProviderProfile | None:
         return await self.session.get(AIProviderProfile, profile_id)
@@ -77,6 +103,10 @@ class ProviderProfileRepository:
         actor_user_id: int,
         now: datetime,
         enabled: bool = True,
+        api_dialect: str = "auto",
+        auth_mode: str = "api_key",
+        local_chat_options: dict[str, Any] | None = None,
+        local_embedding_options: dict[str, Any] | None = None,
     ) -> AIProviderProfile:
         profile = AIProviderProfile(
             name=normalize_profile_name(name),
@@ -88,6 +118,10 @@ class ProviderProfileRepository:
             embedding_capable=embedding_capable,
             reasoning_capable=reasoning_capable,
             local=local,
+            api_dialect=api_dialect,
+            auth_mode=auth_mode,
+            local_chat_options=dict(local_chat_options or {}),
+            local_embedding_options=dict(local_embedding_options or {}),
             redact_before_ai=redact_before_ai,
             redaction_patterns=list(redaction_patterns),
             fake_embedding_dimensions=fake_embedding_dimensions,
@@ -187,6 +221,27 @@ class ProviderCredentialRepository:
 
     async def get(self, credential_id: int) -> AIProviderCredential | None:
         return await self.session.get(AIProviderCredential, credential_id)
+
+    async def retire_environment(self, profile_id: int, *, now: datetime) -> list[int]:
+        statement = (
+            update(AIProviderCredential)
+            .where(
+                AIProviderCredential.profile_id == profile_id,
+                AIProviderCredential.source_kind == "environment",
+                AIProviderCredential.lifecycle_state != "deleted",
+            )
+            .values(
+                lifecycle_state="deleted",
+                health_state="disabled",
+                deleted_by=0,
+                deleted_at=now,
+                updated_by=0,
+                updated_at=now,
+                version=AIProviderCredential.version + 1,
+            )
+            .returning(AIProviderCredential.id)
+        )
+        return list(await self.session.scalars(statement))
 
     async def sync_environment(
         self,

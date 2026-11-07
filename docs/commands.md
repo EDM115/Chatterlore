@@ -62,6 +62,32 @@ This page is the command reference for Telegram admins, configured bot admins an
 
 Configured `BOT_ADMINS` can administer every scope, including from a bot DM: `/runtime_settings` changes safe bot-wide defaults, `/settings scope=all ...` changes the global scope overlay, `/settings scope=<chat_id> ...` targets a chat and `/settings scope=<chat_id>:<thread_id> ...` targets a topic. Telegram chat admins can administer only the current chat they administer; commands that accept `scope=` reject foreign chat scopes for chat admins instead of applying current-chat authorization to another target. Effective scoped settings resolve from safe runtime defaults to the global scope, then the chat and finally the topic, so a chat setting is inherited by its topics but never by another chat. Global profile, runtime-setting, summary-template and system-prompt mutations are restricted to configured bot admins. Polling and webhook startup register the current command list with Telegram through `set_my_commands`.
 
+## Independent Route Settings
+
+Independent scoped routes accept `chat_provider=NAME`, `summary_provider=NAME` and `embedding_provider=NAME` (their full `*_provider_profile` names are also accepted) in `/memory_settings` and confirmed `/settings`. Use `inherit` to clear a route override, the UI's Reset to inherited sends the equivalent null. `/runtime_settings` and CLI `runtime-settings --set` use the full names. An embedding-affecting change on populated memory returns migration-required rather than starting a paid rebuild. Summary one-shot `provider`/`model` options change generated summary text only, the stored vector still uses the configured embedding route.  
+
+## Embedding Index And Local Model Commands
+
+All `/embedding_index` actions are bot-owner-only (not delegated/native chat-admin operations). Scope defaults to `this_topic`, metadata reads/preview do not call providers, starting/running jobs is an explicit potentially paid action.  
+
+- `/embedding_index status [scope=...] [id=N]`: list current index/coverage/job metadata or inspect one job
+- `/embedding_index preview profile=NAME [scope=...] [model=MODEL]`: report current coverage, eligible source counts and expected bounded batches
+- `/embedding_index start profile=NAME [scope=...] [model=MODEL]`: queue an explicit side-by-side build
+- `/embedding_index run id=N [batches=1..10]`: execute bounded batches, default one
+- `/embedding_index resume id=N version=N` and `/embedding_index cancel id=N version=N`: versioned job control
+- `/embedding_index activate id=N version=N confirm='ACTIVATE N'`: validate complete current coverage and explicitly switch the route
+
+Local CLI equivalents use the same service, CLI status/preview/start default to scope `all` (supply a concrete `--scope` for a chat/topic). Back up SQLite before the first production migration and follow [operations.md](operations.md#embedding-index-migrations).  
+
+- `pzp-bot embedding-index status [--scope all] [--job-id N]`
+- `pzp-bot embedding-index preview --profile NAME [--scope all] [--model MODEL]`
+- `pzp-bot embedding-index start --profile NAME [--scope all] [--model MODEL]`
+- `pzp-bot embedding-index run JOB_ID [--max-batches 1]`
+- `pzp-bot embedding-index resume JOB_ID --version N`
+- `pzp-bot embedding-index cancel JOB_ID --version N`
+- `pzp-bot embedding-index activate JOB_ID --version N --confirmation "ACTIVATE JOB_ID"`
+- `pzp-bot local-model prepare --profile NAME --mode chat|embedding [--allow-download]`: explicitly prepare cached artifacts offline, downloads additionally require the profile to allow them and fit deployment limits
+
 ## CLI Reference
 
 - `pzp-bot migrate`: creates or upgrades the configured database schema through Alembic. This mutates the database; back up operator data and follow the migration guidance in [operations.md](operations.md) before running it against persistent state.

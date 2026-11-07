@@ -67,7 +67,7 @@ def test_revision_0015_creates_provider_pool_and_admin_alert_schema(tmp_path: Pa
             row[1] for row in connection.execute("pragma table_info(ai_provider_credentials)")
         }
 
-    assert revision == ("0017_scope_settings_versions",)
+    assert revision == ("0019_embedding_spaces",)
     assert {
         "ai_provider_profiles",
         "ai_provider_credentials",

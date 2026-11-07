@@ -6,6 +6,7 @@ from aiogram.types import Message
 from pzp_ai_bot.app_context import AppContext
 from pzp_ai_bot.memory.scope import Scope
 from pzp_ai_bot.telegram.routers.control_plane import register_control_plane_enrollment_handler
+from pzp_ai_bot.telegram.routers.embedding_indexes import register_embedding_index_handlers
 from pzp_ai_bot.telegram.routers.learning import (
     register_learning_policy_handlers,
     register_learning_status_handlers,
@@ -81,6 +82,8 @@ def build_router(context: AppContext) -> Router:
     register_query_handlers(router, context, guards)
 
     register_operations_handlers(router, context, guards)
+
+    register_embedding_index_handlers(router, context, guards)
 
     register_learning_status_handlers(router, context, guards)
 

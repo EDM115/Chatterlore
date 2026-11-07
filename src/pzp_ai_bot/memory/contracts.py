@@ -161,6 +161,7 @@ class SummaryGenerationResult:
     selection: ProviderSelection
     reasoning_level: str
     template_version: str
+    embedding_selection: ProviderSelection | None = None
 
     @property
     def error_type(self) -> str | None:
@@ -204,6 +205,16 @@ class EmbeddingGenerationResult:
     dimensions: int | None
     failure: ProviderOperationError | None
     telemetry: ProviderCallTelemetry
+    space: dict[str, Any] | None = None
+    source_hashes: tuple[str, ...] = ()
+    route_epoch: int | None = None
+
+    def persistence_fields(self, index: int = 0) -> dict[str, Any]:
+        return {
+            "space": self.space,
+            "source_hash": self.source_hashes[index] if self.source_hashes else None,
+            "route_epoch": self.route_epoch,
+        }
 
     @property
     def error(self) -> Exception | None:

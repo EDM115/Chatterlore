@@ -40,8 +40,11 @@ class Retriever:
         top_k: int = 6,
         *,
         candidate_limit: int = 5_000,
+        space_id: int | None = None,
     ) -> list[SearchResult]:
-        embeddings = await self.embedding_repo.list_for_retrieval(scope, limit=candidate_limit)
+        embeddings = await self.embedding_repo.list_for_retrieval(
+            scope, limit=candidate_limit, space_id=space_id
+        )
         normalized_query = normalize(query_vector)
         knowledge_by_id = await self.knowledge_repo.get_many(
             [

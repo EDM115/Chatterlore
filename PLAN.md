@@ -1,10 +1,10 @@
 ---
 goal: Telegram Group Memory Assistant PoC v1
-version: 0.52
+version: 0.53
 date_created: 2026-06-16
 last_updated: 2026-11-07
 owner: PZP-AI
-status: In progress — policy and current isolated runtime/recovery qualification are complete, remaining client/provider/manual-CI release gates are open
+status: In progress — independent AI routes, local inference and safe embedding migrations implemented, final deployment/client/manual-CI release gates remain open
 tags:
   - telegram
   - ai
@@ -24,7 +24,7 @@ The roadmap version evolves independently of the package version. The original s
 ## Current Focus (2026-11-07)
 
 Plans 001–020 have their original implementation work complete, with Plan 016 deliberately RETIRED. Plan 021's code, complete page family and deterministic acceptance through TASK-080 are not a new feature backlog. The owner-approved bot-admin-only delegation policy, prior 449-pass Python/64-case Vitest/44-case browser checkpoint, fresh split-image builds, public TLS/routing/header stripping, real initial Mini App/browser login and backend-replacement session persistence, image/key-injected recovery and genuinely elapsed retention on copies have recorded evidence for that earlier snapshot. Finish the remaining client/permission/enrollment/lifecycle matrix, separate polling smoke and user-dispatched hosted CI before release. Provider acceptance remains incomplete, the earlier key was revoked and its replacement is not yet live-verified. See the [current live acceptance ledger and operator sequence](docs/live-acceptance-2026-11-07.md), [full review and all-plan matrix](docs/project-review-2026-11-07.md), [Python upgrade review](docs/dependency-review-python-2026-11-07.md) and [frontend upgrade review](docs/dependency-review-web-2026-11-07.md).
-The subsequent owner-approved UI/session pass fixes multi-tab CSRF invalidation, complete parent-value presentation with nullable scoped resets and browser-only logout in source, deployment of this pass is not yet verified. The owner reports adding a new valid key to the host `.env` and selecting `6.1-terra` model names in the UI, neither current-container reload nor paid-provider acceptance is established by that report. Their CI lock-check removal and unpinned standalone Docker pnpm installer remain unchanged, existing artifact-test expectations for those removed settings are known mismatches rather than reasons to restore the settings. The requested broader per-operation mixed-provider routing remains TODO, especially embedding-space isolation and re-indexing.  
+The subsequent owner-approved UI/session fixes remain source-only. The current implementation adds independent answer/summary/embedding profiles, direct Hugging Face and local-server text inference, validated local controls and side-by-side embedding-index jobs with atomic activation. The final offline Python suite passes 571 tests with one credential-gated live skip, real tiny local models run without downloads, and the replacement host `.env` key passed four bounded synthetic OpenAI calls in an isolated database (reindex/activate, canonical summary and Ask, no Telegram/live-store changes). Current-container reload, deployment, DeepSeek, installed local-server/pretrained-model and live-group acceptance of this new snapshot remain unverified. The owner's CI lock-check removal and unpinned Docker pnpm installer are preserved, explicit artifact assertions now describe that policy. See the [mixed-provider verification record](docs/mixed-provider-acceptance-2026-11-07.md).  
 
 ## 1. Product Requirements And Constraints
 
@@ -76,10 +76,10 @@ The subsequent owner-approved UI/session pass fixes multi-tab CSRF invalidation,
 - **DONE**: `uv.lock` exists and CI/Docker consume application dependencies through frozen uv syncs, uv itself deliberately tracks latest in CI and the standalone Docker installer
 - **DONE**: Runtime dependencies include `aiogram`, `fastapi`, `uvicorn[standard]`, `sqlalchemy[asyncio]`, `aiosqlite`, `alembic`, `openai`, `numpy`, `typer`, `rich`, `structlog`, `orjson`, `cryptography` and `PyJWT[crypto]`
 - **DONE**: Dev dependencies include `pytest`, `pytest-asyncio`, `respx`, `freezegun`, `httpx2`, `ruff` and `ty` (coverage instrumentation and pytest-cov were retired on 2026-11-07)
-- **DONE**: Optional local embedding extra includes `sentence-transformers`
+- **DONE**: Optional `local` extra explicitly declares `sentence-transformers`, `transformers`, `torch` and `huggingface-hub`, the remote-only runtime does not require those heavyweight dependencies
 - **DONE**: `pzp-bot` console script points to `pzp_ai_bot.main:app`
 - **DONE**: `.env.example`, `.gitignore`, focused Docker ignores, independent multi-stage non-root bot/frontend Dockerfiles, `Caddyfile`, three-service `docker-compose.yml` and `.github/workflows/ci.yml` exist
-- **DONE**: CI checks lock consistency, performs a frozen development sync, upgrades one isolated runner-temp database and runs `alembic check` against the same schema so dependency or model/history drift fails before later gates
+- **DONE**: CI consumes frozen application dependencies, upgrades one isolated runner-temp database and runs `alembic check` against that schema, the separate `uv lock --check` CI step remains removed by owner policy (local verification can still run it explicitly)
 - **DONE**: CI runs plain offline pytest without coverage instrumentation or a percentage floor, the historically completed Plan 016 is now RETIRED by owner request
 - **DONE**: The 2026-07-30 Plan 020 checkpoint passed whole-project Ruff format/lint and `ty`, a fresh full suite with 228 passed and 1 skipped at 82.43% branch coverage, and empty-database upgrade plus metadata drift checks through revision 0012
 
@@ -96,7 +96,7 @@ The subsequent owner-approved UI/session pass fixes multi-tab CSRF invalidation,
 - **DONE**: `src/pzp_ai_bot/db/` defines async SQLAlchemy models and session helpers; cohesive implementations live in `db/repos/`, and `db/repositories.py` remains a stable compatibility re-export facade
 - **DONE**: `src/pzp_ai_bot/memory/` defines scopes, policy evaluation, vectors and deterministic Markdown projections; `MemoryService` remains the stable `build_context` facade while contracts, transfer, provider operations/telemetry, settings/profiles/templates, retrieval, mutation/reviews/retention and summary/compaction orchestration live in cohesive collaborator modules
 - **DONE**: `src/pzp_ai_bot/telegram/` defines admin checks, utility parsing, polling/webhook runtime and a stable root router that composes characterized command-family builders for learning, operations, settings, retrieval and memory behavior through shared authorization/safe-reply helpers
-- **DONE**: `alembic/versions/` contains the initial schema and revisions 0002–0017, including identifier alignment (0007), logical uniqueness (0008), summary claims (0009), retrieval-only profile permission (0010), canonical snapshots (0011), telemetry indexes (0012), control-plane identity (0013), encrypted credentials (0014), admin alert outbox (0015), managed-chat enrollment (0016) and optimistic scoped settings (0017)
+- **DONE**: `alembic/versions/` contains the initial schema and revisions 0002–0019, including identifier alignment (0007), logical uniqueness (0008), summary claims (0009), retrieval-only profile permission (0010), canonical snapshots (0011), telemetry indexes (0012), control-plane identity (0013), encrypted credentials (0014), admin alert outbox (0015), managed-chat enrollment (0016), optimistic scoped settings (0017), operation profiles (0018) and embedding manifests/source freshness/routing fences/jobs (0019)
 - **DONE**: `docs/` contains setup, architecture, command, privacy, deployment, operations, secrets, release and test documentation
 - **DONE**: `tests/` contains offline unit/integration coverage for core behavior
 
@@ -117,6 +117,7 @@ The subsequent owner-approved UI/session pass fixes multi-tab CSRF invalidation,
 - **DONE**: `pzp-bot runtime-settings [--reload] [--set key=value]...` views, reloads or edits validated safe database-backed runtime settings
 - **DONE**: `pzp-bot db-stats`, `db-integrity`, `db-vacuum` and `db-backup --out path` provide SQLite stats, integrity check, vacuum and online backup maintenance commands
 - **DONE**: `pzp-bot secrets status` reports only safe vault counts/key IDs, and `pzp-bot secrets rewrap --to <master-key-id>` performs an acknowledged transaction-safe DEK rewrap with counts-only output
+- **DONE**: `pzp-bot embedding-index status|preview|start|run|resume|cancel|activate` exposes the service-backed bounded migration workflow, `pzp-bot local-model prepare` explicitly prepares cached or separately authorized byte-capped downloads
 
 ### Telegram Commands
 
@@ -132,6 +133,7 @@ The subsequent owner-approved UI/session pass fixes multi-tab CSRF invalidation,
 - **DONE**: `/remember [tags=a,b] [priority=N] [source=url] <text>` creates a manual durable memory note with structured metadata
 - **DONE**: `/summarize_now [template=name] [provider=name] [model=name] [reasoning=low|medium|high] [prompt="one-shot instruction"]` summarizes pending messages for the current scope with built-in/custom summary templates plus admin-only provider/model/reasoning/one-shot prompt overrides
 - **DONE**: `/memory_settings` directly edits scoped top-k, summary batch size, summary/chat/embedding models, provider profile, reasoning level, system prompt template, retention and review-before-compact settings; `/settings` previews scoped changes and applies them only after confirmation
+- **DONE**: Settings also expose independent `chat_provider_profile`, `summary_provider_profile` and `embedding_provider_profile`, `/embedding_index` provides owner-only bounded status/preview/job controls with explicit versioned activation
 - **DONE**: `/memory_prune` applies configured retention pruning for a scope
 - **DONE**: `/memory_reviews`, `/memory_approve` and `/memory_reject` support review-before-compact workflows; approval and rejection resolve and authorize the review's persisted owning scope before mutation
 - **DONE**: `/memory_notes`, `/memory_note_edit` and `/memory_note_delete` list, edit and delete manual notes
@@ -160,6 +162,9 @@ The subsequent owner-approved UI/session pass fixes multi-tab CSRF invalidation,
 - **DONE**: `FakeProvider` gives deterministic chat, canonical compaction and embedding behavior
 - **DONE**: `OpenAICompatibleProvider` supports configurable chat and embedding calls, including environment/runtime/scope/one-shot model selection and outbound `reasoning_effort` for recognized OpenAI reasoning-model IDs
 - **DONE**: `LocalSentenceTransformerEmbeddingProvider` supports optional local embeddings when the `local` extra is installed
+- **DONE**: Embedded causal text generation uses model-supplied chat templates and safe immutable artifacts, with generated-token-only decoding, off-loop lazy loading, bounded queue/token/time/concurrency, cancellation-safe workers, busy-aware residency and shutdown. Explicitly local compatible HTTP servers support deployment origin allowlists and no-auth credential isolation without automatic cloud fallback
+- **DONE**: Central operation resolution covers all text/content/query paths, profile boundaries choose their own model defaults, summary one-shots cannot switch persisted embedding routes and unsupported reasoning records requested/effective policy without sending unsupported fields
+- **DONE**: Exact semantic embedding spaces and authoritative source fingerprints gate retrieval before candidate limits, SQL-only coverage and bounded leased reindex batches feed atomic versioned activation. A durable routing epoch fences every indexed content commit, old spaces remain preserved for explicitly revalidated rollback
 - **DONE**: Retrieval normalizes each query once, batch-hydrates targets in four bounded SQL statements per source scope, admits durable knowledge before recent learned raw messages and defaults to a configurable 5,000-candidate cap
 - **DONE**: Cross-chat retrieval is disabled by default and only expands through named profiles whose source scopes have destination permission and enabled learning policy; profile source and permission management is restricted to configured bot admins
 - **DONE**: Cross-scope profile permissions expose only the implemented retrieval contract: destination `can_query` plus each source scope's own learning policy; obsolete `learn=` and all unknown `/memory_profile_allow` keys fail before mutation
@@ -284,7 +289,7 @@ These checkpoints describe their own historical code/runtime snapshots, not the 
 
 ## 4. Known Partial Implementations
 
-- **TODO**: Complete persistent per-operation provider routing for answers, summaries and embeddings, expose validated local model/runtime controls and enforce the same embedding-space identity for indexing and queries. Existing query-specific provider selectors do not filter stored vectors by provider/model, changing between local and remote embedding models is not a safe migration today
+- **PARTIAL**: Independent operation routing, embedded/local-server inference and exact-space resumable migrations are implemented and offline-verified, four isolated live OpenAI calls also passed. New-snapshot deployment/live Telegram, actual DeepSeek and installed local-server/pretrained-model quality/sizing acceptance remain open, [implementation contract](docs/superpowers/specs/2026-11-07-mixed-provider-routing-design.md). Legacy vectors require explicit rebuilding from retained source text, optional provenance adoption is not implemented
 - **PARTIAL**: The source fixes for stable multi-tab CSRF, explicit reversible settings inheritance and browser-only logout have offline regressions, real-client acceptance of a newly deployed image remains open. Mini App enrollment behavior is deliberately unchanged at the owner's request
 - **PARTIAL**: Disposable-group Telegram command, privacy/admin, learning, summarization, retrieval, settings, export and forget behavior passed live on 2026-07-30. The November image pruned genuinely old August records on disposable copies while preserving intended knowledge/audit/usage/projections, no deletion from the live store was performed
 - **PARTIAL**: Fresh November non-root bot/frontend images, Caddy 2.11.9, public TLS/routes/credential-header removal, health, backend-only replacement with owner-confirmed session persistence and isolated encrypted backup/restore passed. Separate polling and final release qualification remain, the test stack is not a production release
@@ -422,6 +427,7 @@ Plan 021 execution checkpoint: TASK-001 through TASK-080 are implemented with hi
 
 ### Tests Implemented
 
+- **DONE**: Mixed-provider routing/profile/local/index/control regressions plus the complete Python suite pass (571 passed, one live skip on Python 3.14.7). Schema upgrade/drift/integrity through 0019, exact API/types, command inventories, optional real tiny CPU inference and a bounded isolated OpenAI migration/summary/answer smoke passed, exact frontend/browser and remaining deployment qualifications are maintained in [the acceptance record](docs/mixed-provider-acceptance-2026-11-07.md)
 - **DONE**: `tests/test_scope.py` verifies topic scope extraction and scope parsing
 - **DONE**: `tests/test_policy_and_ingestion.py` verifies learning-disabled skip, learning-enabled summarization, exact global/chat/topic/user/admin precedence and reason strings, one policy SELECT per decision/status, one policy SELECT across multi-scope reporting and mutation visibility on the next operation
 - **DONE**: `tests/test_memory_service.py` verifies scoped remember/search/ask, forget confirmation and JSONL import/export
@@ -590,18 +596,13 @@ REASONING_LEVEL=medium
 EMBEDDING_MODEL=text-embedding-3-small
 ```
 
-### Local Embeddings
+### Local Inference
 
 ```powershell
 uv sync --extra dev --extra local
 ```
 
-Then set:
-
-```env
-AI_PROVIDER=local
-EMBEDDING_MODEL=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
-```
+Configure an embedding-only named local profile and select it with `embedding_provider_profile`, or configure a separate causal chat model with a supported chat template for local text generation. Use the exact capability/options/allowlist examples in [setup](docs/setup.md#independent-ai-routes-and-local-inference), explicitly prepare cached artifacts and migrate populated embeddings through the [operator workflow](docs/operations.md#embedding-index-migrations), do not replace an active embedding model in place.  
 
 ### Webhook
 
@@ -656,7 +657,7 @@ uv run pzp-bot webhook
 - **RISK-019**: Bulk import atomicity is intentionally per 100-row checkpoint, operators must inspect content-free checkpoint/failure events and retry the same input after a later parse, provider or write failure rather than assuming whole-file rollback (renumbered from the duplicate RISK-005 during November reconciliation)
 - **RISK-005**: Current memory compaction performs deterministic heuristic deduplication but can still miss deeper semantic duplicates or keep low-value facts
 - **RISK-006**: Runtime scheduling has focused tests, but true long-running polling/webhook behavior can still differ under real Telegram load
-- **RISK-007**: Optional local embeddings can pull large model dependencies and still need explicit deployment sizing; the multilingual MiniLM model is now cached and passed online plus forced-offline semantic ordering acceptance at 384 dimensions
+- **RISK-007**: Optional embedded inference pulls large model dependencies and still needs deployment-specific CPU/GPU/RAM sizing. The older multilingual MiniLM acceptance is historical, the current new adapters ran real tiny CPU fixtures offline but have no fresh pretrained-model quality or installed-server performance acceptance
 - **CLOSED-008**: Live Telegram API, permission, command, ordinary-message, AI generation, export and forget behavior passed in the disposable administrator-controlled supergroup; sustained real load remains covered separately by RISK-006
 - **RISK-009**: Cross-chat retrieval can leak context across communities if destination query permissions are misconfigured or tested only on synthetic scopes
 - **CLOSED-010**: Runtime prompt/provider changes remain attributable because selected templates, profiles, models and reasoning levels are logged through one safe provider-call telemetry record; failed calls commit only controlled metadata and bounded error summaries after the business rollback or claim release
@@ -668,8 +669,10 @@ uv run pzp-bot webhook
 - **RISK-016**: Full secret reveal intentionally increases impact if a bot-admin session is stolen; Plan 021 therefore requires fresh Telegram step-up, no-store responses, revocable server-side sessions, audit attribution and a deployment option to disable reveal without removing write/replace operations
 - **RISK-017**: Telegram OIDC, Mini App Web APIs and client cookie behavior can drift independently; implementation must re-read discovery/current official docs and pass real Web, Desktop and Mobile client checks rather than copying the older HandleHub popup shortcut
 - **RISK-018**: A dashboard can create unbounded memory/telemetry queries or Caddy route shadowing; every list/export requires pagination or streaming, every aggregation requires measured SQL, and reserved API/auth/webhook/health routes plus frontend credential-header removal require live ingress verification
-- **RISK-020**: The approved delegated-admin management matrix says bot-owner-only while current routes/contracts permit native/delegated admins to manage grants in their own active chat. Resolve this policy before release, neither documentation reconciliation nor dependency maintenance authorizes changing that boundary
+- **CLOSED-020**: The owner-approved bot-admin-only delegated-grant management policy is enforced in API/UI/contracts, native/delegated admins retain only their authorized scoped settings/content access
 - **RISK-021**: Latest uv and major-only Node/Caddy selection are deliberate update policies, while application locks stay frozen. Record the actually selected tools/images at deployment and retain the visible `openapi-typescript` TypeScript 5 peer-range mismatch with the intentional TypeScript 6 alias until upstream support or a separately approved compiler decision resolves it
+- **RISK-022**: Revision 0019 cannot infer old vector provenance, upgrading a populated store may require an explicit potentially paid rebuild before search is available. Preserve old vectors/source text, back up before upgrade and plan the initial rebuild before rollout, rollback requires fresh current coverage too
+- **RISK-023**: A queued reindex is explicit provider work, the background worker may process it without a browser tab remaining open. Review preview counts/cost, profile availability and bounded download settings before starting, cancel/resume through persisted job versions rather than mutating job rows directly
 - **RISK-022**: Retrieval does not isolate candidates by embedding provider/model, same-dimensional incompatible vectors can be compared and different-dimensional vectors silently score zero. Mixed-provider expansion must add embedding-space identity/filtering and re-index acceptance, do not advertise safe local/remote embedding switching from the query selectors alone
 - **CLOSED-001**: Global review IDs no longer let a Telegram admin act on another chat's review because approval and rejection authorize the persisted owning scope before mutation; same-chat and configured-bot-admin access remain covered by dispatcher tests
 - **CLOSED-002**: Daily Markdown no longer receives pre-commit appends or pending review proposals; it is rebuilt from committed knowledge after mutations and startup, so rejection, deletion, retention and forget operations remove projected content while audit metadata remains
@@ -712,6 +715,7 @@ uv run pzp-bot webhook
 
 ## 12. Changelog
 
+- **2026-11-07 / v0.53**: Implemented independent answer/summary/embedding routes, profile-aware inheritance/resets, typed dialect/capability/auth/local controls, safe embedded causal and embedding inference, endpoint-isolated credentials, explicit bounded preparation and exact-space source-fresh indexing with leased resumable jobs, writer fencing and versioned atomic activation across API/UI/CLI/Telegram. Added migrations 0018/0019, optional direct local dependencies without graph upgrades, synchronized generated API types and canonical operator docs. Final Python verification passes 571 tests/one live skip, real tiny local CPU inference and schema drift/integrity pass, the host OpenAI key passed exactly four isolated synthetic calls using `gpt-6.1-terra` and `text-embedding-3-small`. CI/installer choices and live data are preserved, current deployment/Telegram, DeepSeek and installed-server/pretrained-model acceptance remain unverified, see [the complete verification record](docs/mixed-provider-acceptance-2026-11-07.md)
 - **2026-11-07 / v0.52**: Implemented the approved stable session-bound hash-only CSRF retrieval (including one-time legacy-session adoption and accurate rejected-token feedback), complete inherited parent settings and explicit nullable reset controls, plus CSRF-protected browser-only logout with safe failure feedback. Python reports 451 passed/1 live skip/2 unchanged owner-policy artifact failures, static checks and frontend lint/type/72 unit tests/build/275-asset scan/SSR smoke pass. Browser reset/logout flows pass, latest full browser run is 45 passed/1 mobile keyboard failure due remote Iconify fallback blocked by CSP, earlier 46/46 runs and one intermittent query-catalog/nonce error do not make the latest gate green. Preserved staged owner choices, enrollment, live data and provider credentials, no deployment or paid provider call occurred. Documented exact AI operation routing and the open embedding-space/re-indexing gap, see the [scoped verification and limits](docs/superpowers/plans/2026-11-07-session-scope-fixes.md)
 - **2026-11-07 / v0.51**: Enforced the owner-approved bot-admin-only delegation boundary in API/UI/OpenAPI with browser/Mini App role regressions, fixed the real pnpm installer/cache image failure and restored the CI lock-freshness guard. Current gates pass 449 Python tests/1 live skip, 64 Vitest, 44 no-retry browser cases and static/schema/SSR/asset checks. Built/launched isolated non-root split images and one persistent tunnel, verified TLS/proxy/header/security/recovery and genuinely elapsed retention on copies, and recorded owner-confirmed Mini App/browser login plus backend-replacement session persistence. Remaining real-client/polling/manual-CI and explicitly deferred provider/DM gates remain open, the owner confirmed the existing key was revoked
 

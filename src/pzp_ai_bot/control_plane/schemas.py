@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -71,12 +71,16 @@ class ProviderProfileCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=64)
     provider_kind: str
     base_url: str = Field(min_length=1, max_length=512)
-    chat_model: str = Field(min_length=1, max_length=255)
-    embedding_model: str = Field(min_length=1, max_length=255)
+    chat_model: str = Field(default="", max_length=255)
+    embedding_model: str = Field(default="", max_length=255)
     chat_capable: bool = True
     embedding_capable: bool = True
     reasoning_capable: bool = False
     local: bool = False
+    api_dialect: Literal["auto", "openai", "deepseek", "generic"] = "auto"
+    auth_mode: Literal["api_key", "none"] = "api_key"
+    local_chat_options: dict[str, Any] = Field(default_factory=dict)
+    local_embedding_options: dict[str, Any] = Field(default_factory=dict)
     redact_before_ai: bool = True
     redaction_patterns: list[str] = Field(default_factory=list, max_length=100)
     fake_embedding_dimensions: int = Field(default=64, ge=8, le=65_536)
@@ -88,12 +92,16 @@ class ProviderProfileUpdateRequest(BaseModel):
     version: int = Field(ge=1)
     provider_kind: str | None = None
     base_url: str | None = Field(default=None, min_length=1, max_length=512)
-    chat_model: str | None = Field(default=None, min_length=1, max_length=255)
-    embedding_model: str | None = Field(default=None, min_length=1, max_length=255)
+    chat_model: str | None = Field(default=None, max_length=255)
+    embedding_model: str | None = Field(default=None, max_length=255)
     chat_capable: bool | None = None
     embedding_capable: bool | None = None
     reasoning_capable: bool | None = None
     local: bool | None = None
+    api_dialect: Literal["auto", "openai", "deepseek", "generic"] | None = None
+    auth_mode: Literal["api_key", "none"] | None = None
+    local_chat_options: dict[str, Any] | None = None
+    local_embedding_options: dict[str, Any] | None = None
     redact_before_ai: bool | None = None
     redaction_patterns: list[str] | None = Field(default=None, max_length=100)
     fake_embedding_dimensions: int | None = Field(default=None, ge=8, le=65_536)
@@ -116,6 +124,10 @@ class ProviderProfileResponse(BaseModel):
     embedding_capable: bool
     reasoning_capable: bool
     local: bool
+    api_dialect: Literal["auto", "openai", "deepseek", "generic"] = "auto"
+    auth_mode: Literal["api_key", "none"] = "api_key"
+    local_chat_options: dict[str, Any] = Field(default_factory=dict)
+    local_embedding_options: dict[str, Any] = Field(default_factory=dict)
     redact_before_ai: bool
     redaction_patterns: list[str]
     fake_embedding_dimensions: int
@@ -393,6 +405,11 @@ class ChatForgetResponse(BaseModel):
 class ProviderCatalogLocalState(BaseModel):
     dependency_available: bool
     model_loaded: bool
+    chat_dependency_available: bool = False
+    embedding_dependency_available: bool = False
+    chat_model_loaded: bool = False
+    embedding_model_loaded: bool = False
+    server_configured: bool = False
 
 
 class ProviderCatalogPoolState(BaseModel):
@@ -407,6 +424,9 @@ class ProviderCatalogProfile(BaseModel):
     enabled: bool
     chat_model: str
     embedding_model: str
+    local: bool = False
+    api_dialect: str = "auto"
+    auth_mode: str = "api_key"
     capabilities: list[str]
     availability: str
     local_state: ProviderCatalogLocalState | None

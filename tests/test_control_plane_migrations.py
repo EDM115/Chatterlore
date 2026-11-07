@@ -184,7 +184,7 @@ async def test_seeded_pre_control_plane_database_upgrades_to_head_and_loads_thro
             row[0]
             for row in connection.execute("select name from sqlite_master where type = 'table'")
         }
-    assert revision == ("0017_scope_settings_versions",)
+    assert revision == ("0019_embedding_spaces",)
     assert scope_version == (1,)
     assert {
         "control_plane_users",

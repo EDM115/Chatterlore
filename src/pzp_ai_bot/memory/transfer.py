@@ -289,7 +289,9 @@ class MemoryTransferService:
                     )
                     knowledge_repo = KnowledgeRepository(session)
                     embedding_repo = EmbeddingRepository(session)
-                    for row, vector in zip(candidates, embedding_generation.vectors, strict=True):
+                    for vector_index, (row, vector) in enumerate(
+                        zip(candidates, embedding_generation.vectors, strict=True)
+                    ):
                         item = await knowledge_repo.add(
                             scope=scope,
                             kind=row.kind,
@@ -303,6 +305,7 @@ class MemoryTransferService:
                             provider=selection.embedding_provider.name,
                             model=selection.embedding_model,
                             vector=vector,
+                            **embedding_generation.persistence_fields(vector_index),
                         )
                     await EventRepository(session).add(
                         event_type="jsonl_import_batch",
@@ -445,8 +448,8 @@ class MemoryTransferService:
                             "batch": batch_index,
                         },
                     )
-                    for row, normalized_text, vector in zip(
-                        candidates, normalized_texts, embedding_generation.vectors, strict=True
+                    for vector_index, (row, normalized_text, vector) in enumerate(
+                        zip(candidates, normalized_texts, embedding_generation.vectors, strict=True)
                     ):
                         message, created = await message_repo.add(
                             telegram_message_id=row.telegram_message_id,
@@ -474,6 +477,7 @@ class MemoryTransferService:
                             provider=selection.embedding_provider.name,
                             model=selection.embedding_model,
                             vector=vector,
+                            **embedding_generation.persistence_fields(vector_index),
                         )
                         batch_imported += 1
                     await EventRepository(session).add(

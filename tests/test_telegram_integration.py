@@ -514,6 +514,7 @@ def command_for(name: str) -> str:
         "memory_search": "/memory_search roadmap",
         "memory_export": "/memory_export md",
         "memory_status": "/memory_status",
+        "embedding_index": "/embedding_index status scope=all",
         "memory_scopes": "/memory_scopes",
         "memory_debug": "/memory_debug limit=1",
         "memory_items": "/memory_items limit=1",
@@ -629,6 +630,9 @@ async def test_polling_deletes_webhook_before_starting_and_uses_router(
     monkeypatch.setattr(
         polling_module, "start_runtime_settings_refresher", lambda app_context: "settings"
     )
+    monkeypatch.setattr(
+        polling_module, "start_embedding_index_worker", lambda app_context: "indexes"
+    )
 
     async def fake_stop_task(task: Any) -> None:
         events.append(f"stop_task:{task}")
@@ -644,6 +648,7 @@ async def test_polling_deletes_webhook_before_starting_and_uses_router(
         "start_polling",
         "stop_task:idle",
         "stop_task:settings",
+        "stop_task:indexes",
     ]
 
 
@@ -653,6 +658,7 @@ async def test_all_commands_have_success_dispatch_paths(
     context: AppContext, command_name: str
 ) -> None:
     memory = RouterMemoryDouble()
+    cast(Any, memory).embedding_indexes = context.memory.embedding_indexes
     test_context = cast(Any, context)
     test_context.memory = memory
     test_context.admins = AllowingAdmins(allow=True)
@@ -667,6 +673,8 @@ async def test_all_commands_have_success_dispatch_paths(
     )
 
     assert {"sendMessage", "sendDocument"}.intersection(session.call_names())
+    if command_name == "embedding_index":
+        assert all("Index request rejected" not in text for text in session.sent_texts())
 
 
 @pytest.mark.asyncio

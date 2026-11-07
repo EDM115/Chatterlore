@@ -10,6 +10,7 @@ COMMAND_DESCRIPTIONS: tuple[tuple[str, str], ...] = (
     ("memory_search", "Search scoped memory"),
     ("memory_export", "Export memory as Markdown or JSONL"),
     ("memory_status", "Show scoped memory and AI usage status"),
+    ("embedding_index", "Manage embedding indexes (bot admins only)"),
     ("memory_scopes", "List known chat/topic memory scopes"),
     ("memory_debug", "Explain skipped-message reasons"),
     ("memory_items", "Browse recent memory item IDs"),
@@ -79,6 +80,7 @@ def command_help_text() -> str:
             "[scope=this_topic|this_chat|all|<chat_id>:<thread_id>]",
             "/memory_settings [top_k=N] [summary_batch_size=N] [summary_model=name] "
             "[provider=name] [chat_model=name] [embedding_model=name] "
+            "[chat_provider=name] [summary_provider=name] [embedding_provider=name] "
             "[reasoning=low|medium|high] [system_prompt=name] "
             "[raw_retention_days=N|off] [knowledge_retention_days=N|off] "
             "[review_before_compact=on|off]",
@@ -104,6 +106,10 @@ def command_help_text() -> str:
             "[provider=name] [model=name] [prompt='one-shot instruction']",
             "/audit_events [scope=this_topic|this_chat|all] [event_type=name] [limit=N]",
             "/runtime_settings [reload=on] [key=value ...]",
+            "/embedding_index status [scope=...] [id=N]",
+            "/embedding_index preview|start profile=name [scope=...] [model=...]",
+            "/embedding_index run id=N [batches=1..10] | resume|cancel id=N version=N",
+            "/embedding_index activate id=N version=N confirm='ACTIVATE N' (bot admins only)",
             "/settings [key=value ...] then /settings confirm=<token>",
             "/forget scope=this_topic|this_chat|all confirm=<token>",
         ]

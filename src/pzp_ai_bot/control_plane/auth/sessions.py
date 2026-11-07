@@ -210,6 +210,8 @@ SENSITIVE_ACTIONS = frozenset(
         "bot_admin:delete",
         "chat:forget",
         "chat:leave",
+        "embedding:activate",
+        "local_model:download",
     }
 )
 

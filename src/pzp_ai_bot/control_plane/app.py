@@ -19,6 +19,8 @@ from pzp_ai_bot.db.models import AdminAlert
 from pzp_ai_bot.db.repos.events import EventRepository
 from pzp_ai_bot.db.session import session_scope
 from pzp_ai_bot.memory.contracts import AIRequestOptions
+from pzp_ai_bot.memory.embedding_settings import EmbeddingMigrationRequiredError
+from pzp_ai_bot.memory.retrieval_service import EmbeddingCoverageRequiredError
 from pzp_ai_bot.memory.scope import Scope, parse_scope
 from pzp_ai_bot.memory.settings_profiles import SettingsVersionConflictError
 from pzp_ai_bot.memory.transfer import MemoryExportFormat
@@ -38,6 +40,7 @@ from .auth.sessions import (
 )
 from .auth.transactions import OIDCTransactionError
 from .authorization import CAPABILITY_CHAT_ADMIN, ControlPlaneActor
+from .embedding_routes import build_embedding_router
 from .management import ControlPlaneManagementConflictError, ControlPlaneManagementError
 from .middleware import (
     SESSION_COOKIE_NAME,
@@ -163,10 +166,15 @@ def create_control_plane_app(
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
+        from pzp_ai_bot.telegram.scheduler import start_embedding_index_worker, stop_task
+
+        index_task = start_embedding_index_worker(context)
         try:
             yield
         finally:
+            await stop_task(index_task)
             await runtime.oidc.aclose()
+            await context.memory.provider_registry.aclose()
 
     app = FastAPI(
         title="PZP AI Control Plane API",
@@ -197,6 +205,7 @@ def create_control_plane_schema_app() -> FastAPI:
     app.include_router(_build_stats_router())
     app.include_router(_build_audit_router())
     app.include_router(_build_operations_router())
+    app.include_router(build_embedding_router())
     return app
 
 
@@ -219,6 +228,7 @@ def install_control_plane(
     app.include_router(_build_stats_router())
     app.include_router(_build_audit_router())
     app.include_router(_build_operations_router())
+    app.include_router(build_embedding_router())
     public_post_paths = {"/api/control/v1/auth/mini-app"}
     if development_auth is not None:
         public_post_paths.add(CONTROL_PLANE_DEV_AUTH_PATH)
@@ -1109,6 +1119,12 @@ def _build_management_router() -> APIRouter:
             )
         except SettingsVersionConflictError as exc:
             _raise_settings_conflict(exc)
+        except EmbeddingMigrationRequiredError as exc:
+            raise ControlPlaneAPIError(
+                409,
+                "embedding_migration_required",
+                "Rebuild and activate the embedding index before changing its route.",
+            ) from exc
         except ValueError as exc:
             raise ControlPlaneAPIError(
                 422, "runtime_settings_invalid", "The runtime settings update is invalid."
@@ -1361,6 +1377,12 @@ def _build_management_router() -> APIRouter:
             )
         except SettingsVersionConflictError as exc:
             _raise_settings_conflict(exc)
+        except EmbeddingMigrationRequiredError as exc:
+            raise ControlPlaneAPIError(
+                409,
+                "embedding_migration_required",
+                "Rebuild and activate the embedding index before changing its route.",
+            ) from exc
         except ValueError as exc:
             raise ControlPlaneAPIError(
                 422, "scope_settings_invalid", "The scope settings update is invalid."
@@ -1408,6 +1430,13 @@ def _build_query_router() -> APIRouter:
                 profile_name=payload.memory_profile,
                 ai_options=_query_ai_options(payload),
             )
+        except EmbeddingCoverageRequiredError as exc:
+            raise ControlPlaneAPIError(
+                409,
+                "embedding_migration_required",
+                "The selected embedding index is incomplete. "
+                "Ask a bot administrator to rebuild it.",
+            ) from exc
         except ValueError as exc:
             raise ControlPlaneAPIError(
                 422, "query_selection_invalid", "The query selection is invalid."
@@ -1430,6 +1459,13 @@ def _build_query_router() -> APIRouter:
                 profile_name=payload.memory_profile,
                 ai_options=_query_ai_options(payload),
             )
+        except EmbeddingCoverageRequiredError as exc:
+            raise ControlPlaneAPIError(
+                409,
+                "embedding_migration_required",
+                "The selected embedding index is incomplete. "
+                "Ask a bot administrator to rebuild it.",
+            ) from exc
         except ValueError as exc:
             raise ControlPlaneAPIError(
                 422, "query_selection_invalid", "The query selection is invalid."
@@ -2041,6 +2077,14 @@ def _require_step_up(
 
 
 def _raise_provider_error(exc: ValueError) -> Never:
+    dependency = getattr(exc, "code", None)
+    if dependency in {"embedding_migration_required", "profile_in_use"}:
+        raise ControlPlaneAPIError(
+            409,
+            dependency,
+            "This provider is referenced by an embedding index. "
+            "Create a new profile and migrate the index before changing or removing it.",
+        ) from exc
     if isinstance(exc, ProviderSecretConflictError):
         raise ControlPlaneAPIError(
             409,

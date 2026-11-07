@@ -9,6 +9,7 @@ from pzp_ai_bot.telegram.commands import register_bot_commands
 from pzp_ai_bot.telegram.dispatcher import build_dispatcher
 from pzp_ai_bot.telegram.scheduler import (
     start_admin_alert_delivery,
+    start_embedding_index_worker,
     start_idle_summarizer,
     start_runtime_settings_refresher,
     stop_task,
@@ -25,6 +26,7 @@ async def run_polling(
     telegram_dispatcher: Any = dispatcher or build_dispatcher(context)
     idle_task = start_idle_summarizer(context)
     settings_task = start_runtime_settings_refresher(context)
+    index_task = start_embedding_index_worker(context)
     alert_task = start_admin_alert_delivery(context, telegram_bot)
     try:
         await telegram_bot.delete_webhook(drop_pending_updates=False)
@@ -33,7 +35,9 @@ async def run_polling(
     finally:
         await stop_task(idle_task)
         await stop_task(settings_task)
+        await stop_task(index_task)
         if alert_task is not None:
             await stop_task(alert_task)
         if owns_bot:
             await telegram_bot.session.close()
+        await context.memory.provider_registry.aclose()

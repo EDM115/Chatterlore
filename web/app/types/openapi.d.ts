@@ -331,6 +331,142 @@ export interface paths {
         patch: operations["update_managed_chat_status_api_control_v1_chats__chat_id__status_patch"];
         trace?: never;
     };
+    "/api/control/v1/embedding-indexes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Status */
+        get: operations["status_api_control_v1_embedding_indexes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/control/v1/embedding-indexes/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start */
+        post: operations["start_api_control_v1_embedding_indexes_jobs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/control/v1/embedding-indexes/jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Job */
+        get: operations["job_api_control_v1_embedding_indexes_jobs__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/control/v1/embedding-indexes/jobs/{job_id}/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Activate */
+        post: operations["activate_api_control_v1_embedding_indexes_jobs__job_id__activate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/control/v1/embedding-indexes/jobs/{job_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel */
+        post: operations["cancel_api_control_v1_embedding_indexes_jobs__job_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/control/v1/embedding-indexes/jobs/{job_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resume */
+        post: operations["resume_api_control_v1_embedding_indexes_jobs__job_id__resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/control/v1/embedding-indexes/jobs/{job_id}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run */
+        post: operations["run_api_control_v1_embedding_indexes_jobs__job_id__run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/control/v1/embedding-indexes/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Preview */
+        get: operations["preview_api_control_v1_embedding_indexes_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/control/v1/memory/export": {
         parameters: {
             query?: never;
@@ -637,6 +773,40 @@ export interface paths {
         get: operations["get_provider_pool_api_control_v1_providers__name__pool_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/control/v1/providers/{name}/prepare-local": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Prepare */
+        post: operations["prepare_api_control_v1_providers__name__prepare_local_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/control/v1/providers/{name}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Probe */
+        post: operations["probe_api_control_v1_providers__name__test_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1073,10 +1243,192 @@ export interface components {
             /** Version */
             version: number;
         };
+        /** EmbeddingIndexesView */
+        EmbeddingIndexesView: {
+            active: components["schemas"]["EmbeddingSpaceView"] | null;
+            /** Jobs */
+            jobs: components["schemas"]["EmbeddingJobView"][];
+            /**
+             * Legacy Unverified
+             * @default 0
+             */
+            legacy_unverified: number;
+            /** Scope */
+            scope: string;
+            /** Spaces */
+            spaces: components["schemas"]["EmbeddingSpaceCoverage"][];
+        };
+        /** EmbeddingJobActivateRequest */
+        EmbeddingJobActivateRequest: {
+            /** Confirmation */
+            confirmation: string;
+            /** Version */
+            version: number;
+        };
+        /** EmbeddingJobCreateRequest */
+        EmbeddingJobCreateRequest: {
+            /** Model */
+            model?: string | null;
+            /** Provider Profile */
+            provider_profile: string;
+            /**
+             * Scope
+             * @default all
+             */
+            scope: string;
+        };
+        /** EmbeddingJobRunRequest */
+        EmbeddingJobRunRequest: {
+            /**
+             * Max Batches
+             * @default 1
+             */
+            max_batches: number;
+        };
+        /** EmbeddingJobVersionRequest */
+        EmbeddingJobVersionRequest: {
+            /** Version */
+            version: number;
+        };
+        /** EmbeddingJobView */
+        EmbeddingJobView: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Error Code */
+            error_code: string | null;
+            /** Id */
+            id: number;
+            /** Model */
+            model: string;
+            /** Processed */
+            processed: number;
+            /** Provider Profile */
+            provider_profile: string;
+            /** Scope */
+            scope: string;
+            /** Space Id */
+            space_id: number | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "running" | "ready" | "failed" | "cancelled" | "activated";
+            /** Total */
+            total: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Version */
+            version: number;
+        };
+        /** EmbeddingPreviewView */
+        EmbeddingPreviewView: {
+            /** Cost Warning */
+            cost_warning: string | null;
+            /** Eligible */
+            eligible: number;
+            /**
+             * Expected Batches
+             * @default 0
+             */
+            expected_batches: number;
+            /** Indexed */
+            indexed: number;
+            /** Local Preparation Required */
+            local_preparation_required: boolean;
+            /** Missing */
+            missing: number;
+            /** Model */
+            model: string;
+            /** Provider Profile */
+            provider_profile: string;
+            /** Scope */
+            scope: string;
+        };
+        /** EmbeddingSpaceCoverage */
+        EmbeddingSpaceCoverage: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Dimension */
+            dimension: number;
+            /** Eligible */
+            eligible: number;
+            /** Id */
+            id: number;
+            /** Indexed */
+            indexed: number;
+            /** Key */
+            key: string;
+            /** Missing */
+            missing: number;
+            /** Model */
+            model: string;
+            /** Provider Profile */
+            provider_profile: string;
+            /** Stale */
+            stale: number;
+        };
+        /** EmbeddingSpaceView */
+        EmbeddingSpaceView: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Dimension */
+            dimension: number;
+            /** Id */
+            id: number;
+            /** Key */
+            key: string;
+            /** Model */
+            model: string;
+            /** Provider Profile */
+            provider_profile: string;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** LocalModelPrepareRequest */
+        LocalModelPrepareRequest: {
+            /**
+             * Allow Download
+             * @default false
+             */
+            allow_download: boolean;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "chat" | "embedding";
+        };
+        /** LocalModelPrepareView */
+        LocalModelPrepareView: {
+            /** Download Bytes */
+            download_bytes: number;
+            /** Downloaded */
+            downloaded: boolean;
+            /** Loaded */
+            loaded: boolean;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "chat" | "embedding";
+            /** Provider Profile */
+            provider_profile: string;
+            /** Resolved Revision */
+            resolved_revision?: string | null;
         };
         /** ManagedChatMutationResponse */
         ManagedChatMutationResponse: {
@@ -1328,10 +1680,35 @@ export interface components {
         };
         /** ProviderCatalogLocalState */
         ProviderCatalogLocalState: {
+            /**
+             * Chat Dependency Available
+             * @default false
+             */
+            chat_dependency_available: boolean;
+            /**
+             * Chat Model Loaded
+             * @default false
+             */
+            chat_model_loaded: boolean;
             /** Dependency Available */
             dependency_available: boolean;
+            /**
+             * Embedding Dependency Available
+             * @default false
+             */
+            embedding_dependency_available: boolean;
+            /**
+             * Embedding Model Loaded
+             * @default false
+             */
+            embedding_model_loaded: boolean;
             /** Model Loaded */
             model_loaded: boolean;
+            /**
+             * Server Configured
+             * @default false
+             */
+            server_configured: boolean;
         };
         /** ProviderCatalogPoolState */
         ProviderCatalogPoolState: {
@@ -1342,6 +1719,16 @@ export interface components {
         };
         /** ProviderCatalogProfile */
         ProviderCatalogProfile: {
+            /**
+             * Api Dialect
+             * @default auto
+             */
+            api_dialect: string;
+            /**
+             * Auth Mode
+             * @default api_key
+             */
+            auth_mode: string;
             /** Availability */
             availability: string;
             /** Capabilities */
@@ -1352,6 +1739,11 @@ export interface components {
             embedding_model: string;
             /** Enabled */
             enabled: boolean;
+            /**
+             * Local
+             * @default false
+             */
+            local: boolean;
             local_state: components["schemas"]["ProviderCatalogLocalState"] | null;
             /** Name */
             name: string;
@@ -1548,6 +1940,18 @@ export interface components {
         };
         /** ProviderProfileCreateRequest */
         ProviderProfileCreateRequest: {
+            /**
+             * Api Dialect
+             * @default auto
+             * @enum {string}
+             */
+            api_dialect: "auto" | "openai" | "deepseek" | "generic";
+            /**
+             * Auth Mode
+             * @default api_key
+             * @enum {string}
+             */
+            auth_mode: "api_key" | "none";
             /** Base Url */
             base_url: string;
             /**
@@ -1555,14 +1959,20 @@ export interface components {
              * @default true
              */
             chat_capable: boolean;
-            /** Chat Model */
+            /**
+             * Chat Model
+             * @default
+             */
             chat_model: string;
             /**
              * Embedding Capable
              * @default true
              */
             embedding_capable: boolean;
-            /** Embedding Model */
+            /**
+             * Embedding Model
+             * @default
+             */
             embedding_model: string;
             /**
              * Fake Embedding Dimensions
@@ -1574,6 +1984,14 @@ export interface components {
              * @default false
              */
             local: boolean;
+            /** Local Chat Options */
+            local_chat_options?: {
+                [key: string]: unknown;
+            };
+            /** Local Embedding Options */
+            local_embedding_options?: {
+                [key: string]: unknown;
+            };
             /** Name */
             name: string;
             /** Provider Kind */
@@ -1598,8 +2016,20 @@ export interface components {
         };
         /** ProviderProfileMutationResponse */
         ProviderProfileMutationResponse: {
+            /**
+             * Api Dialect
+             * @default auto
+             * @enum {string}
+             */
+            api_dialect: "auto" | "openai" | "deepseek" | "generic";
             /** Audit Event Id */
             audit_event_id: number;
+            /**
+             * Auth Mode
+             * @default api_key
+             * @enum {string}
+             */
+            auth_mode: "api_key" | "none";
             /** Base Url */
             base_url: string;
             /** Chat Capable */
@@ -1616,6 +2046,14 @@ export interface components {
             fake_embedding_dimensions: number;
             /** Local */
             local: boolean;
+            /** Local Chat Options */
+            local_chat_options?: {
+                [key: string]: unknown;
+            };
+            /** Local Embedding Options */
+            local_embedding_options?: {
+                [key: string]: unknown;
+            };
             /** Name */
             name: string;
             /** Provider Kind */
@@ -1631,8 +2069,40 @@ export interface components {
             /** Version */
             version: number;
         };
+        /** ProviderProfileProbeRequest */
+        ProviderProfileProbeRequest: {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "chat" | "embedding";
+        };
+        /** ProviderProfileProbeView */
+        ProviderProfileProbeView: {
+            /** Detail */
+            detail: string;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "chat" | "embedding";
+            /** Success */
+            success: boolean;
+        };
         /** ProviderProfileResponse */
         ProviderProfileResponse: {
+            /**
+             * Api Dialect
+             * @default auto
+             * @enum {string}
+             */
+            api_dialect: "auto" | "openai" | "deepseek" | "generic";
+            /**
+             * Auth Mode
+             * @default api_key
+             * @enum {string}
+             */
+            auth_mode: "api_key" | "none";
             /** Base Url */
             base_url: string;
             /** Chat Capable */
@@ -1649,6 +2119,14 @@ export interface components {
             fake_embedding_dimensions: number;
             /** Local */
             local: boolean;
+            /** Local Chat Options */
+            local_chat_options?: {
+                [key: string]: unknown;
+            };
+            /** Local Embedding Options */
+            local_embedding_options?: {
+                [key: string]: unknown;
+            };
             /** Name */
             name: string;
             /** Provider Kind */
@@ -1666,6 +2144,10 @@ export interface components {
         };
         /** ProviderProfileUpdateRequest */
         ProviderProfileUpdateRequest: {
+            /** Api Dialect */
+            api_dialect?: ("auto" | "openai" | "deepseek" | "generic") | null;
+            /** Auth Mode */
+            auth_mode?: ("api_key" | "none") | null;
             /** Base Url */
             base_url?: string | null;
             /** Chat Capable */
@@ -1682,6 +2164,14 @@ export interface components {
             fake_embedding_dimensions?: number | null;
             /** Local */
             local?: boolean | null;
+            /** Local Chat Options */
+            local_chat_options?: {
+                [key: string]: unknown;
+            } | null;
+            /** Local Embedding Options */
+            local_embedding_options?: {
+                [key: string]: unknown;
+            } | null;
             /** Provider Kind */
             provider_kind?: string | null;
             /** Reasoning Capable */
@@ -3571,6 +4061,634 @@ export interface operations {
             };
         };
     };
+    status_api_control_v1_embedding_indexes_get: {
+        parameters: {
+            query?: {
+                scope?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmbeddingIndexesView"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneConflictEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    start_api_control_v1_embedding_indexes_jobs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmbeddingJobCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmbeddingJobView"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneConflictEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    job_api_control_v1_embedding_indexes_jobs__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmbeddingJobView"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneConflictEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    activate_api_control_v1_embedding_indexes_jobs__job_id__activate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmbeddingJobActivateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmbeddingJobView"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneConflictEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    cancel_api_control_v1_embedding_indexes_jobs__job_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmbeddingJobVersionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmbeddingJobView"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneConflictEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    resume_api_control_v1_embedding_indexes_jobs__job_id__resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmbeddingJobVersionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmbeddingJobView"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneConflictEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    run_api_control_v1_embedding_indexes_jobs__job_id__run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmbeddingJobRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmbeddingJobView"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneConflictEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    preview_api_control_v1_embedding_indexes_preview_get: {
+        parameters: {
+            query: {
+                provider_profile: string;
+                scope?: string;
+                model?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmbeddingPreviewView"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneConflictEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
     export_memory_api_control_v1_memory_export_get: {
         parameters: {
             query: {
@@ -5051,6 +6169,166 @@ export interface operations {
             };
             /** @description Unprocessable Content */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    prepare_api_control_v1_providers__name__prepare_local_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LocalModelPrepareRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LocalModelPrepareView"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneConflictEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    probe_api_control_v1_providers__name__test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderProfileProbeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderProfileProbeView"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneConflictEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
