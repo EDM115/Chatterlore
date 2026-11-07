@@ -106,7 +106,7 @@ ALLOWED_REASONING_LEVELS=medium
 5. Start polling with `uv run pzp-bot polling` or use the Docker/Compose flow in [deployment.md](deployment.md).
 6. In Telegram, run `/allow_chat` for the whole chat or `/allow_topic` inside a forum topic before expecting live learning.
 
-Telegram does not expose arbitrary historical group backfill through the Bot API. PZP AI learns live updates after consent is enabled and can import reviewed Telegram Desktop exports or Bot API update dumps locally with `pzp-bot import-telegram-json`.
+Telegram does not expose arbitrary historical group backfill through the Bot API. PZP AI learns live updates after consent is enabled and can import reviewed Telegram Desktop JSON/HTML exports with `pzp-bot import-telegram`, or Bot API update dumps through the retained `import-telegram-json` command. A Both-format directory prefers JSON, HTML-only archives are parsed offline without executing scripts or fetching attachments. Supply `--thread-id` for an individual-topic archive (General is topic 1), omit it only for intentional aggregate chat memory, topic membership is never guessed from replies. See [the import command contract](commands.md) and [the privacy/cost runbook](operations.md#database-maintenance).
 
 ## Independent AI Routes And Local Inference
 

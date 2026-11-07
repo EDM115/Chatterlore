@@ -40,6 +40,7 @@ EXPECTED_MEMORY_SERVICE_METHODS = {
     "get_scope_settings",
     "import_jsonl",
     "import_telegram_desktop_json",
+    "import_telegram_export",
     "ingest",
     "known_scopes",
     "learn_status",

@@ -74,7 +74,7 @@ async function refreshPage() {
       api.request<RuntimeSetting[]>("/bot-settings/runtime"),
     ]);
     runtimeDraft.value = Object.fromEntries(
-      runtimeSettings.value.map((setting) => [setting.key, formatDraft(setting.value)]),
+      runtimeSettings.value.map((setting) => [setting.key, formatRuntimeDraft(setting)]),
     );
     savedRuntimeDraft.value = { ...runtimeDraft.value };
     try {
@@ -161,7 +161,7 @@ async function saveRuntimeSetting(setting: RuntimeSetting) {
     });
     runtimeSettings.value = mutation.items;
     runtimeDraft.value = Object.fromEntries(
-      runtimeSettings.value.map((item) => [item.key, formatDraft(item.value)]),
+      runtimeSettings.value.map((item) => [item.key, formatRuntimeDraft(item)]),
     );
     savedRuntimeDraft.value = { ...runtimeDraft.value };
     notice.value = `${setting.key} was updated and reloaded.`;
@@ -175,6 +175,11 @@ async function saveRuntimeSetting(setting: RuntimeSetting) {
   }
 }
 
+function formatRuntimeDraft(setting: RuntimeSetting): string {
+  if (isOperationProfileSetting(setting.key) && setting.value == null) return "";
+  return formatDraft(setting.value);
+}
+
 function formatDraft(value: unknown): string {
   if (value === null || value === undefined) return "off";
   return String(value);
@@ -182,6 +187,7 @@ function formatDraft(value: unknown): string {
 
 function parseDraft(value: string, setting: RuntimeSetting): unknown {
   const clean = value.trim();
+  if (isOperationProfileSetting(setting.key)) return clean || null;
   const reference = setting.value ?? setting.default_value;
   if (typeof reference === "boolean") {
     if (["true", "1", "yes", "on"].includes(clean.toLowerCase())) return true;

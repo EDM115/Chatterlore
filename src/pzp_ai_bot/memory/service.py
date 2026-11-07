@@ -711,6 +711,9 @@ class MemoryService:
     ) -> TelegramDesktopImportResult:
         return await self._transfer.import_telegram_desktop_json(path, scope)
 
+    async def import_telegram_export(self, path: Path, scope: Scope) -> TelegramDesktopImportResult:
+        return await self._transfer.import_telegram_export(path, scope)
+
     async def browse_items(
         self, scope: Scope | None = None, *, kind: str | None = None, limit: int = 20
     ) -> list[MemoryItemPreview]:

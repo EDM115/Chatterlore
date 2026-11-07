@@ -1,6 +1,7 @@
 # Live Acceptance (2026-11-07)
 
 This execution follows the owner's request to resolve the delegated-admin policy discrepancy, finish remaining plan work and launch the live topology for BotFather/client testing. Source baseline is committed `60d9c55cdd791712fb79fab502ad4e4bb4f122d1`, the following policy/build/CI/test/documentation changes are uncommitted. Plans 001–020 remain implemented (Plan 016 deliberately retired), Plan 021 remains PARTIAL because its full real-client/provider/release matrix is not complete. This report supersedes the earlier November review's statement that Docker was unavailable, not its historical test evidence.
+The later owner-authorized mixed-provider/index and Telegram JSON/HTML rollout supersedes the image/schema/provider holds below for the current live stack, see the [current exact deployment and qualified acceptance](mixed-provider-acceptance-2026-11-07.md#current-deployed-topology-and-recovery). This document retains its earlier-snapshot evidence and operator matrix, its 0017 image IDs, revoked-key result and deferred single-key checks are historical, broader two-key/client/polling/hosted-CI gates remain open.  
 
 ## Implementation Corrections
 
