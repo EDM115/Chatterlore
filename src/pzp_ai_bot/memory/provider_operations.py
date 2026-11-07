@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import math
 import time
 from typing import Any
 
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from pzp_ai_bot.ai.factory import ProviderSelection
+from pzp_ai_bot.ai.openai_compatible import resolve_api_dialect, supports_reasoning_effort
 from pzp_ai_bot.ai.protocols import ChatMessage
 from pzp_ai_bot.db.repos.events import EventRepository
+from pzp_ai_bot.db.session import session_scope
+from pzp_ai_bot.embedding_identity import content_hash, embedding_space_metadata
 from pzp_ai_bot.memory.contracts import (
     ChatProviderExecution,
     EmbeddingGenerationResult,
@@ -19,6 +23,9 @@ from pzp_ai_bot.memory.scope import Scope
 
 
 class ProviderOperations:
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession] | None = None) -> None:
+        self.session_factory = session_factory
+
     async def execute_chat(
         self,
         selection: ProviderSelection,
@@ -31,12 +38,29 @@ class ProviderOperations:
         reasoning_effort: str | None,
     ) -> ChatProviderExecution:
         started = time.perf_counter()
+        effective_reasoning: str | None = None
+        if selection.profile.reasoning_capable:
+            if selection.profile.provider == "fake":
+                effective_reasoning = reasoning_effort
+            elif selection.profile.provider == "openai_compatible":
+                dialect = resolve_api_dialect(
+                    selection.profile.api_dialect,
+                    base_url=selection.profile.openai_base_url,
+                    model=selection.chat_model,
+                    local=selection.profile.local,
+                )
+                if dialect == "deepseek":
+                    effective_reasoning = (
+                        "high" if reasoning_effort == "medium" else reasoning_effort
+                    )
+                elif dialect == "openai" and supports_reasoning_effort(selection.chat_model):
+                    effective_reasoning = reasoning_effort
         try:
             result = await selection.chat_provider.generate(
                 messages,
                 temperature=temperature,
                 max_tokens=max_tokens,
-                reasoning_effort=reasoning_effort,
+                reasoning_effort=effective_reasoning,
             )
         except Exception as error:
             result = None
@@ -45,6 +69,8 @@ class ProviderOperations:
             failure = None
         attempt_metadata = _consume_attempt_metadata(selection.chat_provider)
         usage_metadata = dict(metadata)
+        usage_metadata["requested_reasoning_level"] = reasoning_effort
+        usage_metadata["effective_reasoning_level"] = effective_reasoning
         if attempt_metadata is not None:
             usage_metadata.update(attempt_metadata.as_dict())
         telemetry = provider_call_telemetry(
@@ -69,8 +95,32 @@ class ProviderOperations:
     ) -> EmbeddingGenerationResult:
         started = time.perf_counter()
         vectors: list[list[float]] = []
+        route_epoch = selection.route_epoch
+        if route_epoch is None and self.session_factory is not None:
+            from pzp_ai_bot.db.repos.embedding_indexes import EmbeddingIndexRepository
+
+            async with session_scope(self.session_factory) as session:
+                route_epoch = await EmbeddingIndexRepository(session).current_epoch()
         try:
-            vectors = await selection.embedding_provider.embed(texts)
+            purpose_method = "embed_query" if operation == "embed_query" else "embed_documents"
+            embed = getattr(
+                selection.embedding_provider, purpose_method, selection.embedding_provider.embed
+            )
+            vectors = await embed(texts)
+            if len(vectors) != len(texts):
+                raise ValueError("embedding response count does not match input count")
+            if vectors and (not vectors[0] or len(vectors[0]) > 65_536):
+                raise ValueError("embedding dimensions are invalid")
+            if vectors and any(len(vector) != len(vectors[0]) for vector in vectors):
+                raise ValueError("embedding response dimensions are inconsistent")
+            if any(
+                not isinstance(value, (int, float))
+                or isinstance(value, bool)
+                or not math.isfinite(value)
+                for vector in vectors
+                for value in vector
+            ):
+                raise ValueError("embedding response contains invalid numeric values")
         except Exception as error:
             failure: ProviderOperationError | None = ProviderOperationError.from_exception(error)
         else:
@@ -95,6 +145,11 @@ class ProviderOperations:
             vectors=vectors,
             dimensions=dimensions,
             failure=failure,
+            space=embedding_space_metadata(selection, dimensions)
+            if failure is None and dimensions and vectors
+            else None,
+            source_hashes=tuple(content_hash(text) for text in texts),
+            route_epoch=route_epoch,
             telemetry=provider_call_telemetry(
                 provider=selection.embedding_provider.name,
                 model=selection.embedding_model,
@@ -117,6 +172,21 @@ class ProviderOperations:
         operation: str,
         metadata: dict[str, Any] | None = None,
     ) -> None:
+        if (
+            generation.failure is None
+            and operation != "embed_query"
+            and generation.route_epoch is not None
+        ):
+            from pzp_ai_bot.db.repos.embedding_indexes import (
+                EmbeddingIndexRepository,
+                EmbeddingRouteChanged,
+            )
+
+            try:
+                await EmbeddingIndexRepository(session).guard_write(generation.route_epoch)
+            except EmbeddingRouteChanged as error:
+                error.telemetry = generation.telemetry
+                raise
         if (
             generation.telemetry.provider != selection.embedding_provider.name
             or generation.telemetry.model != selection.embedding_model

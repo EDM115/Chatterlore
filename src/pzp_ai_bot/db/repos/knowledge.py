@@ -3,10 +3,11 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pzp_ai_bot.db.models import KnowledgeItem
+from pzp_ai_bot.embedding_identity import content_hash
 from pzp_ai_bot.memory.scope import Scope
 
 from .shared import KnowledgeScopeCounts, exact_scope_filter, scope_filter, utc_now
@@ -31,6 +32,7 @@ class KnowledgeRepository:
             message_thread_id=scope.thread_id,
             kind=kind,
             content=content,
+            embedding_source_hash=content_hash(content),
             source_message_ids=source_message_ids,
             metadata_json=metadata_json,
             created_at=now,
@@ -136,6 +138,8 @@ class KnowledgeRepository:
         item.metadata_json = metadata
         item.updated_at = utc_now()
         await self.session.flush()
+        if content is not None:
+            await self._update_source_hash(item, content)
         return item
 
     async def delete_item(self, item_id: int, *, scope: Scope) -> KnowledgeItem | None:
@@ -200,7 +204,19 @@ class KnowledgeRepository:
         item.metadata_json = metadata
         item.updated_at = utc_now()
         await self.session.flush()
+        if content is not None:
+            await self._update_source_hash(item, content)
         return item
+
+    async def _update_source_hash(self, item: KnowledgeItem, content: str) -> None:
+        # A separate hash-only write follows the content-invalidation trigger
+        value = content_hash(content)
+        await self.session.execute(
+            update(KnowledgeItem)
+            .where(KnowledgeItem.id == item.id, KnowledgeItem.content == content)
+            .values(embedding_source_hash=value)
+        )
+        item.embedding_source_hash = value
 
     async def delete_manual_note(self, item_id: int, *, scope: Scope) -> bool:
         item = await self.session.scalar(

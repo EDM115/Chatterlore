@@ -133,7 +133,7 @@ def test_revisions_0016_and_0017_normalize_chats_and_version_scope_settings(tmp_
             ).fetchall()
         }
 
-    assert revision == ("0017_scope_settings_versions",)
+    assert revision == ("0019_embedding_spaces",)
     assert status == ("detached",)
     assert scope_version == (1,)
     assert "managed_chat_enrollment_requests" in tables

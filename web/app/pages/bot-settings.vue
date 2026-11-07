@@ -1,5 +1,11 @@
 <script setup lang="ts">
 import type { components } from "~/types/openapi";
+import {
+  isOperationProfileSetting,
+  availableRouteProfile,
+  requiresEmbeddingMigration,
+  routeSettingLabel,
+} from "~/utils/routeSettings";
 
 definePageMeta({ middleware: "auth" });
 
@@ -42,6 +48,7 @@ const newAdminId = ref("");
 const activeOperation = ref<string | null>(null);
 const error = ref<string | null>(null);
 const notice = ref<string | null>(null);
+const migrationRequired = ref(false);
 const dirty = computed(
   () =>
     newAdminId.value.trim() !== "" ||
@@ -143,6 +150,7 @@ async function removeBotAdmin(admin: BotAdmin) {
 async function saveRuntimeSetting(setting: RuntimeSetting) {
   activeOperation.value = `runtime:${setting.key}`;
   error.value = null;
+  migrationRequired.value = false;
   try {
     const mutation = await api.request<RuntimeSettingsMutation>("/bot-settings/runtime", {
       body: {
@@ -158,7 +166,10 @@ async function saveRuntimeSetting(setting: RuntimeSetting) {
     savedRuntimeDraft.value = { ...runtimeDraft.value };
     notice.value = `${setting.key} was updated and reloaded.`;
   } catch (caught) {
-    error.value = controlErrorMessage(caught, `${setting.key} could not be updated.`);
+    migrationRequired.value = requiresEmbeddingMigration(caught);
+    error.value = migrationRequired.value
+      ? "Existing memory needs an embedding-index migration before changing this route or model. Preview and build a replacement index, then activate it explicitly."
+      : controlErrorMessage(caught, `${setting.key} could not be updated.`);
   } finally {
     activeOperation.value = null;
   }
@@ -199,6 +210,7 @@ function parseDraft(value: string, setting: RuntimeSetting): unknown {
     </section>
 
     <p v-if="error" class="operation-error" role="alert">{{ error }}</p>
+    <NuxtLink v-if="migrationRequired" to="/embedding-indexes">Open Embedding indexes</NuxtLink>
     <p v-if="notice" class="operation-notice" aria-live="polite">{{ notice }}</p>
 
     <section class="management-panel" aria-labelledby="bot-admins-title">
@@ -260,16 +272,53 @@ function parseDraft(value: string, setting: RuntimeSetting): unknown {
         <span>{{ runtimeSettings.length }} allowlisted keys</span>
       </div>
       <div class="settings-list">
+        <p>
+          Answers, summaries and embeddings resolve independently. An empty operation provider uses
+          the fallback provider. Changing a provider uses that profile's model unless an explicit
+          model override applies. Embedding changes for existing memory require an explicit index
+          migration.
+        </p>
         <article v-for="setting in runtimeSettings" :key="setting.key" class="setting-row">
           <label :for="`runtime-${setting.key}`"
-            ><strong>{{ setting.key }}</strong
+            ><strong>{{ routeSettingLabel(setting.key) }}</strong><small>{{ setting.key }}</small
             ><small
               >Default: {{ formatDraft(setting.default_value) }} · Previous:
               {{ formatDraft(setting.previous_value) }} ·
               {{ setting.version === null ? "environment" : `v${setting.version}` }}</small
             ></label
           >
+          <select
+            v-if="isOperationProfileSetting(setting.key) && catalog"
+            :id="`runtime-${setting.key}`"
+            v-model="runtimeDraft[setting.key]"
+            :data-testid="`runtime-${setting.key}`"
+          >
+            <option value="">Use fallback provider</option>
+            <option
+              v-if="
+                runtimeDraft[setting.key] &&
+                !availableRouteProfile(catalog.profiles, setting.key, runtimeDraft[setting.key]!)
+              "
+              :value="runtimeDraft[setting.key]"
+            >
+              {{ runtimeDraft[setting.key] }} · unavailable or incompatible
+            </option>
+            <option
+              v-for="profile in catalog.profiles.filter(
+                (profile) =>
+                  profile.enabled &&
+                  profile.capabilities.includes(
+                    setting.key === 'embedding_provider_profile' ? 'embedding' : 'chat',
+                  ),
+              )"
+              :key="profile.name"
+              :value="profile.name"
+            >
+              {{ profile.name }}
+            </option>
+          </select>
           <input
+            v-else
             :id="`runtime-${setting.key}`"
             v-model="runtimeDraft[setting.key]"
             :data-testid="`runtime-${setting.key}`"

@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from pzp_ai_bot.ai.factory import ProviderSelection
 from pzp_ai_bot.ai.protocols import ChatMessage
 from pzp_ai_bot.db.repos.canonical import CanonicalScopeSnapshotRepository
+from pzp_ai_bot.db.repos.embedding_indexes import EmbeddingRouteChanged
 from pzp_ai_bot.db.repos.embeddings import EmbeddingRepository
 from pzp_ai_bot.db.repos.events import EventRepository
 from pzp_ai_bot.db.repos.knowledge import KnowledgeRepository
@@ -44,6 +45,7 @@ from pzp_ai_bot.memory.contracts import (
     SummaryClaim,
     SummaryGenerationResult,
 )
+from pzp_ai_bot.memory.embedding_retry import record_discarded_embedding
 from pzp_ai_bot.memory.markdown import MarkdownMemoryStore
 from pzp_ai_bot.memory.prompts import CANONICAL_PROMPT_VERSION, PROMPT_VERSION, SUMMARY_BASE_PROMPT
 from pzp_ai_bot.memory.provider_operations import ProviderOperations, provider_call_telemetry
@@ -377,6 +379,7 @@ class MemorySummaryService:
                 provider=embedding_selection.embedding_provider.name,
                 model=embedding_selection.embedding_model,
                 vector=embedding_generation.vectors[0],
+                **embedding_generation.persistence_fields(),
             )
             await EventRepository(session).add(
                 event_type="memory_item_refreshed",
@@ -533,6 +536,7 @@ class MemorySummaryService:
                 provider=embedding_selection.embedding_provider.name,
                 model=embedding_selection.embedding_model,
                 vector=embedding_generation.vectors[0],
+                **embedding_generation.persistence_fields(),
             )
             await MessageRepository(session).mark_summarized(message_ids)
             await EventRepository(session).add(
@@ -647,21 +651,34 @@ class MemorySummaryService:
         if claim is None:
             return SummaryBatchOutcome(0, 0, False)
         generation = await self.summarize_claim(claim, ai_options=ai_options)
-        embedding_generation: EmbeddingGenerationResult | None = None
-        if generation.content is not None and not claim.scope_settings.review_before_compact:
-            embedding_generation = await self.provider_operations.generate_embeddings(
-                generation.selection,
-                [generation.content],
-                operation="embed_knowledge",
-                metadata={
-                    "scope": claim.scope.key,
-                    "target_type": "knowledge_item",
-                    "kind": "daily_summary",
-                },
-            )
-        outcome = await self.finalize_summary_claim(
-            claim, generation, embedding_generation=embedding_generation
-        )
+        for attempt in range(3):
+            embedding_generation: EmbeddingGenerationResult | None = None
+            if generation.content is not None and not claim.scope_settings.review_before_compact:
+                current_settings = await self.settings_profiles.get_scope_settings(scope)
+                generation.embedding_selection = self.select_provider(current_settings)
+                embedding_generation = await self.provider_operations.generate_embeddings(
+                    generation.embedding_selection,
+                    [generation.content],
+                    operation="embed_knowledge",
+                    metadata={
+                        "scope": claim.scope.key,
+                        "target_type": "knowledge_item",
+                        "kind": "daily_summary",
+                    },
+                )
+            try:
+                outcome = await self.finalize_summary_claim(
+                    claim, generation, embedding_generation=embedding_generation
+                )
+                break
+            except EmbeddingRouteChanged as error:
+                await record_discarded_embedding(
+                    self.session_factory, self.provider_operations, error
+                )
+                if attempt == 2:
+                    async with session_scope(self.session_factory) as session:
+                        await MessageRepository(session).release_summary_claim(claim.token)
+                    raise
         return SummaryBatchOutcome(
             claimed_messages=len(claim.message_ids),
             completed_messages=outcome.completed_messages,
@@ -675,6 +692,7 @@ class MemorySummaryService:
         *,
         embedding_generation: EmbeddingGenerationResult | None,
     ) -> PendingSummaryOutcome:
+        embedding_selection = generation.embedding_selection or generation.selection
         embedding_failure = (
             embedding_generation.failure if embedding_generation is not None else None
         )
@@ -702,7 +720,7 @@ class MemorySummaryService:
                 if embedding_generation is not None:
                     await self.provider_operations.add_embedding_usage(
                         session,
-                        selection=generation.selection,
+                        selection=embedding_selection,
                         generation=embedding_generation,
                         texts_count=1,
                         operation="embed_knowledge",
@@ -719,7 +737,7 @@ class MemorySummaryService:
             if embedding_generation is not None:
                 await self.provider_operations.add_embedding_usage(
                     session,
-                    selection=generation.selection,
+                    selection=embedding_selection,
                     generation=embedding_generation,
                     texts_count=1,
                     operation="embed_knowledge",
@@ -772,9 +790,10 @@ class MemorySummaryService:
                 target_type="knowledge_item",
                 target_id=item.id,
                 scope=claim.scope,
-                provider=generation.selection.embedding_provider.name,
-                model=generation.selection.embedding_model,
+                provider=embedding_selection.embedding_provider.name,
+                model=embedding_selection.embedding_model,
                 vector=embedding_generation.vectors[0],
+                **embedding_generation.persistence_fields(),
             )
             return PendingSummaryOutcome(finalized, True)
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import timedelta
 from secrets import token_urlsafe
@@ -10,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from pzp_ai_bot.config import Settings
 from pzp_ai_bot.db.repos.challenges import SettingsChallengeRepository
+from pzp_ai_bot.db.repos.embedding_indexes import EmbeddingIndexRepository
 from pzp_ai_bot.db.repos.events import EventRepository
 from pzp_ai_bot.db.repos.policy import PolicyRepository
 from pzp_ai_bot.db.repos.profiles import MemoryProfileRepository
@@ -21,7 +23,12 @@ from pzp_ai_bot.db.repos.settings import (
     SummaryTemplateRepository,
     SystemPromptTemplateRepository,
 )
-from pzp_ai_bot.db.repos.shared import EffectiveScopeSettings, MemoryProfileView, utc_now
+from pzp_ai_bot.db.repos.shared import (
+    EffectiveScopeSettings,
+    MemoryProfileView,
+    normalize_profile_name,
+    utc_now,
+)
 from pzp_ai_bot.db.session import session_scope
 from pzp_ai_bot.memory.contracts import (
     AIRequestOptions,
@@ -30,6 +37,7 @@ from pzp_ai_bot.memory.contracts import (
     SummaryTemplatePreview,
     SystemPromptTemplatePreview,
 )
+from pzp_ai_bot.memory.embedding_settings import EMBEDDING_SETTING_KEYS, validate_embedding_rebind
 from pzp_ai_bot.memory.policy import PolicyService
 from pzp_ai_bot.memory.prompts import BUILTIN_SYSTEM_PROMPTS, PROMPT_VERSION, PromptTemplate
 from pzp_ai_bot.memory.scope import Scope
@@ -43,6 +51,9 @@ SAFE_RUNTIME_SETTING_TYPES: dict[str, str] = {
     "summary_model": "str",
     "system_prompt_template": "str",
     "provider_profile": "str",
+    "chat_provider_profile": "optional_profile",
+    "summary_provider_profile": "optional_profile",
+    "embedding_provider_profile": "optional_profile",
     "chat_model": "str",
     "embedding_model": "str",
     "reasoning_level": "str",
@@ -105,7 +116,14 @@ def validate_scope_settings(
             elif field == "embedding_model":
                 value = active_settings.validate_embedding_model(value)
             updates[field] = value
-    short_name_fields = {"system_prompt_template", "provider_profile", "reasoning_level"}
+    short_name_fields = {
+        "system_prompt_template",
+        "provider_profile",
+        "reasoning_level",
+        "chat_provider_profile",
+        "summary_provider_profile",
+        "embedding_provider_profile",
+    }
     for field in short_name_fields:
         if field in updates and updates[field] is not None:
             value = str(updates[field]).strip().lower()
@@ -126,7 +144,13 @@ def validate_runtime_settings_values(values: dict[str, Any], settings: Settings)
         if key not in SAFE_RUNTIME_SETTING_TYPES:
             raise ValueError(f"unknown runtime setting: {key}")
         kind = SAFE_RUNTIME_SETTING_TYPES[key]
-        if kind == "bool":
+        if kind == "optional_profile":
+            out[key] = (
+                normalize_profile_name(str(value))
+                if value is not None and str(value).strip()
+                else None
+            )
+        elif kind == "bool":
             if not isinstance(value, bool):
                 raise ValueError(f"{key} must be true or false")
             out[key] = value
@@ -167,10 +191,22 @@ def validate_runtime_settings_values(values: dict[str, Any], settings: Settings)
 
 
 class MemorySettingsService:
-    def __init__(self, *, settings: Settings, session_factory: async_sessionmaker) -> None:
+    def __init__(
+        self,
+        *,
+        settings: Settings,
+        session_factory: async_sessionmaker,
+        profile_models: Callable[[], dict[str, tuple[str, str]]] | None = None,
+    ) -> None:
         self.settings = settings
         self.session_factory = session_factory
         self._runtime_overrides: dict[str, Any] = {}
+        self.profile_models = profile_models or (
+            lambda: {
+                name: (profile.chat_model, profile.embedding_model)
+                for name, profile in self.settings.provider_profiles.items()
+            }
+        )
 
     async def set_scope_metadata(
         self,
@@ -201,11 +237,18 @@ class MemorySettingsService:
         validate_scope_settings(updates, self.settings)
         async with session_scope(self.session_factory) as session:
             repo = ScopeSettingsRepository(session)
+            before = None
+            if EMBEDDING_SETTING_KEYS.intersection(updates):
+                await EmbeddingIndexRepository(session).guard_write()
+                before = await repo.effective(scope, self.default_scope_settings())
             await repo.set_settings(scope, updates, updated_by)
+            after = await repo.effective(scope, self.default_scope_settings())
+            if before is not None:
+                await validate_embedding_rebind(session, scope, before, after)
             await EventRepository(session).add(
                 event_type="scope_settings", scope=scope, user_id=updated_by, payload=dict(updates)
             )
-            return await repo.effective(scope, self.default_scope_settings())
+            return after
 
     async def update_scope_configuration(
         self,
@@ -220,11 +263,18 @@ class MemorySettingsService:
         validate_scope_settings(settings_updates, self.settings)
         async with session_scope(self.session_factory) as session:
             settings_repo = ScopeSettingsRepository(session)
+            before = None
+            if EMBEDDING_SETTING_KEYS.intersection(settings_updates):
+                await EmbeddingIndexRepository(session).guard_write()
+                before = await settings_repo.effective(scope, self.default_scope_settings())
             row = await settings_repo.set_settings_versioned(
                 scope, settings_updates, updated_by, expected_version=expected_version
             )
             if row is None:
                 raise SettingsVersionConflictError(await settings_repo.current_version(scope))
+            if before is not None:
+                after = await settings_repo.effective(scope, self.default_scope_settings())
+                await validate_embedding_rebind(session, scope, before, after)
             policy = PolicyService(
                 self.settings,
                 PolicyRepository(session),
@@ -302,8 +352,12 @@ class MemorySettingsService:
             updates = dict(challenge.updates)
             validate_scope_settings(updates, self.settings)
             settings_repo = ScopeSettingsRepository(session)
+            if EMBEDDING_SETTING_KEYS.intersection(updates):
+                await EmbeddingIndexRepository(session).guard_write()
             current = await settings_repo.effective(scope, self.default_scope_settings())
             await settings_repo.set_settings(scope, updates, user_id)
+            after = await settings_repo.effective(scope, self.default_scope_settings())
+            await validate_embedding_rebind(session, scope, current, after)
             await challenge_repo.consume(challenge.id)
             await EventRepository(session).add(
                 event_type="scope_settings_confirmed",
@@ -332,6 +386,7 @@ class MemorySettingsService:
     ) -> list[RuntimeSettingPreview]:
         validated = validate_runtime_settings_values(updates, self.settings)
         async with session_scope(self.session_factory) as session:
+            await self._validate_runtime_embedding_change(session, validated)
             repo = RuntimeSettingRepository(session)
             rows: list[RuntimeSettingView] = []
             for key, value in validated.items():
@@ -353,6 +408,7 @@ class MemorySettingsService:
         key, value = next(iter(validated.items()))
         async with session_scope(self.session_factory) as session:
             repo = RuntimeSettingRepository(session)
+            await self._validate_runtime_embedding_change(session, validated)
             row = await repo.set_value_versioned(
                 key=key, value=value, expected_version=expected_version, updated_by=updated_by
             )
@@ -366,6 +422,23 @@ class MemorySettingsService:
             result = VersionedSettingsMutation(version=row.version, audit_event_id=event.id)
         await self.refresh_runtime_settings()
         return result
+
+    async def _validate_runtime_embedding_change(
+        self, session: AsyncSession, updates: dict[str, Any]
+    ) -> None:
+        if not EMBEDDING_SETTING_KEYS.intersection(updates):
+            return
+        await EmbeddingIndexRepository(session).guard_write()
+        repo = ScopeSettingsRepository(session)
+        before = await repo.effective(Scope.global_scope(), self.default_scope_settings())
+        saved = self._runtime_overrides
+        try:
+            self._runtime_overrides = {**saved, **updates}
+            after_defaults = self.default_scope_settings()
+        finally:
+            self._runtime_overrides = saved
+        after = await repo.effective(Scope.global_scope(), after_defaults)
+        await validate_embedding_rebind(session, Scope.global_scope(), before, after)
 
     async def list_runtime_settings(self) -> list[RuntimeSettingPreview]:
         async with session_scope(self.session_factory) as session:
@@ -400,6 +473,9 @@ class MemorySettingsService:
             "summary_model": self.settings.chat_model,
             "system_prompt_template": self.settings.system_prompt_template,
             "provider_profile": self.settings.ai_provider_profile,
+            "chat_provider_profile": self.settings.ai_chat_provider_profile or None,
+            "summary_provider_profile": self.settings.ai_summary_provider_profile or None,
+            "embedding_provider_profile": self.settings.ai_embedding_provider_profile or None,
             "chat_model": self.settings.chat_model,
             "embedding_model": self.settings.embedding_model,
             "reasoning_level": self.settings.reasoning_level,
@@ -429,19 +505,39 @@ class MemorySettingsService:
 
     def default_scope_settings(self) -> EffectiveScopeSettings:
         provider_profile = str(self.runtime_setting("provider_profile"))
-        default_profile = self.settings.provider_profile_by_name(provider_profile)
+        models = self.profile_models()
+        if provider_profile not in models:
+            raise ValueError(f"provider profile {provider_profile!r} was not found")
+        routes = {
+            operation: self.runtime_setting(f"{operation}_provider_profile")
+            for operation in ("chat", "summary", "embedding")
+        }
+        selected_models = {}
+        for operation, route in routes.items():
+            key = f"{operation}_model"
+            selected = route or provider_profile
+            if key not in self._runtime_overrides:
+                if selected not in models:
+                    raise ValueError(f"provider profile {selected!r} was not found")
+                selected_models[key] = models[selected][1 if operation == "embedding" else 0]
+            else:
+                selected_models[key] = self.runtime_setting(key)
         return EffectiveScopeSettings(
             retrieval_top_k=int(self.runtime_setting("retrieval_top_k")),
             summary_batch_size=int(self.runtime_setting("summary_batch_size")),
-            summary_model=str(self.runtime_setting("summary_model")),
+            summary_model=str(selected_models["summary_model"]),
             system_prompt_template=str(self.runtime_setting("system_prompt_template")),
-            provider_profile=default_profile.name,
-            chat_model=str(self.runtime_setting("chat_model")),
-            embedding_model=str(self.runtime_setting("embedding_model")),
+            provider_profile=provider_profile,
+            chat_model=str(selected_models["chat_model"]),
+            embedding_model=str(selected_models["embedding_model"]),
             reasoning_level=str(self.runtime_setting("reasoning_level")),
             raw_message_retention_days=self.runtime_setting("raw_message_retention_days"),
             knowledge_retention_days=self.runtime_setting("knowledge_retention_days"),
             review_before_compact=bool(self.runtime_setting("review_before_compact")),
+            chat_provider_profile=routes["chat"],
+            summary_provider_profile=routes["summary"],
+            embedding_provider_profile=routes["embedding"],
+            provider_models=models,
         )
 
     async def set_memory_profile(

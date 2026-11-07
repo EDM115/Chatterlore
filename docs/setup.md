@@ -13,7 +13,7 @@ This guide gets a local PZP AI instance ready for development, offline verificat
 ## Local Development
 
 ```powershell
-uv sync --extra dev --extra local
+uv sync --extra dev
 Copy-Item .env.example .env
 uv run pzp-bot migrate
 uv run pzp-bot doctor
@@ -21,6 +21,7 @@ uv run pytest
 ```
 
 The default `AI_PROVIDER=fake` is deterministic and does not call external AI services. Use it for local development, CI and documentation examples.
+Embedded inference is optional, install `uv sync --extra dev --extra local` only on hosts that need local Transformers/PyTorch/Sentence Transformers. Existing local HTTP model servers use the ordinary remote-compatible adapter and do not require those heavyweight packages.  
 
 The control-plane frontend is deployed as its own Nuxt SSR Node service rather than being copied into the Python runtime. Install its frozen dependencies from `web/`:
 
@@ -106,6 +107,27 @@ ALLOWED_REASONING_LEVELS=medium
 6. In Telegram, run `/allow_chat` for the whole chat or `/allow_topic` inside a forum topic before expecting live learning.
 
 Telegram does not expose arbitrary historical group backfill through the Bot API. PZP AI learns live updates after consent is enabled and can import reviewed Telegram Desktop exports or Bot API update dumps locally with `pzp-bot import-telegram-json`.
+
+## Independent AI Routes And Local Inference
+
+Configure named profiles through `AI_PROVIDER_PROFILES` or the bot-owner Providers page. `AI_CHAT_PROVIDER_PROFILE`, `AI_SUMMARY_PROVIDER_PROFILE` and `AI_EMBEDDING_PROVIDER_PROFILE` set independent environment defaults, runtime/scoped settings use the same names without `AI_`. Keep `provider_profile` as the fallback if no per-operation route is selected. Profile selection supplies its own model default, a lower-precedence model from another provider is not carried across that boundary.  
+Example profile JSON (put the object on one line when using a dotenv variable, never paste actual keys into the JSON):  
+```json
+{
+  "answers": {"provider": "openai_compatible", "openai_base_url": "https://api.openai.com/v1", "api_key_env": "OPENAI_API_KEY", "api_dialect": "openai", "chat_model": "gpt-6.1-terra", "chat_capable": true, "embedding_capable": false},
+  "summaries": {"provider": "openai_compatible", "openai_base_url": "https://api.deepseek.com", "api_key_env": "DEEPSEEK_API_KEY", "api_dialect": "deepseek", "chat_model": "deepseek-chat", "chat_capable": true, "embedding_capable": false},
+  "vectors": {"provider": "local", "chat_capable": false, "embedding_capable": true, "embedding_model": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2", "local_embedding_options": {"device": "cpu", "local_files_only": true, "normalize_embeddings": true, "prompt_mode": "generic"}},
+  "local-server": {"provider": "openai_compatible", "local": true, "auth_mode": "none", "api_dialect": "generic", "openai_base_url": "http://127.0.0.1:11434/v1", "chat_model": "your-installed-model", "chat_capable": true, "embedding_capable": false}
+}
+```
+Disabled capabilities need no placeholder model. Local server software and models must already exist, PZP does not install/start Ollama, vLLM or llama.cpp. A Docker host/container origin must be explicitly added to deployment-owned `LOCAL_SERVER_ORIGINS`, `local=true` alone does not authorize arbitrary HTTP access. Use `auth_mode=api_key` plus an explicit secret reference for authenticated servers, no-auth profiles never inherit `OPENAI_API_KEY`.  
+Embedded chat uses `provider=local`, `chat_capable=true`, a causal `chat_model` and `local_chat_options`. Both local option objects accept revision, device (`auto`, `cpu`, `cuda`, `cuda:N`), dtype, cache directory and `local_files_only` (default true). Chat additionally uses tokenizer revision, input/output token limits, `top_p`, queue/time limits and bounded admission, embedding options include batch size, normalization, truncation dimension and generic versus query/document prompt mode. Model-provided chat templates and safe weights are required, remote repository code execution is never enabled.  
+`LOCAL_MODEL_ROOTS` and `LOCAL_CACHE_ROOTS` are deployment path allowlists, use explicit absolute paths for filesystem models/caches. Defaults stay under the data/model-cache area beside the memory store. `LOCAL_MAX_LOADED_MODELS` defaults to 2 and `LOCAL_DOWNLOAD_MAX_BYTES` to 536870912 (512 MiB). Models load lazily, viewing status/catalog pages neither downloads nor runs them. Explicit preparation resolves immutable Hub revisions or fingerprints a local model directory, reload verifies those artifact bytes.  
+```powershell
+uv run pzp-bot local-model prepare --profile vectors --mode embedding
+```
+The default only prepares cached artifacts offline. To deliberately fetch a model, set that profile's `local_files_only=false` and add `--allow-download`, the provider UI requires fresh owner verification for the equivalent action. Unknown artifact sizes, unsafe files and downloads over the deployment cap fail closed. After preparation, use the explicit provider test action and the embedding migration workflow in [operations.md](operations.md#embedding-index-migrations), readiness alone is not proof of inference.  
+Changing answer/summary routes is independent of stored embeddings. Changing a populated scope's embedding route/model requires an explicit migration, upgraded legacy vectors also require rebuilding from their retained authoritative source text before verified search.  
 
 ## First Verification
 

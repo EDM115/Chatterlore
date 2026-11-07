@@ -26,7 +26,10 @@ dependencies = [
 
 [project.optional-dependencies]
 local = [
+  "huggingface-hub~=1.28.0",
   "sentence-transformers~=6.2.0",
+  "torch~=2.13.0",
+  "transformers~=5.16.0",
 ]
 dev = [
   "freezegun~=1.5.5",

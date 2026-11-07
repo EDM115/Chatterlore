@@ -4,7 +4,7 @@ import base64
 import binascii
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
@@ -14,6 +14,8 @@ from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ProviderKind = Literal["fake", "openai_compatible", "local"]
+APIDialect = Literal["auto", "openai", "deepseek", "generic"]
+AuthMode = Literal["api_key", "none"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,6 +30,14 @@ class ProviderProfile:
     redact_before_ai: bool
     redaction_custom_patterns: tuple[str, ...]
     fake_embedding_dimensions: int
+    api_dialect: APIDialect = "auto"
+    auth_mode: AuthMode = "api_key"
+    local: bool = False
+    chat_capable: bool = True
+    embedding_capable: bool = True
+    reasoning_capable: bool = True
+    local_chat_options: dict[str, Any] = field(default_factory=dict)
+    local_embedding_options: dict[str, Any] = field(default_factory=dict)
 
 
 class Settings(BaseSettings):
@@ -76,6 +86,14 @@ class Settings(BaseSettings):
     ai_provider: ProviderKind = "fake"
     ai_provider_profile: str = "default"
     ai_provider_profiles: str = ""
+    ai_chat_provider_profile: str = ""
+    ai_summary_provider_profile: str = ""
+    ai_embedding_provider_profile: str = ""
+    local_model_roots: str = ""
+    local_cache_roots: str = ""
+    local_server_origins: str = "http://localhost:11434,http://127.0.0.1:11434"
+    local_max_loaded_models: int = Field(default=2, ge=1, le=32)
+    local_download_max_bytes: int = Field(default=536_870_912, ge=1)
     chat_model: str = "fake-chat"
     embedding_model: str = "fake-embedding"
     openai_api_key: str = ""
@@ -264,6 +282,8 @@ class Settings(BaseSettings):
             redact_before_ai=self.redact_before_ai,
             redaction_custom_patterns=self.custom_redaction_patterns,
             fake_embedding_dimensions=self.fake_embedding_dimensions,
+            local=self.ai_provider == "local",
+            reasoning_capable=self.ai_provider == "openai_compatible",
         )
         profiles = {default.name: default}
         if not self.ai_provider_profiles.strip():
@@ -286,21 +306,40 @@ class Settings(BaseSettings):
             )
             if api_key_env:
                 api_key = os.getenv(api_key_env, api_key)
+            base_url = str(
+                raw_profile.get("openai_base_url")
+                or raw_profile.get("base_url")
+                or default.openai_base_url
+            )
+            local = bool(raw_profile.get("local", provider == "local"))
+            auth_mode = str(raw_profile.get("auth_mode", "api_key"))
+            dialect = str(raw_profile.get("api_dialect", "auto"))
+            if auth_mode not in {"api_key", "none"}:
+                raise ValueError(f"provider profile {name!r} has invalid auth_mode")
+            if auth_mode == "none" and not local:
+                raise ValueError("auth_mode=none requires an explicitly local provider")
+            if dialect not in {"auto", "openai", "deepseek", "generic"}:
+                raise ValueError(f"provider profile {name!r} has invalid api_dialect")
+            if auth_mode == "none":
+                api_key, api_key_env = "", ""
+            elif (
+                not api_key
+                and not api_key_env
+                and not local
+                and base_url.rstrip("/") == default.openai_base_url.rstrip("/")
+            ):
+                api_key, api_key_env = default.openai_api_key, default.openai_api_key_env or ""
             patterns = raw_profile.get("redaction_custom_patterns") or raw_profile.get(
                 "redaction_patterns"
             )
             profiles[name] = ProviderProfile(
                 name=name,
                 provider=provider,
-                chat_model=str(raw_profile.get("chat_model") or default.chat_model),
-                embedding_model=str(raw_profile.get("embedding_model") or default.embedding_model),
-                openai_api_key=api_key or default.openai_api_key,
-                openai_api_key_env=api_key_env or default.openai_api_key_env,
-                openai_base_url=str(
-                    raw_profile.get("openai_base_url")
-                    or raw_profile.get("base_url")
-                    or default.openai_base_url
-                ),
+                chat_model=str(raw_profile.get("chat_model", default.chat_model)),
+                embedding_model=str(raw_profile.get("embedding_model", default.embedding_model)),
+                openai_api_key=api_key,
+                openai_api_key_env=api_key_env or None,
+                openai_base_url=base_url,
                 redact_before_ai=bool(
                     raw_profile.get("redact_before_ai", default.redact_before_ai)
                 ),
@@ -309,6 +348,20 @@ class Settings(BaseSettings):
                 fake_embedding_dimensions=int(
                     raw_profile.get("fake_embedding_dimensions")
                     or default.fake_embedding_dimensions
+                ),
+                api_dialect=dialect,
+                auth_mode=auth_mode,
+                local=local,
+                chat_capable=bool(raw_profile.get("chat_capable", True)),
+                embedding_capable=bool(raw_profile.get("embedding_capable", True)),
+                reasoning_capable=bool(
+                    raw_profile.get(
+                        "reasoning_capable", provider == "openai_compatible" and not local
+                    )
+                ),
+                local_chat_options=_local_options(raw_profile.get("local_chat_options", {})),
+                local_embedding_options=_local_options(
+                    raw_profile.get("local_embedding_options", {})
                 ),
             )
         return profiles
@@ -346,6 +399,94 @@ class Settings(BaseSettings):
         if clean not in self.allowed_reasoning_level_names:
             raise ValueError(f"reasoning_level {clean!r} is not in allowed_reasoning_levels")
         return clean
+
+    def validate_local_server_url(self, value: str) -> str:
+        parts = urlsplit(value)
+        if (
+            parts.scheme not in {"http", "https"}
+            or not parts.hostname
+            or parts.username is not None
+            or parts.password is not None
+            or parts.fragment
+            or parts.query
+        ):
+            raise ValueError("local server URL must have no credentials, query or fragment")
+        origin = _url_origin(value)
+        if origin not in {
+            _url_origin(item, allowlist=True)
+            for item in _deployment_values(self.local_server_origins)
+        }:
+            raise ValueError("local server origin is not in the deployment allowlist")
+        return value
+
+    def validate_local_paths(self, model: str, options: dict[str, Any]) -> None:
+        candidate = Path(model).expanduser()
+        if (
+            candidate.anchor
+            or model.startswith((".", "~"))
+            or "\\" in model
+            or ".." in candidate.parts
+            or candidate.exists()
+        ):
+            _validate_allowed_path(
+                candidate, self.local_model_roots or str(self.memory_dir.parent / "models"), "model"
+            )
+        if options.get("cache_dir"):
+            _validate_allowed_path(
+                Path(options["cache_dir"]).expanduser(),
+                self.local_cache_roots or str(self.local_default_cache_dir),
+                "cache",
+            )
+
+    @property
+    def local_default_cache_dir(self) -> Path:
+        configured = _deployment_values(self.local_cache_roots)
+        return (
+            Path(configured[0]).expanduser().resolve()
+            if configured
+            else (self.memory_dir.parent / "models" / "cache").resolve()
+        )
+
+    def local_runtime_options(self, options: dict[str, Any]) -> dict[str, Any]:
+        values = dict(options)
+        if not values.get("cache_dir"):
+            values["cache_dir"] = str(self.local_default_cache_dir)
+        return values
+
+
+def _local_options(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError("local model options must be an object")
+    if not value:
+        return {}
+    from pzp_ai_bot.local_models import LocalModelOptions
+
+    return LocalModelOptions.model_validate(value).model_dump(mode="json", exclude_unset=True)
+
+
+def _deployment_values(value: str) -> tuple[str, ...]:
+    return tuple(part.strip() for part in value.replace("||", ",").split(",") if part.strip())
+
+
+def _url_origin(value: str, *, allowlist: bool = False) -> str:
+    parsed = urlsplit(value)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or (allowlist and (parsed.path not in {"", "/"} or parsed.query or parsed.fragment))
+    ):
+        raise ValueError("local server allowlist contains an invalid origin")
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    return f"{parsed.scheme.lower()}://{parsed.hostname.lower()}:{port}"
+
+
+def _validate_allowed_path(path: Path, raw_roots: str, kind: str) -> None:
+    resolved = path.resolve()
+    roots = [Path(value).expanduser().resolve() for value in _deployment_values(raw_roots)]
+    if not any(resolved.is_relative_to(root) for root in roots):
+        raise ValueError(f"local {kind} path is not inside the deployment allowlist roots")
 
 
 def _csv_set(raw: str) -> set[str]:

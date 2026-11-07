@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any, cast
 from urllib.parse import urlsplit
@@ -8,8 +8,16 @@ from urllib.parse import urlsplit
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from pzp_ai_bot.ai.factory import ProviderRegistry
-from pzp_ai_bot.config import ProviderKind, ProviderProfile, Settings
+from pzp_ai_bot.config import (
+    APIDialect,
+    AuthMode,
+    ProviderKind,
+    ProviderProfile,
+    Settings,
+    _local_options,
+)
 from pzp_ai_bot.db.models import AIProviderCredential, AIProviderProfile
+from pzp_ai_bot.db.repos.embedding_indexes import EmbeddingIndexRepository
 from pzp_ai_bot.db.repos.events import EventRepository
 from pzp_ai_bot.db.repos.provider_credentials import (
     ProviderCredentialRepository,
@@ -26,6 +34,27 @@ class ProviderSecretConflictError(ValueError):
     def __init__(self, message: str, *, current_version: int | None = None) -> None:
         super().__init__(message)
         self.current_version = current_version
+
+
+class ProviderProfileDependencyError(ValueError):
+    def __init__(self, *, deleting: bool = False) -> None:
+        self.code = "profile_in_use" if deleting else "embedding_migration_required"
+        super().__init__(
+            f"{self.code}: profile is in use, create another profile and migrate its index first"
+        )
+
+
+_EMBEDDING_PROFILE_FIELDS = {
+    "provider_kind",
+    "base_url",
+    "embedding_model",
+    "local",
+    "local_embedding_options",
+    "redact_before_ai",
+    "redaction_patterns",
+    "fake_embedding_dimensions",
+    "embedding_capable",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +75,10 @@ class ProviderProfileSummary:
     source: str
     version: int
     audit_event_id: int | None = None
+    api_dialect: str = "auto"
+    auth_mode: str = "api_key"
+    local_chat_options: dict[str, Any] = field(default_factory=dict)
+    local_embedding_options: dict[str, Any] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -101,26 +134,49 @@ class ProviderSecretService:
         self.settings = settings
         self.session_factory = session_factory
         self.registry = registry
-        self.vault = ProviderSecretVault(
-            MasterKeyring(
-                settings.control_plane_master_key_bytes, settings.control_plane_active_master_key_id
+        self._vault: ProviderSecretVault | None = None
+
+    @property
+    def vault(self) -> ProviderSecretVault:
+        if self._vault is None:
+            self._vault = ProviderSecretVault(
+                MasterKeyring(
+                    self.settings.control_plane_master_key_bytes,
+                    self.settings.control_plane_active_master_key_id,
+                )
             )
-        )
+        return self._vault
 
     async def refresh_registry(self) -> None:
         bootstrap = self.settings.provider_profiles
         managed: dict[str, ProviderProfile] = {}
         revisions: dict[str, int] = {}
         capabilities: dict[str, frozenset[str]] = {}
+        disabled: set[str] = set()
         async with session_scope(self.session_factory) as session:
             profiles = await ProviderProfileRepository(session).list_all()
             credentials = ProviderCredentialRepository(session)
             for stored in profiles:
                 if not stored.enabled:
+                    disabled.add(stored.name)
                     continue
                 bootstrap_profile = bootstrap.get(stored.name)
-                api_key = bootstrap_profile.openai_api_key if bootstrap_profile else ""
-                api_key_env = bootstrap_profile.openai_api_key_env if bootstrap_profile else None
+                allow_bootstrap = bool(
+                    bootstrap_profile
+                    and stored.auth_mode != "none"
+                    and bootstrap_profile.openai_base_url.rstrip("/") == stored.base_url.rstrip("/")
+                    and (not stored.local or bootstrap_profile.local)
+                )
+                api_key = (
+                    bootstrap_profile.openai_api_key
+                    if allow_bootstrap and bootstrap_profile
+                    else ""
+                )
+                api_key_env = (
+                    bootstrap_profile.openai_api_key_env
+                    if allow_bootstrap and bootstrap_profile
+                    else None
+                )
                 if api_key:
                     key_id = self.settings.control_plane_active_master_key_id
                     await credentials.sync_environment(
@@ -131,20 +187,52 @@ class ProviderSecretService:
                         master_key_id=key_id,
                         now=datetime.now(UTC),
                     )
+                else:
+                    detached = await credentials.retire_environment(
+                        stored.id, now=datetime.now(UTC)
+                    )
+                    for credential_id in detached:
+                        await _clear_active_credential(session, stored.id, credential_id)
+                    if detached:
+                        await _audit(
+                            session,
+                            "environment_credential_detached",
+                            0,
+                            {"profile": stored.name, "credential_ids": detached},
+                        )
                 managed[stored.name] = _runtime_profile(
                     stored, api_key=api_key, api_key_env=api_key_env
                 )
                 revisions[stored.name] = stored.version
                 profile_capabilities: set[str] = set()
-                if stored.chat_capable and not stored.local and stored.provider_kind != "local":
+                if stored.chat_capable and stored.chat_model:
                     profile_capabilities.add("chat")
-                if stored.embedding_capable:
+                if stored.embedding_capable and stored.embedding_model:
                     profile_capabilities.add("embedding")
-                if stored.reasoning_capable and "chat" in profile_capabilities:
+                from pzp_ai_bot.ai.openai_compatible import (
+                    resolve_api_dialect,
+                    supports_reasoning_effort,
+                )
+
+                dialect = resolve_api_dialect(
+                    stored.api_dialect,
+                    base_url=stored.base_url,
+                    model=stored.chat_model,
+                    local=stored.local,
+                )
+                if (
+                    stored.reasoning_capable
+                    and stored.provider_kind == "openai_compatible"
+                    and "chat" in profile_capabilities
+                    and (
+                        dialect == "deepseek"
+                        or (dialect == "openai" and supports_reasoning_effort(stored.chat_model))
+                    )
+                ):
                     profile_capabilities.add("reasoning")
                 capabilities[stored.name] = frozenset(profile_capabilities)
         self.registry.replace_managed_profiles(
-            managed, revisions=revisions, capabilities=capabilities
+            managed, revisions=revisions, capabilities=capabilities, disabled=disabled
         )
 
     async def list_profiles(self) -> list[ProviderProfileSummary]:
@@ -172,12 +260,21 @@ class ProviderSecretService:
         self, payload: dict[str, Any], *, actor_user_id: int, now: datetime
     ) -> ProviderProfileSummary:
         values = _validated_profile_values(payload)
+        self._validate_deployment_profile(values)
         async with session_scope(self.session_factory) as session:
             profiles = ProviderProfileRepository(session)
             if await profiles.count() >= self.settings.control_plane_max_managed_profiles:
                 raise ValueError("managed provider profile limit was reached")
             if await profiles.get_by_name(values["name"]) is not None:
                 raise ValueError("managed provider profile already exists")
+            bootstrap = self.settings.provider_profiles.get(values["name"])
+            if bootstrap is not None:
+                previous = _bootstrap_profile_summary(bootstrap).as_dict()
+                previous["redaction_patterns"] = list(previous["redaction_patterns"])
+                if any(previous[key] != values[key] for key in _EMBEDDING_PROFILE_FIELDS):
+                    await EmbeddingIndexRepository(session).advance_epoch()
+                    if await profiles.has_embedding_dependencies(values["name"]):
+                        raise ProviderProfileDependencyError()
             stored = await profiles.create(**values, actor_user_id=actor_user_id, now=now)
             audit_event_id = await _audit(
                 session,
@@ -205,6 +302,18 @@ class ProviderSecretService:
             existing = await profiles.get_by_name(clean)
             if existing is None:
                 raise ValueError("managed provider profile was not found")
+            combined = {**_profile_summary(existing).as_dict(), **values}
+            _validate_profile_capability_models(combined)
+            self._validate_deployment_profile(combined)
+            embedding_changed = any(
+                key in values and values[key] != getattr(existing, key)
+                for key in _EMBEDDING_PROFILE_FIELDS
+            )
+            disabling = values.get("enabled") is False and existing.enabled
+            if embedding_changed or disabling:
+                await EmbeddingIndexRepository(session).advance_epoch()
+                if await profiles.has_embedding_dependencies(clean):
+                    raise ProviderProfileDependencyError()
             stored = await profiles.update(
                 existing.id,
                 expected_version=expected_version,
@@ -228,6 +337,25 @@ class ProviderSecretService:
         await self.refresh_registry()
         return result
 
+    def _validate_deployment_profile(self, values: dict[str, Any]) -> None:
+        if (
+            values.get("auth_mode") == "none"
+            and not values.get("local")
+            and values.get("provider_kind") != "local"
+        ):
+            raise ValueError("auth_mode=none requires an explicitly local provider")
+        if values.get("local") and values.get("provider_kind") == "openai_compatible":
+            self.settings.validate_local_server_url(str(values["base_url"]))
+        if values.get("provider_kind") == "local":
+            if values.get("chat_capable"):
+                self.settings.validate_local_paths(
+                    str(values["chat_model"]), values.get("local_chat_options", {})
+                )
+            if values.get("embedding_capable"):
+                self.settings.validate_local_paths(
+                    str(values["embedding_model"]), values.get("local_embedding_options", {})
+                )
+
     async def delete_profile(self, name: str, *, expected_version: int, actor_user_id: int) -> int:
         clean = normalize_profile_name(name)
         async with session_scope(self.session_factory) as session:
@@ -235,6 +363,9 @@ class ProviderSecretService:
             existing = await profiles.get_by_name(clean)
             if existing is None:
                 raise ValueError("managed provider profile was not found")
+            await EmbeddingIndexRepository(session).advance_epoch()
+            if await profiles.has_embedding_dependencies(clean):
+                raise ProviderProfileDependencyError(deleting=True)
             deleted = await profiles.delete(existing.id, expected_version=expected_version)
             if deleted is None:
                 raise ProviderSecretConflictError(
@@ -606,6 +737,14 @@ def _runtime_profile(
         redact_before_ai=stored.redact_before_ai,
         redaction_custom_patterns=tuple(stored.redaction_patterns),
         fake_embedding_dimensions=stored.fake_embedding_dimensions,
+        api_dialect=cast(APIDialect, stored.api_dialect),
+        auth_mode=cast(AuthMode, stored.auth_mode),
+        local=stored.local or stored.provider_kind == "local",
+        chat_capable=stored.chat_capable,
+        embedding_capable=stored.embedding_capable,
+        reasoning_capable=stored.reasoning_capable,
+        local_chat_options=dict(stored.local_chat_options),
+        local_embedding_options=dict(stored.local_embedding_options),
     )
 
 
@@ -626,6 +765,10 @@ def _profile_summary(stored: AIProviderProfile) -> ProviderProfileSummary:
         enabled=stored.enabled,
         source="managed",
         version=stored.version,
+        api_dialect=stored.api_dialect,
+        auth_mode=stored.auth_mode,
+        local_chat_options=dict(stored.local_chat_options),
+        local_embedding_options=dict(stored.local_embedding_options),
     )
 
 
@@ -636,16 +779,20 @@ def _bootstrap_profile_summary(profile: ProviderProfile) -> ProviderProfileSumma
         base_url=profile.openai_base_url,
         chat_model=profile.chat_model,
         embedding_model=profile.embedding_model,
-        chat_capable=True,
-        embedding_capable=True,
-        reasoning_capable=profile.provider == "openai_compatible",
-        local=profile.provider == "local",
+        chat_capable=profile.chat_capable,
+        embedding_capable=profile.embedding_capable,
+        reasoning_capable=profile.reasoning_capable,
+        local=profile.local or profile.provider == "local",
         redact_before_ai=profile.redact_before_ai,
         redaction_patterns=profile.redaction_custom_patterns,
         fake_embedding_dimensions=profile.fake_embedding_dimensions,
         enabled=True,
         source="environment",
         version=0,
+        api_dialect=profile.api_dialect,
+        auth_mode=profile.auth_mode,
+        local_chat_options=dict(profile.local_chat_options),
+        local_embedding_options=dict(profile.local_embedding_options),
     )
 
 
@@ -726,30 +873,78 @@ def _validated_profile_values(payload: dict[str, Any]) -> dict[str, Any]:
     if not required <= payload.keys():
         raise ValueError("managed provider profile is incomplete")
     values = {key: payload[key] for key in required}
+    for key, default in {
+        "api_dialect": "auto",
+        "auth_mode": "api_key",
+        "local_chat_options": {},
+        "local_embedding_options": {},
+    }.items():
+        values[key] = payload.get(key, default)
     values["name"] = normalize_profile_name(str(values["name"]))
     if not values["name"]:
         raise ValueError("provider profile name cannot be empty")
     values.update(_validated_profile_updates(values))
+    _validate_profile_capability_models(values)
     return values
 
 
 def _validated_profile_updates(updates: dict[str, Any]) -> dict[str, Any]:
     values = dict(updates)
+    allowed = {
+        "name",
+        "provider_kind",
+        "base_url",
+        "chat_model",
+        "embedding_model",
+        "chat_capable",
+        "embedding_capable",
+        "reasoning_capable",
+        "local",
+        "redact_before_ai",
+        "redaction_patterns",
+        "fake_embedding_dimensions",
+        "enabled",
+        "api_dialect",
+        "auth_mode",
+        "local_chat_options",
+        "local_embedding_options",
+    }
+    if values.keys() - allowed:
+        raise ValueError("unsupported provider profile fields")
     if "provider_kind" in values and values["provider_kind"] not in {
         "fake",
         "openai_compatible",
         "local",
     }:
         raise ValueError("provider kind is invalid")
-    for field in ("base_url", "chat_model", "embedding_model"):
-        if field in values:
-            values[field] = str(values[field]).strip()
-            if not values[field]:
-                raise ValueError(f"{field} cannot be empty")
+    for field_name in ("base_url", "chat_model", "embedding_model"):
+        if field_name in values:
+            values[field_name] = str(values[field_name]).strip()
+            if field_name == "base_url" and not values[field_name]:
+                raise ValueError(f"{field_name} cannot be empty")
     if "base_url" in values:
         parsed = urlsplit(values["base_url"])
-        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.fragment
+            or parsed.query
+        ):
             raise ValueError("provider base URL is invalid")
+    if "api_dialect" in values and values["api_dialect"] not in {
+        "auto",
+        "openai",
+        "deepseek",
+        "generic",
+    }:
+        raise ValueError("provider API dialect is invalid")
+    if "auth_mode" in values and values["auth_mode"] not in {"api_key", "none"}:
+        raise ValueError("provider auth mode is invalid")
+    for key in ("local_chat_options", "local_embedding_options"):
+        if key in values:
+            values[key] = _local_options(values[key])
     if "redaction_patterns" in values:
         if not isinstance(values["redaction_patterns"], list):
             raise ValueError("redaction patterns must be a list")
@@ -762,6 +957,15 @@ def _validated_profile_updates(updates: dict[str, Any]) -> dict[str, Any]:
             raise ValueError("fake embedding dimensions are invalid")
         values["fake_embedding_dimensions"] = dimensions
     return values
+
+
+def _validate_profile_capability_models(values: dict[str, Any]) -> None:
+    for capability, model in (
+        ("chat_capable", "chat_model"),
+        ("embedding_capable", "embedding_model"),
+    ):
+        if values.get(capability) and not values.get(model):
+            raise ValueError(f"{model} cannot be empty when its capability is enabled")
 
 
 def _validated_credential_updates(updates: dict[str, Any]) -> dict[str, Any]:

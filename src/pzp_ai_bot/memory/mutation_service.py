@@ -129,6 +129,7 @@ class MemoryMutationService:
                 provider=selection.embedding_provider.name,
                 model=selection.embedding_model,
                 vector=embedding_generation.vectors[0],
+                **embedding_generation.persistence_fields(),
             )
             await EventRepository(session).add(
                 event_type="manual_note_created",
@@ -226,6 +227,7 @@ class MemoryMutationService:
                 provider=selection.embedding_provider.name,
                 model=selection.embedding_model,
                 vector=embedding_generation.vectors[0],
+                **embedding_generation.persistence_fields(),
             )
             await EventRepository(session).add(
                 event_type="manual_note_updated",
@@ -494,6 +496,7 @@ class MemoryMutationService:
                 provider=selection.embedding_provider.name,
                 model=selection.embedding_model,
                 vector=embedding_generation.vectors[0],
+                **embedding_generation.persistence_fields(),
             )
             await repo.set_status(review, status="approved", reviewed_by=reviewed_by)
             await EventRepository(session).add(

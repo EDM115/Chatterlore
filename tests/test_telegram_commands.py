@@ -22,6 +22,9 @@ def test_command_help_lists_registered_commands() -> None:
     assert "/ask" in help_text
     assert "/memory_export" in help_text
     assert "/forget" in help_text
+    assert "[chat_provider=name]" in help_text
+    assert "[summary_provider=name]" in help_text
+    assert "[embedding_provider=name]" in help_text
 
 
 @pytest.mark.asyncio

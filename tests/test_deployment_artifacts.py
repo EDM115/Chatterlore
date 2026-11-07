@@ -46,8 +46,7 @@ def test_github_actions_ci_runs_quality_migration_and_docker_gates() -> None:
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 
     for expected in [
-        "uv lock --check",
-        "uv sync --frozen --extra dev",
+        "uv sync --frozen --extra dev,local",
         "uv run ruff format --check .",
         "uv run ruff check .",
         "uv run ty check",
@@ -60,6 +59,11 @@ def test_github_actions_ci_runs_quality_migration_and_docker_gates() -> None:
         "docker run --rm",
     ]:
         assert expected in workflow
+    workflow_config = yaml.safe_load(workflow)
+    triggers = workflow_config.get("on", workflow_config.get(True))
+    assert isinstance(triggers, dict)
+    assert set(triggers) == {"workflow_dispatch"}
+    assert "uv lock --check" not in workflow
     assert "--cov" not in workflow
     assert (
         """      - name: Migration check
@@ -78,6 +82,8 @@ def test_ci_and_docker_use_latest_uv_with_frozen_project_dependencies() -> None:
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 
     assert "https://astral.sh/uv/install.sh" in dockerfile
+    assert "curl -LsSf https://astral.sh/uv/install.sh -o /tmp/uv-install.sh &&" in dockerfile
+    assert "sh /tmp/uv-install.sh &&" in dockerfile
     assert "UV_VERSION" not in dockerfile
     setup_uv = next(
         step
@@ -152,7 +158,9 @@ def test_frontend_image_is_frozen_multi_stage_and_non_root() -> None:
     assert "FROM dependencies AS build" in dockerfile
     assert "FROM node:26-bookworm-slim AS runtime" in dockerfile
     assert "https://get.pnpm.io/install.sh" in dockerfile
-    assert "PNPM_VERSION=11.28.11" in dockerfile
+    assert "PNPM_VERSION" not in dockerfile
+    assert "curl -fsSL https://get.pnpm.io/install.sh -o /tmp/pnpm-install.sh &&" in dockerfile
+    assert "bash /tmp/pnpm-install.sh &&" in dockerfile
     assert "NODE_OPTIONS=--max-old-space-size=1024" in dockerfile
     assert "pnpm install --frozen-lockfile" in dockerfile
     assert "RUN pnpm build" in dockerfile

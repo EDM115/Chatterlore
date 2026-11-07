@@ -84,6 +84,21 @@ class StaticRegistry:
         self.settings = settings
         self.provider = provider
 
+    def profile_by_name(self, name: str | None):
+        return self.settings.provider_profile_by_name(name)
+
+    def profile_models(self) -> dict[str, tuple[str, str]]:
+        return {
+            name: (profile.chat_model, profile.embedding_model)
+            for name, profile in self.settings.provider_profiles.items()
+        }
+
+    def profile_capabilities(self, name: str | None) -> frozenset[str]:
+        return frozenset({"chat", "embedding", "reasoning"})
+
+    def is_managed(self, name: str | None) -> bool:
+        return False
+
     def select(
         self,
         profile_name: str | None = None,
@@ -481,12 +496,14 @@ async def test_failed_query_embedding_persists_one_safe_usage_and_returns_no_res
 @pytest.mark.asyncio
 async def test_system_prompt_model_reasoning_and_one_shot_metadata(context) -> None:
     scope = Scope(-100456, None)
+    context.settings.ai_provider_profiles = json.dumps(
+        {"default": {"provider": "fake", "reasoning_capable": True}}
+    )
     recorder = RecordingProvider()
     context.memory.chat_provider = recorder
     context.memory.embedding_provider = recorder
     context.memory.provider_registry = StaticRegistry(context.settings, recorder)
 
-    await context.memory.remember(scope, "Alpha decision is to use blue widgets")
     await context.memory.set_system_prompt_template(
         "ops", "Answer as an operations log.", updated_by=111
     )
@@ -501,6 +518,7 @@ async def test_system_prompt_model_reasoning_and_one_shot_metadata(context) -> N
         },
         updated_by=111,
     )
+    await context.memory.remember(scope, "Alpha decision is to use blue widgets")
     answer = await context.memory.ask(
         scope,
         "What is the Alpha decision?",

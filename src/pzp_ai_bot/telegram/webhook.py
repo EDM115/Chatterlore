@@ -18,6 +18,7 @@ from pzp_ai_bot.telegram.scheduler import (
     IDLE_SUMMARIZER_TASK_NAME,
     RUNTIME_SETTINGS_REFRESHER_TASK_NAME,
     start_admin_alert_delivery,
+    start_embedding_index_worker,
     start_idle_summarizer,
     start_runtime_settings_refresher,
     stop_task,
@@ -48,8 +49,10 @@ def create_webhook_app(
     async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         idle_task = start_idle_summarizer(context)
         settings_task = start_runtime_settings_refresher(context)
+        index_task = start_embedding_index_worker(context)
         alert_task = start_admin_alert_delivery(context, telegram_bot)
         app.state.background_tasks = {idle_task.name: idle_task, settings_task.name: settings_task}
+        app.state.background_tasks[index_task.name] = index_task
         if alert_task is not None:
             app.state.background_tasks[ADMIN_ALERT_DELIVERY_TASK_NAME] = alert_task
         try:
@@ -63,12 +66,14 @@ def create_webhook_app(
         finally:
             await stop_task(idle_task)
             await stop_task(settings_task)
+            await stop_task(index_task)
             if alert_task is not None:
                 await stop_task(alert_task)
             if context.control_plane is not None:
                 await context.control_plane.oidc.aclose()
             if owns_bot:
                 await telegram_bot.session.close()
+            await context.memory.provider_registry.aclose()
 
     app = FastAPI(title="PZP AI Telegram Memory Bot", lifespan=lifespan)
     app.state.telegram_bot = telegram_bot

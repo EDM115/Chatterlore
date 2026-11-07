@@ -44,6 +44,7 @@ const navigation = computed(() => {
             { label: "Operations", to: "/operations" },
             { label: "Bot Settings", to: "/bot-settings" },
             { label: "Providers", to: "/providers" },
+            { label: "Embedding indexes", to: "/embedding-indexes" },
           ]
         : []),
     ];

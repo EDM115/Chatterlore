@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from pzp_ai_bot.ai.factory import ProviderSelection
 from pzp_ai_bot.ai.protocols import ChatMessage
 from pzp_ai_bot.config import Settings
+from pzp_ai_bot.db.repos.embedding_indexes import EmbeddingIndexRepository
 from pzp_ai_bot.db.repos.embeddings import EmbeddingRepository
 from pzp_ai_bot.db.repos.knowledge import KnowledgeRepository
 from pzp_ai_bot.db.repos.messages import MessageRepository
@@ -58,6 +59,16 @@ class AskExecutionResult:
     answer: str
     insufficient_context: bool
     elapsed_ms: int
+
+
+class EmbeddingCoverageRequiredError(ValueError):
+    def __init__(self, scope: Scope, missing: int) -> None:
+        self.scope = scope
+        self.missing = missing
+        super().__init__(
+            f"Embedding index is not ready for {scope.key} ({missing} missing or stale sources). "
+            "Ask a bot administrator to rebuild this embedding index."
+        )
 
 
 class MemoryRetrievalService:
@@ -254,13 +265,25 @@ class MemoryRetrievalService:
                 operation="embed_query",
                 metadata={"scope": scope.key, "memory_profile": profile_name},
             )
+        async with session_scope(self.session_factory) as session:
             retriever = Retriever(
                 embedding_repo=EmbeddingRepository(session),
                 knowledge_repo=KnowledgeRepository(session),
                 message_repo=MessageRepository(session),
             )
             results: list[SearchResult] = []
+            indexes = EmbeddingIndexRepository(session)
+            if embedding_generation.space is None:
+                raise ValueError("query embedding space is unavailable")
+            space = await indexes.get_space(embedding_generation.space["key"])
             for source_scope in scopes:
+                coverage = await indexes.coverage(
+                    source_scope, space.id if space is not None else None
+                )
+                if coverage["missing"]:
+                    raise EmbeddingCoverageRequiredError(source_scope, coverage["missing"])
+                if space is None:
+                    continue
                 results.extend(
                     await retriever.search(
                         query_vector,
@@ -269,6 +292,7 @@ class MemoryRetrievalService:
                         candidate_limit=int(
                             self.settings_profiles.runtime_setting("retrieval_candidate_limit")
                         ),
+                        space_id=space.id,
                     )
                 )
             results.sort(key=search_result_rank)

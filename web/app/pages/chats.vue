@@ -1,4 +1,11 @@
 <script setup lang="ts">
+import type { components } from "~/types/openapi";
+import {
+  isOperationProfileSetting,
+  availableRouteProfile,
+  requiresEmbeddingMigration,
+  routeSettingLabel,
+} from "~/utils/routeSettings";
 definePageMeta({ middleware: "auth" });
 
 useSeoMeta({ title: "Chats · PZP AI Control Plane" });
@@ -63,6 +70,8 @@ const statusFilter = ref<"all" | ManagedChat["status"]>("all");
 const activeOperation = ref<string | null>(null);
 const error = ref<string | null>(null);
 const notice = ref<string | null>(null);
+const catalog = ref<components["schemas"]["QueryCatalogResponse"] | null>(null);
+const migrationRequired = ref(false);
 
 const isBotAdmin = computed(() => controlSession.hasCapability("bot.admin"));
 const selectedChat = computed(
@@ -136,6 +145,16 @@ async function loadSelectedChat() {
     savedSettingsDraft.value = { ...settingsDraft.value };
     learningEnabled.value = scopeSettings.value.policy.learning_enabled;
     allowAdmins.value = scopeSettings.value.policy.allow_admins;
+    catalog.value = null;
+    if (Object.keys(scopeSettings.value.effective).some(isOperationProfileSetting)) {
+      try {
+        catalog.value = await api.request<components["schemas"]["QueryCatalogResponse"]>(
+          `/query/catalog?scope=${encodeURIComponent(scopeSettings.value.scope)}`,
+        );
+      } catch {
+        catalog.value = null;
+      }
+    }
   } catch (caught) {
     error.value = controlErrorMessage(caught, "The selected chat scope could not be loaded.");
   }
@@ -283,6 +302,7 @@ async function removeChatAdmin(admin: ChatAdmin) {
 
 async function saveScopeSettings() {
   if (selectedChatId.value === null) return;
+  migrationRequired.value = false;
   const settings = Object.fromEntries(
     Object.entries(settingsDraft.value)
       .filter(
@@ -315,7 +335,10 @@ async function saveScopeSettings() {
     savedSettingsDraft.value = { ...settingsDraft.value };
     notice.value = `Settings for ${scopeSettings.value.scope} were applied.`;
   } catch (caught) {
-    error.value = controlErrorMessage(caught, "The scoped settings could not be applied.");
+    migrationRequired.value = requiresEmbeddingMigration(caught);
+    error.value = migrationRequired.value
+      ? "Existing memory needs an embedding-index migration before changing its embedding route or model. Ask a bot owner to preview and activate a replacement index."
+      : controlErrorMessage(caught, "The scoped settings could not be applied.");
   }
 }
 
@@ -367,6 +390,9 @@ function delay(milliseconds: number): Promise<void> {
       <UButton color="neutral" variant="soft" @click="refreshChats">Refresh</UButton>
     </section>
     <p v-if="error" class="operation-error" role="alert">{{ error }}</p>
+    <NuxtLink v-if="migrationRequired && isBotAdmin" to="/embedding-indexes"
+      >Open Embedding indexes</NuxtLink
+    >
     <p v-if="notice" class="operation-notice" aria-live="polite">{{ notice }}</p>
 
     <section
@@ -547,7 +573,7 @@ function delay(milliseconds: number): Promise<void> {
             <h3>Effective</h3>
             <dl>
               <template v-for="(value, key) in scopeSettings.effective" :key="String(key)"
-                ><dt>{{ key }}</dt>
+                ><dt>{{ routeSettingLabel(String(key)) }}</dt>
                 <dd>{{ formatDraft(value) }}</dd></template
               >
             </dl>
@@ -556,7 +582,7 @@ function delay(milliseconds: number): Promise<void> {
             <h3>Inherited</h3>
             <dl>
               <template v-for="(value, key) in scopeSettings.inherited" :key="String(key)"
-                ><dt>{{ key }}</dt>
+                ><dt>{{ routeSettingLabel(String(key)) }}</dt>
                 <dd>{{ formatDraft(value) }}</dd></template
               >
             </dl>
@@ -566,8 +592,42 @@ function delay(milliseconds: number): Promise<void> {
             <div class="settings-list">
               <div v-for="(value, key) in scopeSettings.effective" :key="String(key)">
                 <label
-                  ><span>{{ key }}</span
-                  ><input
+                  ><span>{{ routeSettingLabel(String(key)) }}</span><small>{{ key }}</small>
+                  <select
+                    v-if="isOperationProfileSetting(String(key)) && catalog"
+                    v-model="settingsDraft[String(key)]"
+                    :data-testid="`scope-${key}`"
+                  >
+                    <option value="">Use inherited provider</option>
+                    <option
+                      v-if="
+                        settingsDraft[String(key)] &&
+                        !availableRouteProfile(
+                          catalog.profiles,
+                          String(key),
+                          settingsDraft[String(key)]!,
+                        )
+                      "
+                      :value="settingsDraft[String(key)]"
+                    >
+                      {{ settingsDraft[String(key)] }} · unavailable or incompatible
+                    </option>
+                    <option
+                      v-for="profile in catalog.profiles.filter(
+                        (profile) =>
+                          profile.enabled &&
+                          profile.capabilities.includes(
+                            key === 'embedding_provider_profile' ? 'embedding' : 'chat',
+                          ),
+                      )"
+                      :key="profile.name"
+                      :value="profile.name"
+                    >
+                      {{ profile.name }}
+                    </option>
+                  </select>
+                  <input
+                    v-else
                     v-model="settingsDraft[String(key)]"
                     :placeholder="
                       scopeSettings.inherited[String(key)] === undefined

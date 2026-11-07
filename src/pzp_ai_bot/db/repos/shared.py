@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
@@ -53,6 +53,13 @@ class EffectiveScopeSettings:
     raw_message_retention_days: int | None
     knowledge_retention_days: int | None
     review_before_compact: bool
+    chat_provider_profile: str | None = None
+    summary_provider_profile: str | None = None
+    embedding_provider_profile: str | None = None
+    provider_models: dict[str, tuple[str, str]] = field(
+        default_factory=dict, repr=False, compare=False
+    )
+    routing_epoch: int | None = field(default=None, repr=False, compare=False)
 
     def as_dict(self) -> dict[str, int | str | bool | None]:
         return {
@@ -61,6 +68,9 @@ class EffectiveScopeSettings:
             "summary_model": self.summary_model,
             "system_prompt_template": self.system_prompt_template,
             "provider_profile": self.provider_profile,
+            "chat_provider_profile": self.chat_provider_profile,
+            "summary_provider_profile": self.summary_provider_profile,
+            "embedding_provider_profile": self.embedding_provider_profile,
             "chat_model": self.chat_model,
             "embedding_model": self.embedding_model,
             "reasoning_level": self.reasoning_level,

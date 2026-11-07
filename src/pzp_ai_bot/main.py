@@ -16,6 +16,7 @@ from pzp_ai_bot.config import Settings, get_settings
 from pzp_ai_bot.control_plane.development import run_control_plane_development
 from pzp_ai_bot.control_plane.secrets.service import ProviderSecretService
 from pzp_ai_bot.db.session import create_session_factory, upgrade_schema
+from pzp_ai_bot.embedding_cli import embedding_index_app, local_model_app
 from pzp_ai_bot.memory.scope import Scope, parse_scope
 from pzp_ai_bot.memory.service import (
     MemoryExportFormat,
@@ -32,6 +33,8 @@ from pzp_ai_bot.telegram.webhook import run_webhook
 app = typer.Typer(help="Telegram scoped memory assistant.")
 secrets_app = typer.Typer(help="Inspect and rotate encrypted provider credentials.")
 app.add_typer(secrets_app, name="secrets")
+app.add_typer(embedding_index_app, name="embedding-index")
+app.add_typer(local_model_app, name="local-model")
 console = Console()
 
 

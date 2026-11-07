@@ -173,6 +173,22 @@ class RetrySummaryRegistry:
         self.settings = settings
         self.provider = provider
 
+    def profile_by_name(self, name: str | None):
+        return self.settings.provider_profile_by_name(name)
+
+    def profile_models(self) -> dict[str, tuple[str, str]]:
+        return {
+            name: (profile.chat_model, profile.embedding_model)
+            for name, profile in self.settings.provider_profiles.items()
+        }
+
+    def is_managed(self, name: str | None) -> bool:
+        return False
+
+    def profile_capabilities(self, name: str | None) -> frozenset[str]:
+        self.profile_by_name(name)
+        return frozenset({"chat", "embedding"})
+
     def select(
         self,
         profile_name: str | None = None,
@@ -180,7 +196,7 @@ class RetrySummaryRegistry:
         chat_model: str | None = None,
         embedding_model: str | None = None,
     ) -> ProviderSelection:
-        profile = self.settings.provider_profile_by_name(profile_name)
+        profile = self.profile_by_name(profile_name)
         return ProviderSelection(
             profile=profile,
             chat_provider=self.provider,

@@ -7,6 +7,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pzp_ai_bot.db.models import Message, ScopeMetadata
+from pzp_ai_bot.embedding_identity import content_hash
 from pzp_ai_bot.memory.scope import Scope
 
 from .shared import (
@@ -68,6 +69,7 @@ class MessageRepository:
                 message_permalink=message_permalink,
                 text=text,
                 normalized_text=normalized_text,
+                embedding_source_hash=content_hash(normalized_text),
                 learned=learned,
                 skip_reason=skip_reason,
                 reply_to_message_id=reply_to_message_id,

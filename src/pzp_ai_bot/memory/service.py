@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator, Awaitable, Callable
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -54,6 +55,8 @@ from pzp_ai_bot.memory.contracts import (
     SummaryTemplatePreview,
     SystemPromptTemplatePreview,
 )
+from pzp_ai_bot.memory.embedding_indexes import EmbeddingIndexService
+from pzp_ai_bot.memory.embedding_retry import retry_embedding_route
 from pzp_ai_bot.memory.markdown import MarkdownMemoryStore
 from pzp_ai_bot.memory.mutation_service import MemoryMutationService
 from pzp_ai_bot.memory.mutation_service import memory_item_preview as memory_item_preview
@@ -115,9 +118,18 @@ class MemoryService:
         self.embedding_provider = embedding_provider
         self.provider_registry = provider_registry or ProviderRegistry(settings)
         self.markdown = MarkdownMemoryStore(settings.memory_dir)
-        self._provider_operations = ProviderOperations()
+        self._provider_operations = ProviderOperations(self.session_factory)
         self._settings_profiles = MemorySettingsService(
-            settings=self.settings, session_factory=self.session_factory
+            settings=self.settings,
+            session_factory=self.session_factory,
+            profile_models=self.provider_registry.profile_models,
+        )
+        self.embedding_indexes = EmbeddingIndexService(
+            self.settings,
+            self.session_factory,
+            self.provider_registry,
+            self._settings_profiles,
+            self._provider_operations,
         )
         self._retrieval_service = MemoryRetrievalService(
             settings=self.settings,
@@ -154,6 +166,14 @@ class MemoryService:
             compact_memory=self.compact_memory,
         )
         self._scope_access_filter: Callable[[Scope], Awaitable[bool]] | None = None
+        self._provider_profile_refresher: Callable[[], Awaitable[None]] | None = None
+
+    def set_provider_profile_refresher(self, refresher: Callable[[], Awaitable[None]]) -> None:
+        self._provider_profile_refresher = refresher
+
+    async def _refresh_provider_profiles(self) -> None:
+        if self._provider_profile_refresher is not None:
+            await self._provider_profile_refresher()
 
     def set_scope_access_filter(
         self, scope_access_filter: Callable[[Scope], Awaitable[bool]] | None
@@ -427,7 +447,9 @@ class MemoryService:
     def runtime_setting(self, key: str) -> Any:
         return self._settings_profiles.runtime_setting(key)
 
+    @retry_embedding_route
     async def ingest(self, incoming: IncomingMessage) -> IngestResult:
+        await self._refresh_provider_profiles()
         if self._scope_access_filter is not None and not await self._scope_access_filter(
             incoming.scope
         ):
@@ -526,6 +548,7 @@ class MemoryService:
                 provider=selection.embedding_provider.name,
                 model=selection.embedding_model,
                 vector=embedding_generation.vectors[0],
+                **embedding_generation.persistence_fields(),
             )
             pending = await message_repo.pending_for_summary(
                 incoming.scope, limit=scope_settings.summary_batch_size
@@ -547,13 +570,16 @@ class MemoryService:
         template_name: str | None = None,
         ai_options: AIRequestOptions | None = None,
     ) -> int:
+        await self._refresh_provider_profiles()
         return await self._summary_service.summarize_now(
             scope, template_name=template_name, ai_options=ai_options
         )
 
     async def summarize_idle(self, *, now: datetime | None = None) -> int:
+        await self._refresh_provider_profiles()
         return await self._summary_service.summarize_idle(now=now)
 
+    @retry_embedding_route
     async def remember(
         self,
         scope: Scope,
@@ -564,6 +590,7 @@ class MemoryService:
         priority: int | None = None,
         source: str | None = None,
     ) -> int:
+        await self._refresh_provider_profiles()
         return await self._mutation_service.remember(
             scope, content, source_message_id, tags=tags, priority=priority, source=source
         )
@@ -573,6 +600,7 @@ class MemoryService:
     ) -> list[MemoryNotePreview]:
         return await self._mutation_service.list_notes(scope, tag=tag)
 
+    @retry_embedding_route
     async def edit_note(
         self,
         scope: Scope,
@@ -585,6 +613,7 @@ class MemoryService:
         clear_priority: bool = False,
         clear_source: bool = False,
     ) -> MemoryNotePreview:
+        await self._refresh_provider_profiles()
         return await self._mutation_service.edit_note(
             scope,
             item_id,
@@ -608,6 +637,7 @@ class MemoryService:
         profile_name: str | None = None,
         ai_options: AIRequestOptions | None = None,
     ) -> str:
+        await self._refresh_provider_profiles()
         return await self._retrieval_service.ask(
             scope, question, top_k=top_k, profile_name=profile_name, ai_options=ai_options
         )
@@ -621,6 +651,7 @@ class MemoryService:
         profile_name: str | None = None,
         ai_options: AIRequestOptions | None = None,
     ) -> AskExecutionResult:
+        await self._refresh_provider_profiles()
         return await self._retrieval_service.ask_with_metadata(
             scope, question, top_k=top_k, profile_name=profile_name, ai_options=ai_options
         )
@@ -634,6 +665,7 @@ class MemoryService:
         profile_name: str | None = None,
         ai_options: AIRequestOptions | None = None,
     ) -> list[SearchResult]:
+        await self._refresh_provider_profiles()
         return await self._retrieval_service.search(
             scope, query, top_k=top_k, profile_name=profile_name, ai_options=ai_options
         )
@@ -647,6 +679,7 @@ class MemoryService:
         profile_name: str | None = None,
         ai_options: AIRequestOptions | None = None,
     ) -> SearchExecutionResult:
+        await self._refresh_provider_profiles()
         return await self._retrieval_service.search_with_metadata(
             scope, query, top_k=top_k, profile_name=profile_name, ai_options=ai_options
         )
@@ -715,6 +748,7 @@ class MemoryService:
     async def refresh_memory_item(
         self, scope: Scope, item_id: int, *, mode: str = "embed", updated_by: int | None = None
     ) -> MemoryItemRefreshResult:
+        await self._refresh_provider_profiles()
         return await self._summary_service.refresh_memory_item(
             scope, item_id, mode=mode, updated_by=updated_by
         )
@@ -803,6 +837,7 @@ class MemoryService:
         template_name: str = "general",
         ai_options: AIRequestOptions | None = None,
     ) -> RangeSummaryResult:
+        await self._refresh_provider_profiles()
         return await self._summary_service.summarize_range(
             scope,
             start_message_id=start_message_id,
@@ -835,7 +870,9 @@ class MemoryService:
     async def pending_review_scope(self, review_id: int) -> Scope:
         return await self._mutation_service.pending_review_scope(review_id)
 
+    @retry_embedding_route
     async def approve_review(self, review_id: int, *, reviewed_by: int | None = None) -> int:
+        await self._refresh_provider_profiles()
         return await self._mutation_service.approve_review(review_id, reviewed_by=reviewed_by)
 
     async def reject_review(self, review_id: int, *, reviewed_by: int | None = None) -> None:
@@ -968,15 +1005,51 @@ class MemoryService:
         *,
         summary: bool = False,
     ) -> ProviderSelection:
-        request = options or AIRequestOptions()
-        profile_name = request.provider_profile or scope_settings.provider_profile
-        chat_model = request.chat_model or (
-            scope_settings.summary_model if summary else scope_settings.chat_model
+        return self._select_operation(
+            scope_settings, options, "summary" if summary else "embedding"
         )
-        embedding_model = request.embedding_model or scope_settings.embedding_model
+
+    def _select_operation(
+        self,
+        scope_settings: EffectiveScopeSettings,
+        options: AIRequestOptions | None,
+        operation: str,
+    ) -> ProviderSelection:
+        request = options or AIRequestOptions()
+        explicit_profile = (
+            request.retrieval_provider_profile
+            if operation == "embedding"
+            else request.chat_provider_profile
+            if operation == "chat"
+            else None
+        ) or request.provider_profile
+        profile_name = (
+            explicit_profile
+            or getattr(scope_settings, f"{operation}_provider_profile")
+            or scope_settings.provider_profile
+        )
+        capability = "embedding" if operation == "embedding" else "chat"
+        if not self._profile_supports(profile_name, capability):
+            raise ValueError(f"provider profile {profile_name!r} is not {capability} capable")
+        profile = self.provider_registry.profile_by_name(profile_name)
+        chat_model = request.chat_model or (
+            profile.chat_model
+            if explicit_profile
+            else scope_settings.summary_model
+            if operation == "summary"
+            else scope_settings.chat_model
+            if operation == "chat"
+            else profile.chat_model
+        )
+        embedding_model = request.embedding_model or (
+            profile.embedding_model
+            if explicit_profile or operation != "embedding"
+            else scope_settings.embedding_model
+        )
         default_profile = self.settings.provider_profile_by_name(self.settings.ai_provider_profile)
         if (
-            profile_name == default_profile.name
+            profile == default_profile
+            and not self.provider_registry.is_managed(profile.name)
             and chat_model == default_profile.chat_model
             and embedding_model == default_profile.embedding_model
         ):
@@ -986,9 +1059,13 @@ class MemoryService:
                 embedding_provider=self.embedding_provider,
                 chat_model=chat_model,
                 embedding_model=embedding_model,
+                route_epoch=scope_settings.routing_epoch,
             )
-        return self.provider_registry.select(
-            profile_name, chat_model=chat_model, embedding_model=embedding_model
+        return replace(
+            self.provider_registry.select(
+                profile_name, chat_model=chat_model, embedding_model=embedding_model
+            ),
+            route_epoch=scope_settings.routing_epoch,
         )
 
     def _reasoning_level(
@@ -1000,40 +1077,17 @@ class MemoryService:
     def _select_retrieval_provider(
         self, scope_settings: EffectiveScopeSettings, options: AIRequestOptions | None = None
     ) -> ProviderSelection:
-        request = options or AIRequestOptions()
-        if request.retrieval_provider_profile is None:
-            selection = self._select_provider(scope_settings, request)
-            if not self._profile_supports(selection.profile.name, "embedding"):
-                raise ValueError(
-                    f"provider profile {selection.profile.name!r} is not embedding capable"
-                )
-            return selection
-        profile = self.provider_registry.profile_by_name(request.retrieval_provider_profile)
-        if not self._profile_supports(profile.name, "embedding"):
-            raise ValueError(f"provider profile {profile.name!r} is not embedding capable")
-        return self.provider_registry.select(
-            profile.name,
-            chat_model=profile.chat_model,
-            embedding_model=request.embedding_model or scope_settings.embedding_model,
-        )
+        return self._select_operation(scope_settings, options, "embedding")
+
+    def _select_embedding_provider(
+        self, scope_settings: EffectiveScopeSettings, options: AIRequestOptions | None = None
+    ) -> ProviderSelection:
+        return self._select_operation(scope_settings, options, "embedding")
 
     def _select_chat_provider(
         self, scope_settings: EffectiveScopeSettings, options: AIRequestOptions | None = None
     ) -> ProviderSelection:
-        request = options or AIRequestOptions()
-        if request.chat_provider_profile is None:
-            selection = self._select_provider(scope_settings, request)
-            if not self._profile_supports(selection.profile.name, "chat"):
-                raise ValueError(f"provider profile {selection.profile.name!r} is not chat capable")
-            return selection
-        profile = self.provider_registry.profile_by_name(request.chat_provider_profile)
-        if not self._profile_supports(profile.name, "chat"):
-            raise ValueError(f"provider profile {profile.name!r} is not chat capable")
-        return self.provider_registry.select(
-            profile.name,
-            chat_model=request.chat_model or scope_settings.chat_model,
-            embedding_model=profile.embedding_model,
-        )
+        return self._select_operation(scope_settings, options, "chat")
 
     def _profile_supports(self, profile_name: str, capability: str) -> bool:
         resolver = getattr(self.provider_registry, "profile_capabilities", None)
@@ -1332,6 +1386,12 @@ def parse_scope_settings_args(raw: dict[str, str]) -> dict[str, int | str | bool
         "system_prompt_template": "system_prompt_template",
         "provider": "provider_profile",
         "provider_profile": "provider_profile",
+        "chat_provider": "chat_provider_profile",
+        "chat_provider_profile": "chat_provider_profile",
+        "summary_provider": "summary_provider_profile",
+        "summary_provider_profile": "summary_provider_profile",
+        "embedding_provider": "embedding_provider_profile",
+        "embedding_provider_profile": "embedding_provider_profile",
         "chat_model": "chat_model",
         "embedding_model": "embedding_model",
         "reasoning": "reasoning_level",
@@ -1347,7 +1407,17 @@ def parse_scope_settings_args(raw: dict[str, str]) -> dict[str, int | str | bool
         key = aliases.get(raw_key)
         if key is None:
             raise ValueError(f"unknown setting: {raw_key}")
-        if key in {"retrieval_top_k", "summary_batch_size"}:
+        if raw_value.strip().lower() in {"inherit", "null"}:
+            updates[key] = None
+        elif key in {
+            "chat_provider_profile",
+            "summary_provider_profile",
+            "embedding_provider_profile",
+        }:
+            updates[key] = (
+                None if raw_value.strip().lower() in {"off", "none"} else raw_value.strip()
+            )
+        elif key in {"retrieval_top_k", "summary_batch_size"}:
             updates[key] = int(raw_value)
         elif key in {"raw_message_retention_days", "knowledge_retention_days"}:
             updates[key] = (
@@ -1466,7 +1536,9 @@ def parse_runtime_settings_args(raw: dict[str, str]) -> dict[str, Any]:
             continue
         kind = SAFE_RUNTIME_SETTING_TYPES[key]
         value = raw_value.strip()
-        if kind == "bool":
+        if kind == "optional_profile":
+            updates[key] = None if value.lower() in {"off", "inherit", "none"} else value
+        elif kind == "bool":
             updates[key] = parse_bool(value)
         elif kind == "positive_int":
             updates[key] = int(value)
