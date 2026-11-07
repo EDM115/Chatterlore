@@ -23,6 +23,20 @@ afterEach(() => {
 });
 
 describe("Phase 8 shared interaction foundations", () => {
+  it.each(["data", "response"])(
+    "distinguishes rejected CSRF from denied scope permissions in the %s envelope",
+    (location) => {
+      const envelope = { error: { code: "csrf_rejected", message: "untrusted server detail" } };
+      const error =
+        location === "data"
+          ? { response: { status: 403 }, data: envelope }
+          : { response: { status: 403, _data: envelope } };
+      expect(controlErrorMessage(error)).toBe(
+        "Your session security token is out of date. Refresh this page and retry.",
+      );
+    },
+  );
+
   it.each([
     [401, "Your Telegram session expired. Sign in again."],
     [403, "Your Telegram account does not have access to this scope."],

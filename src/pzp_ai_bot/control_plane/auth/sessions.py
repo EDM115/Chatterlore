@@ -59,7 +59,7 @@ class ControlPlaneSessionService:
         if client_kind not in {"browser", "mini_app"}:
             raise ValueError("unsupported control-plane session client")
         session_token = secrets.token_urlsafe(48)
-        csrf_token = secrets.token_urlsafe(32)
+        csrf_token = _session_csrf_token(session_token)
         absolute_expires_at = now + timedelta(
             seconds=self.settings.control_plane_session_absolute_seconds
         )
@@ -114,17 +114,19 @@ class ControlPlaneSessionService:
                 and hmac.compare_digest(active[0].csrf_hash, _secret_hash(csrf_token))
             )
 
-    async def rotate_csrf(self, session_token: str, *, now: datetime) -> str:
-        csrf_token = secrets.token_urlsafe(32)
+    async def get_csrf_token(self, session_token: str, *, now: datetime) -> str:
+        csrf_token = _session_csrf_token(session_token)
         async with session_scope(self.session_factory) as session:
             active = await ControlPlaneSessionRepository(session).get_active(
                 token_hash=_secret_hash(session_token), now=now
             )
             if active is None:
                 raise SessionAuthenticationError("session is invalid or expired")
-            await ControlPlaneSessionRepository(session).rotate_csrf(
-                active[0], csrf_hash=_secret_hash(csrf_token), now=now
-            )
+            csrf_hash = _secret_hash(csrf_token)
+            if not hmac.compare_digest(active[0].csrf_hash, csrf_hash):
+                await ControlPlaneSessionRepository(session).rotate_csrf(
+                    active[0], csrf_hash=csrf_hash, now=now
+                )
         return csrf_token
 
     async def mark_step_up(self, session_token: str, *, now: datetime, action: str) -> None:
@@ -184,6 +186,12 @@ def _authenticated_session(
 
 def _secret_hash(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
+
+
+def _session_csrf_token(session_token: str) -> str:
+    return hmac.new(
+        session_token.encode(), b"pzp-control-plane-csrf-v1", hashlib.sha256
+    ).hexdigest()
 
 
 def _as_aware(value: datetime) -> datetime:

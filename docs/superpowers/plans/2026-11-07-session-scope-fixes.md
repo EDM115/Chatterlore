@@ -1,0 +1,19 @@
+# Session and Scoped Settings Implementation Plan
+> **For agentic workers:** Execute the approved fixes inline using the test-first and incremental-implementation workflows. No Git mutations or worktrees are authorized.  
+**Goal:** Fix multi-tab CSRF invalidation, reversible inheritance and browser-only logout.  
+**Architecture:** Preserve the session database and nullable/versioned settings API. Change stable token derivation, complete parent-value presentation and the existing shell/logout boundary.  
+**Tech Stack:** FastAPI, SQLAlchemy, pytest, Nuxt/Vue and Vitest.  
+**Spec:** `docs/superpowers/specs/2026-11-07-session-scope-fixes-design.md` (owner approved in chat).  
+## Global constraints
+Preserve staged edits, live acceptance data and credentials. Do not change enrollment, provider routing, CI or Docker choices. Do not print secrets or call a live provider. Keep Markdown prose as one-line thoughts and use `ty`.  
+## Review focus
+Old database sessions need a safe deterministic transition, separate sessions must remain isolated, wrong tokens/revocation/expiry must still fail. Reset payloads must distinguish omission from null and preserve unrelated overrides, versions and audit. Logout must not appear in Mini Apps or discard a session when the server rejects revocation.  
+## Tasks
+- [x] Add a real API two-tab regression in `tests/test_control_plane_api.py`, observe failure, implement stable token retrieval in `control_plane/auth/sessions.py` and the session route, run session/API tests
+- [x] Add API parent/reset assertions and UI blank/reset submission tests in the existing management tests, observe failures, return complete inherited values and submit nullable reset updates, run those suites
+- [x] Add shell browser/Mini App logout regressions, observe failures, wire existing logout to both navigation layouts with safe error handling, run shell/session tests
+- [x] Update `PLAN.md` and canonical operation/architecture/security docs, run Python lint/type/tests plus frontend lint/type/tests/build/browser gates, record exact limits and explain AI routing without claiming a new mixed-provider implementation
+## Observed verification and remaining gates
+On uv-managed CPython 3.14.7, the final full Python suite reported 451 passed, 2 failed and 1 credential-gated live skip. The failures are the untouched `test_github_actions_ci_runs_quality_migration_and_docker_gates` and `test_frontend_image_is_frozen_multi_stage_and_non_root` assertions demanding the CI lock check and Docker pnpm pin deliberately removed by the owner. Python format, Ruff, `ty` and code-diff hygiene pass. One run also emitted an aiosqlite background cleanup `Event loop is closed` warning, alongside the known AnyIO/pytest deprecation warning, neither warning was suppressed.  
+Frontend type-aware lint, Nuxt typecheck, 72 Vitest tests, the production build, 275-text-asset secret scan and direct SSR privacy/CSP smoke pass. Browser reset/logout flows pass on desktop and mobile. Earlier full browser runs passed 46/46, but the latest final run is 45 passed and 1 failed: the mobile keyboard/console-error check caught the loader-circle icon falling back to remote Iconify endpoints blocked by the unchanged `connect-src 'self'` policy. One earlier passing run also logged an unmatched query-catalog route and missing-CSP-nonce error. These intermittent browser/runtime-test issues remain unresolved, the browser gate is not clean.  
+The independent review found no application defect in the approved fixes, its one browser-test synchronization finding was addressed by waiting for the persisted effective value before resetting. Inverting the browser-only logout condition caused all four dedicated visibility/success/failure cases to fail, then the original shell hash was restored and the 72-test suite passed. No live deployment, provider request, credential reload, enrollment change or Git mutation occurred.  

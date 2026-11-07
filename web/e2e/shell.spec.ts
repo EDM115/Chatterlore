@@ -372,6 +372,26 @@ test("expired sessions return to login with an explicit recovery message", async
   await expect(page.getByRole("link", { name: "Sign in with Telegram" })).toBeVisible();
 });
 
+test("browser logout revokes the session and returns to login", async ({ page, isMobile }) => {
+  await stubAuthenticatedSession(page);
+  await stubDashboard(page);
+  await page.route("**/api/control/v1/auth/logout", async (route) => {
+    expect(route.request().method()).toBe("POST");
+    expect(route.request().headers()["x-csrf-token"]).toBe("csrf-token");
+    await route.fulfill({ status: 204 });
+  });
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "The bot at a glance." })).toBeVisible();
+  if (isMobile) await page.getByText("Menu", { exact: true }).click();
+  await page
+    .getByRole("button", { name: "Log out", exact: true })
+    .filter({ visible: true })
+    .click();
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(page.getByRole("link", { name: "Sign in with Telegram" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Log out", exact: true })).toHaveCount(0);
+});
+
 test.describe("server-rendered direct routes", () => {
   test.use({ javaScriptEnabled: false });
 

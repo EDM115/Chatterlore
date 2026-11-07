@@ -520,11 +520,12 @@ test("managed chat administration keeps pause, resume, detach, leave and forget 
   };
   let delegated: Array<Record<string, unknown>> = [];
   let scopeVersion = 0;
+  let retrievalOverride: number | null = null;
   const settingsPayload = () => ({
     scope: "-1001",
-    effective: { retrieval_top_k: scopeVersion ? 9 : 6 },
+    effective: { retrieval_top_k: retrievalOverride ?? 6 },
     inherited: { retrieval_top_k: 6 },
-    overrides: scopeVersion ? { retrieval_top_k: 9 } : {},
+    overrides: retrievalOverride === null ? {} : { retrieval_top_k: retrievalOverride },
     policy: { learning_enabled: true, allow_admins: false },
     version: scopeVersion,
   });
@@ -569,7 +570,11 @@ test("managed chat administration keeps pause, resume, detach, leave and forget 
     if (path === "/chats/-1001/settings" && request.method() === "GET")
       return fulfillJson(route, settingsPayload());
     if (path === "/chats/-1001/settings" && request.method() === "PATCH") {
-      expect(request.postDataJSON()).toMatchObject({ version: scopeVersion });
+      expect(request.postDataJSON()).toMatchObject({
+        version: scopeVersion,
+        settings: { retrieval_top_k: scopeVersion === 0 ? 9 : null },
+      });
+      retrievalOverride = request.postDataJSON().settings.retrieval_top_k;
       scopeVersion += 1;
       return fulfillJson(route, { ...settingsPayload(), audit_event_id: 700 + scopeVersion });
     }
@@ -612,9 +617,20 @@ test("managed chat administration keeps pause, resume, detach, leave and forget 
   await page.getByRole("button", { name: "Remove", exact: true }).click();
   await expect(page.getByText("Telegram 854158484")).toHaveCount(0);
 
-  await page.getByLabel("retrieval_top_k").fill("9");
+  const retrievalInput = page.getByRole("textbox", { name: /^retrieval_top_k\b/ });
+  await retrievalInput.fill("9");
   await page.getByRole("button", { name: "Apply scope settings" }).click();
+  await expect(
+    page.locator(".settings-columns article").first().getByText("9", { exact: true }),
+  ).toBeVisible();
+  await expect(retrievalInput).toHaveValue("9");
   await expect(page.getByText("Inherited: 6")).toBeVisible();
+  await page.getByRole("button", { name: "Reset retrieval_top_k to inherited" }).click();
+  await page.getByRole("button", { name: "Apply scope settings" }).click();
+  await expect(retrievalInput).toHaveValue("");
+  await expect(
+    page.locator(".settings-columns article").first().getByText("6", { exact: true }),
+  ).toBeVisible();
 
   await page.getByRole("button", { name: "Pause" }).click();
   await expect(page.locator('.health-pill[data-state="paused"]')).toBeVisible();

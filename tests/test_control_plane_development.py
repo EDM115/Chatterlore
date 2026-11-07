@@ -282,7 +282,7 @@ def test_development_login_issues_a_real_bot_admin_session_with_loopback_cookie(
 
         restored = client.get("/api/control/v1/session")
         assert restored.status_code == 200
-        assert restored.json()["csrf_token"] != first_csrf
+        assert restored.json()["csrf_token"] == first_csrf
         logout = client.post(
             "/api/control/v1/auth/logout",
             headers={"Origin": origin, "X-CSRF-Token": restored.json()["csrf_token"]},

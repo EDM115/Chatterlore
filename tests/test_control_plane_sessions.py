@@ -99,7 +99,7 @@ async def test_oidc_transactions_reject_unsafe_returns_and_expiry(tmp_path: Path
     await factory.kw["bind"].dispose()
 
 
-async def test_sessions_persist_only_hashes_and_enforce_rotation_csrf_and_expiry(
+async def test_sessions_persist_only_hashes_and_enforce_stable_csrf_and_expiry(
     tmp_path: Path,
 ) -> None:
     settings = settings_for(
@@ -126,13 +126,16 @@ async def test_sessions_persist_only_hashes_and_enforce_rotation_csrf_and_expiry
         issued.session_token, issued.csrf_token, now=NOW + timedelta(seconds=30)
     )
 
-    rotated_csrf = await service.rotate_csrf(issued.session_token, now=NOW + timedelta(seconds=31))
-    assert rotated_csrf != issued.csrf_token
-    assert not await service.validate_csrf(
-        issued.session_token, issued.csrf_token, now=NOW + timedelta(seconds=31)
+    restarted = ControlPlaneSessionService(factory, settings)
+    refreshed_csrf = await restarted.get_csrf_token(
+        issued.session_token, now=NOW + timedelta(seconds=31)
     )
+    assert refreshed_csrf == issued.csrf_token
     assert await service.validate_csrf(
-        issued.session_token, rotated_csrf, now=NOW + timedelta(seconds=31)
+        issued.session_token, refreshed_csrf, now=NOW + timedelta(seconds=31)
+    )
+    assert not await service.validate_csrf(
+        issued.session_token, "wrong-token", now=NOW + timedelta(seconds=31)
     )
 
     switched = await service.issue(
@@ -150,6 +153,34 @@ async def test_sessions_persist_only_hashes_and_enforce_rotation_csrf_and_expiry
     with pytest.raises(SessionAuthenticationError, match="invalid or expired"):
         await service.authenticate(switched.session_token, now=NOW + timedelta(seconds=153))
 
+    await factory.kw["bind"].dispose()
+
+
+async def test_legacy_session_adopts_stable_csrf_once_without_reauthentication(
+    tmp_path: Path,
+) -> None:
+    settings = settings_for(tmp_path)
+    await create_schema(settings)
+    factory = create_session_factory(settings)
+    service = ControlPlaneSessionService(factory, settings)
+    issued = await service.issue(identity(), client_kind="browser", now=NOW)
+    async with session_scope(factory) as session:
+        stored = await session.scalar(select(ControlPlaneSession))
+        assert stored is not None
+        stored.csrf_hash = "0" * 64
+    first = await service.get_csrf_token(issued.session_token, now=NOW + timedelta(seconds=1))
+    second = await service.get_csrf_token(issued.session_token, now=NOW + timedelta(seconds=2))
+    assert first == second
+    assert await service.validate_csrf(issued.session_token, first, now=NOW + timedelta(seconds=3))
+    other = await service.issue(identity(), client_kind="browser", now=NOW)
+    assert other.csrf_token != first
+    assert not await service.validate_csrf(other.session_token, first, now=NOW)
+    await service.revoke(issued.session_token, now=NOW + timedelta(seconds=4))
+    assert not await service.validate_csrf(
+        issued.session_token, first, now=NOW + timedelta(seconds=5)
+    )
+    with pytest.raises(SessionAuthenticationError):
+        await service.get_csrf_token(issued.session_token, now=NOW + timedelta(seconds=5))
     await factory.kw["bind"].dispose()
 
 

@@ -85,6 +85,8 @@ The manually dispatched GitHub Actions workflow installs the latest uv, runs `uv
 
 ## Runtime Checklist
 
+The [2026-11-07 live acceptance ledger](live-acceptance-2026-11-07.md) records the exact current test images, persistent Quick Tunnel, isolated mounts, runtime/privacy/recovery results, owner-confirmed authentication/session checks and remaining operator gates. The test ingress is loopback-only behind cloudflared, its ephemeral hostname is not a production DNS/availability commitment. The pnpm Docker cache is kept separate from the standalone installation tree so BuildKit cannot hide the installed CLI, and the installer version matches `web/package.json`'s `packageManager`.  
+
 - Run `pzp-bot migrate` before starting a new database.
 - Run `pzp-bot doctor` after changing secrets, provider profiles, database paths or memory paths.
 - For webhook mode, configure the orchestrator's runtime readiness/liveness probe against `GET /health` and investigate any HTTP 503 before routing Telegram traffic.

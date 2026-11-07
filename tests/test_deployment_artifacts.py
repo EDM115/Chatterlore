@@ -177,6 +177,14 @@ def test_default_tests_do_not_install_or_configure_code_coverage() -> None:
     assert "coverage" not in project["tool"]
 
 
+def test_frontend_build_cache_does_not_hide_the_installed_package_manager() -> None:
+    dockerfile = (ROOT / "web" / "Dockerfile").read_text(encoding="utf-8")
+
+    assert "target=/var/cache/pnpm" in dockerfile
+    assert "--store-dir /var/cache/pnpm" in dockerfile
+    assert "target=/pnpm/store" not in dockerfile
+
+
 def test_caddy_reserves_backend_paths_and_strips_frontend_credentials() -> None:
     caddyfile = (ROOT / "Caddyfile").read_text(encoding="utf-8")
     proxy_environment = load_compose()["services"]["proxy"]["environment"]

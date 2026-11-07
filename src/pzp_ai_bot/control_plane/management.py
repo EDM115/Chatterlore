@@ -592,9 +592,12 @@ class ControlPlaneManagementService:
                 ).as_dict()
             else:
                 inherited_values = defaults.as_dict()
-        inherited = {key: value for key, value in inherited_values.items() if key not in overrides}
         return ScopeSettingsView(
-            scope.key, effective, inherited, overrides, exact.version if exact is not None else 0
+            scope.key,
+            effective,
+            inherited_values,
+            overrides,
+            exact.version if exact is not None else 0,
         )
 
 

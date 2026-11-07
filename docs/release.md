@@ -18,7 +18,7 @@ Use this checklist before tagging or publishing a new PZP AI release. It is desi
 - Review config changes in `docs/setup.md`, `docs/deployment.md`, `docs/secrets.md` and `docs/operations.md`.
 - Run a manual Telegram smoke test for command registration, `/help`, `/learn_status`, `/runtime_settings`, `/audit_events`, `/ask`, `/memory_export`, `/settings` preview/confirm and `/forget` confirmation before inviting a real group. In the control plane, also validate browser and Mini App login, bot-owner add/remove and session revocation, prepared/DM group enrollment, delegated-admin boundaries, pause/resume/detach/leave/forget differences and chat/topic inherited settings against disposable accounts/chats.
 - Manually dispatch the GitHub Actions workflow after pushing the final branch and record its result for that exact snapshot (push/PR events no longer trigger it automatically).
-- Resolve the Plan 021 delegated-admin policy mismatch before release, current scoped-admin grant management differs from the older bot-owner-only matrix (see the [review finding](project-review-2026-11-07.md#authorization-policy-decision-before-release)).
+- The Plan 021 delegated-admin policy is resolved to bot-admin-only grant management, complete the remaining client/permission/enrollment/lifecycle, separate polling, disposable provider/DM and user-dispatched hosted CI checks in the [current live ledger](live-acceptance-2026-11-07.md) before release
 
 ## Release Notes Template
 
@@ -33,6 +33,7 @@ Include:
 ## Current Release Notes
 
 - Package version is `0.11.0`.
+- The [later 2026-11-07 execution](live-acceptance-2026-11-07.md) supersedes the earlier maintenance/runtime boundary below: 449 Python passes plus one live skip, 64 Vitest and 44 no-retry browser cases, current split images/TLS/header/privacy/recovery/elapsed-retention-on-copies and owner-confirmed real login/session persistence passed. Bot-admin-only delegated-grant management is enforced. The existing OpenAI environment key returns 401 and was confirmed revoked by the owner, who deferred the disposable-key/provider/DM gate until later. The test stack/tunnel remain running, this is not a production release or hosted CI pass
 - The [2026-11-07 current offline checkpoint](project-review-2026-11-07.md#final-maintenance-verification-2026-11-07) passes 438 Python tests plus 1 live skip on both 3.12 and 3.14, 63 Vitest and 44 no-retry browser cases, current static/schema/migration/SSR/asset gates and isolated combined development. This closes maintenance qualification, not the remaining release/policy gates.
 - Migration head is `0017_scope_settings_versions`.
 - The Python and Nuxt Dockerfiles remain multi-stage and non-root, use standalone uv/pnpm installers, select latest uv and Node major 26 as requested, and keep application dependencies frozen. Caddy uses the floating major `2-alpine` tag, Compose publishes only the ingress and the frontend/backend build independently. Historical image builds and partial live progress do not qualify the November toolchain, fresh image/proxy/TLS/health/replacement/restart acceptance remains required and the local Docker daemon was unavailable during this review.
