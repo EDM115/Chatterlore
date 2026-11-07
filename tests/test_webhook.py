@@ -5,10 +5,11 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
-from aiogram import Bot, Dispatcher
+from aiogram import Bot
 from fastapi.testclient import TestClient
 
 from pzp_ai_bot.app_context import AppContext
+from pzp_ai_bot.telegram.dispatcher import build_dispatcher
 from pzp_ai_bot.telegram.webhook import create_webhook_app
 
 
@@ -16,7 +17,7 @@ class HealthBotDouble:
     def __init__(self) -> None:
         self.session = SimpleNamespace(close=self.close)
 
-    async def set_my_commands(self, commands: Any) -> None:
+    async def delete_my_commands(self) -> None:
         return None
 
     async def set_webhook(self, *args: Any, **kwargs: Any) -> bool:
@@ -55,7 +56,7 @@ def test_webhook_rejects_default_or_blank_secret(context: AppContext, secret: st
 
 def test_health_reports_running_critical_background_tasks(context: AppContext) -> None:
     app = create_webhook_app(
-        context, bot=cast(Bot, HealthBotDouble()), dispatcher=cast(Dispatcher, SimpleNamespace())
+        context, bot=cast(Bot, HealthBotDouble()), dispatcher=build_dispatcher(context)
     )
 
     with TestClient(app) as client:
@@ -78,7 +79,7 @@ def test_health_reports_running_critical_background_tasks(context: AppContext) -
 
 def test_health_returns_503_when_critical_background_task_is_dead(context: AppContext) -> None:
     app = create_webhook_app(
-        context, bot=cast(Bot, HealthBotDouble()), dispatcher=cast(Dispatcher, SimpleNamespace())
+        context, bot=cast(Bot, HealthBotDouble()), dispatcher=build_dispatcher(context)
     )
 
     with TestClient(app) as client:

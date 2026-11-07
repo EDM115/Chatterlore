@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import asyncio
 import math
 import time
 from typing import Any
 
+import structlog
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from pzp_ai_bot.ai.factory import ProviderSelection
 from pzp_ai_bot.ai.openai_compatible import resolve_api_dialect, supports_reasoning_effort
-from pzp_ai_bot.ai.protocols import ChatMessage
+from pzp_ai_bot.ai.protocols import ChatMessage, ChatProgressCallback
 from pzp_ai_bot.db.repos.events import EventRepository
 from pzp_ai_bot.db.session import session_scope
 from pzp_ai_bot.embedding_identity import content_hash, embedding_space_metadata
@@ -20,6 +22,8 @@ from pzp_ai_bot.memory.contracts import (
 )
 from pzp_ai_bot.memory.prompts import PROMPT_VERSION
 from pzp_ai_bot.memory.scope import Scope
+
+logger = structlog.get_logger(__name__)
 
 
 class ProviderOperations:
@@ -36,6 +40,7 @@ class ProviderOperations:
         temperature: float,
         max_tokens: int,
         reasoning_effort: str | None,
+        on_text: ChatProgressCallback | None = None,
     ) -> ChatProviderExecution:
         started = time.perf_counter()
         effective_reasoning: str | None = None
@@ -55,22 +60,50 @@ class ProviderOperations:
                     )
                 elif dialect == "openai" and supports_reasoning_effort(selection.chat_model):
                     effective_reasoning = reasoning_effort
+
+        emitted_text = False
+
+        async def notify(text: str) -> None:
+            nonlocal emitted_text
+            emitted_text = emitted_text or bool(text)
+            if on_text is None:
+                return
+            try:
+                await on_text(text)
+            except Exception as error:
+                logger.warning("chat_progress_failed", error_type=type(error).__name__)
+
+        cancelled = False
+        stream = getattr(selection.chat_provider, "generate_stream", None)
+        streaming = on_text is not None and callable(stream)
         try:
-            result = await selection.chat_provider.generate(
-                messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                reasoning_effort=effective_reasoning,
+            kwargs = {
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "reasoning_effort": effective_reasoning,
+            }
+            if streaming:
+                result = await stream(messages, on_text=notify, **kwargs)
+            else:
+                result = await selection.chat_provider.generate(messages, **kwargs)
+        except asyncio.CancelledError:
+            result = None
+            cancelled = True
+            failure: ProviderOperationError | None = ProviderOperationError(
+                error_type="CancelledError", safe_summary="CancelledError: generation cancelled"
             )
         except Exception as error:
             result = None
-            failure: ProviderOperationError | None = ProviderOperationError.from_exception(error)
+            failure = ProviderOperationError.from_exception(error)
         else:
             failure = None
         attempt_metadata = _consume_attempt_metadata(selection.chat_provider)
         usage_metadata = dict(metadata)
         usage_metadata["requested_reasoning_level"] = reasoning_effort
         usage_metadata["effective_reasoning_level"] = effective_reasoning
+        usage_metadata["streaming"] = streaming
+        stream_interrupted = streaming and emitted_text and failure is not None
+        usage_metadata["stream_interrupted"] = stream_interrupted
         if attempt_metadata is not None:
             usage_metadata.update(attempt_metadata.as_dict())
         telemetry = provider_call_telemetry(
@@ -83,7 +116,20 @@ class ProviderOperations:
             failure=failure,
             metadata=usage_metadata,
         )
-        return ChatProviderExecution(result=result, failure=failure, telemetry=telemetry)
+        if cancelled:
+            if self.session_factory is not None:
+                try:
+                    async with session_scope(self.session_factory) as session:
+                        await self.add_usage(session, telemetry)
+                except Exception as error:
+                    logger.warning("cancelled_chat_usage_failed", error_type=type(error).__name__)
+            raise asyncio.CancelledError
+        return ChatProviderExecution(
+            result=result,
+            failure=failure,
+            telemetry=telemetry,
+            stream_interrupted=stream_interrupted,
+        )
 
     async def generate_embeddings(
         self,

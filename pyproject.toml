@@ -12,6 +12,7 @@ dependencies = [
   "fastapi~=0.162.1",
   "httpx~=0.28.1",
   "ijson~=3.6.0",
+  "markdown-it-py~=4.2.0",
   "numpy~=2.5.4",
   "openai~=3.46.0",
   "orjson~=3.13.0",

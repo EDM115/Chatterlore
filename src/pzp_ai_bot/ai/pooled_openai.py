@@ -11,7 +11,7 @@ from pzp_ai_bot.ai.credential_pool import (
     ProviderPoolExhaustedError,
 )
 from pzp_ai_bot.ai.openai_compatible import OpenAICompatibleProvider
-from pzp_ai_bot.ai.protocols import ChatMessage, ChatResult
+from pzp_ai_bot.ai.protocols import ChatMessage, ChatProgressCallback, ChatResult
 
 
 class PooledOpenAICompatibleProvider:
@@ -49,6 +49,32 @@ class PooledOpenAICompatibleProvider:
                 self.profile_name,
                 lambda lease: self.provider_for_lease(lease).generate(
                     messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    reasoning_effort=reasoning_effort,
+                ),
+            )
+        except (ProviderCallError, ProviderPoolExhaustedError) as error:
+            self._attempt_metadata.set(error.metadata)
+            raise
+        self._attempt_metadata.set(outcome.metadata)
+        return outcome.value
+
+    async def generate_stream(
+        self,
+        messages: Sequence[ChatMessage],
+        *,
+        on_text: ChatProgressCallback,
+        temperature: float = 0.2,
+        max_tokens: int = 700,
+        reasoning_effort: str | None = None,
+    ) -> ChatResult:
+        try:
+            outcome = await self.pool.execute(
+                self.profile_name,
+                lambda lease: self.provider_for_lease(lease).generate_stream(
+                    messages,
+                    on_text=on_text,
                     temperature=temperature,
                     max_tokens=max_tokens,
                     reasoning_effort=reasoning_effort,

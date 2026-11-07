@@ -99,7 +99,7 @@ class ControlPlaneHealthBotDouble:
     def __init__(self) -> None:
         self.session = SimpleNamespace(close=self.close)
 
-    async def set_my_commands(self, commands: Any) -> None:
+    async def delete_my_commands(self) -> None:
         return None
 
     async def set_webhook(self, *args: Any, **kwargs: Any) -> bool:
@@ -755,9 +755,7 @@ def test_admin_alert_delivery_is_started_but_is_not_a_critical_health_dependency
     context.settings.webhook_url = "https://control.example.test/telegram/webhook"
     context.settings.webhook_secret = "phase-five-webhook-secret"  # noqa: S105
     app = create_webhook_app(
-        context,
-        bot=cast(Bot, ControlPlaneHealthBotDouble()),
-        dispatcher=cast(Dispatcher, SimpleNamespace()),
+        context, bot=cast(Bot, ControlPlaneHealthBotDouble()), dispatcher=Dispatcher()
     )
 
     with TestClient(app) as client:

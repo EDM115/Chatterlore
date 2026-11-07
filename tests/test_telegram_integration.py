@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import re
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
+from html import unescape
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -9,7 +11,7 @@ import pytest
 from aiogram import Bot, Dispatcher
 from aiogram.client.session.base import BaseSession
 from aiogram.exceptions import TelegramAPIError, TelegramRetryAfter
-from aiogram.methods import SendDocument, SendMessage, TelegramMethod
+from aiogram.methods import SendDocument, SendRichMessage, SetWebhook, TelegramMethod
 from aiogram.types import BufferedInputFile, Update
 from aiogram.types import Message as TelegramMessage
 from fastapi.testclient import TestClient
@@ -73,9 +75,9 @@ class RecordingTelegramSession(BaseSession):
             return [
                 SimpleNamespace(user=SimpleNamespace(id=user_id)) for user_id in self.chat_admin_ids
             ]
-        if api_method in {"setWebhook", "deleteWebhook", "setMyCommands"}:
+        if api_method in {"setWebhook", "deleteWebhook", "deleteMyCommands"}:
             return True
-        if api_method in {"sendMessage", "sendDocument"}:
+        if api_method in {"sendMessage", "sendRichMessage", "sendDocument"}:
             text = getattr(method, "text", None) or getattr(method, "caption", None) or ""
             return SimpleNamespace(
                 message_id=9000 + len(self.calls),
@@ -99,11 +101,19 @@ class RecordingTelegramSession(BaseSession):
         return [method.__api_method__ for method in self.calls]
 
     def sent_texts(self) -> list[str]:
-        return [
-            str(getattr(method, "text", ""))
-            for method in self.calls
-            if method.__api_method__ == "sendMessage"
-        ]
+        texts = []
+        for method in self.calls:
+            if method.__api_method__ == "sendMessage":
+                texts.append(str(getattr(method, "text", "")))
+            elif isinstance(method, SendRichMessage):
+                rich = method.rich_message
+                if rich.blocks:
+                    texts.append(
+                        "\n".join(str(getattr(block, "text", "")) for block in rich.blocks)
+                    )
+                else:
+                    texts.append(unescape(re.sub(r"<[^>]+>", "", rich.html or "")).strip())
+        return texts
 
 
 class EnrollmentTelegramSession(RecordingTelegramSession):
@@ -411,8 +421,10 @@ class RaisingTelegramMessage:
     message_thread_id = 77
     message_id = 42
 
-    async def answer(self, text: str, **kwargs: Any) -> None:
-        raise TelegramRetryAfter(SendMessage(chat_id=self.chat.id, text=text), "retry later", 3)
+    async def answer_rich(self, rich_message: Any, **kwargs: Any) -> None:
+        raise TelegramRetryAfter(
+            SendRichMessage(chat_id=self.chat.id, rich_message=rich_message), "retry later", 3
+        )
 
     async def answer_document(
         self, *, document: BufferedInputFile, caption: str | None = None, **kwargs: Any
@@ -431,8 +443,8 @@ class FakePollingBot:
         self.events.append(f"delete_webhook:{drop_pending_updates}")
         return True
 
-    async def set_my_commands(self, commands: Any) -> None:
-        self.events.append("set_my_commands")
+    async def delete_my_commands(self) -> None:
+        self.events.append("delete_my_commands")
 
     async def close(self) -> None:
         self.events.append("close")
@@ -571,7 +583,7 @@ async def test_dispatcher_feeds_command_and_normal_message_updates(context: AppC
     stats = await context.memory.stats()
     assert stats["messages"] == 1
     assert stats["learned"] == 1
-    assert "sendMessage" in session.call_names()
+    assert "sendRichMessage" in session.call_names()
     assert "getChatAdministrators" in session.call_names()
 
 
@@ -589,7 +601,7 @@ async def test_bot_api_mock_records_admin_document_and_delete_webhook(context: A
 
     names = session.call_names()
     assert "getChatAdministrators" in names
-    assert "sendMessage" in names
+    assert "sendRichMessage" in names
     assert "sendDocument" in names
     assert "deleteWebhook" in names
 
@@ -608,7 +620,10 @@ def test_webhook_accepts_valid_update_and_invokes_dispatcher(context: AppContext
 
     assert response.status_code == 200
     assert response.json() == {"ok": True}
-    assert {"setMyCommands", "setWebhook", "sendMessage"}.issubset(set(session.call_names()))
+    webhook_call = next(method for method in session.calls if isinstance(method, SetWebhook))
+    assert webhook_call.allowed_updates == ["message", "stopped_message_generation"]
+    assert {"deleteMyCommands", "setWebhook", "sendRichMessage"}.issubset(set(session.call_names()))
+    assert "setMyCommands" not in session.call_names()
 
 
 @pytest.mark.asyncio
@@ -644,7 +659,7 @@ async def test_polling_deletes_webhook_before_starting_and_uses_router(
     assert events == [
         "build_dispatcher",
         "delete_webhook:False",
-        "set_my_commands",
+        "delete_my_commands",
         "start_polling",
         "stop_task:idle",
         "stop_task:settings",
@@ -672,7 +687,7 @@ async def test_all_commands_have_success_dispatch_paths(
         message_update(command_for(command_name), update_id=100, message_id=100, user_id=111),
     )
 
-    assert {"sendMessage", "sendDocument"}.intersection(session.call_names())
+    assert {"sendRichMessage", "sendDocument"}.intersection(session.call_names())
     if command_name == "embedding_index":
         assert all("Index request rejected" not in text for text in session.sent_texts())
 
@@ -1210,13 +1225,13 @@ async def test_chat_shared_update_completes_the_matching_control_plane_enrollmen
 @pytest.mark.asyncio
 async def test_telegram_rate_limit_does_not_crash_dispatch(context: AppContext) -> None:
     session = RecordingTelegramSession()
-    session.retry_after_methods["sendMessage"] = 3
+    session.retry_after_methods["sendRichMessage"] = 3
     bot = Bot(context.settings.telegram_bot_token, session=session)
     dispatcher = build_dispatcher(context)
 
     await feed(dispatcher, bot, message_update("/help", update_id=500, message_id=500, user_id=111))
 
-    assert "sendMessage" in session.call_names()
+    assert "sendRichMessage" in session.call_names()
 
 
 @pytest.mark.asyncio

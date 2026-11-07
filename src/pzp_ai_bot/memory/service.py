@@ -10,7 +10,12 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from pzp_ai_bot.ai.factory import ProviderRegistry, ProviderSelection
-from pzp_ai_bot.ai.protocols import ChatMessage, ChatProvider, EmbeddingProvider
+from pzp_ai_bot.ai.protocols import (
+    ChatMessage,
+    ChatProgressCallback,
+    ChatProvider,
+    EmbeddingProvider,
+)
 from pzp_ai_bot.config import Settings
 from pzp_ai_bot.db.repositories import (
     AIUsageStats,
@@ -636,10 +641,16 @@ class MemoryService:
         top_k: int | None = None,
         profile_name: str | None = None,
         ai_options: AIRequestOptions | None = None,
+        on_text: ChatProgressCallback | None = None,
     ) -> str:
         await self._refresh_provider_profiles()
         return await self._retrieval_service.ask(
-            scope, question, top_k=top_k, profile_name=profile_name, ai_options=ai_options
+            scope,
+            question,
+            top_k=top_k,
+            profile_name=profile_name,
+            ai_options=ai_options,
+            on_text=on_text,
         )
 
     async def ask_with_metadata(
@@ -650,10 +661,16 @@ class MemoryService:
         top_k: int | None = None,
         profile_name: str | None = None,
         ai_options: AIRequestOptions | None = None,
+        on_text: ChatProgressCallback | None = None,
     ) -> AskExecutionResult:
         await self._refresh_provider_profiles()
         return await self._retrieval_service.ask_with_metadata(
-            scope, question, top_k=top_k, profile_name=profile_name, ai_options=ai_options
+            scope,
+            question,
+            top_k=top_k,
+            profile_name=profile_name,
+            ai_options=ai_options,
+            on_text=on_text,
         )
 
     async def search(

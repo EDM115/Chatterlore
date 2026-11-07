@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from pzp_ai_bot.ai.factory import ProviderSelection
-from pzp_ai_bot.ai.protocols import ChatMessage
+from pzp_ai_bot.ai.protocols import ChatMessage, ChatProgressCallback
 from pzp_ai_bot.config import Settings
 from pzp_ai_bot.db.repos.embedding_indexes import EmbeddingIndexRepository
 from pzp_ai_bot.db.repos.embeddings import EmbeddingRepository
@@ -59,6 +59,7 @@ class AskExecutionResult:
     answer: str
     insufficient_context: bool
     elapsed_ms: int
+    generation_interrupted: bool = False
 
 
 class EmbeddingCoverageRequiredError(ValueError):
@@ -99,10 +100,16 @@ class MemoryRetrievalService:
         top_k: int | None = None,
         profile_name: str | None = None,
         ai_options: AIRequestOptions | None = None,
+        on_text: ChatProgressCallback | None = None,
     ) -> str:
         return (
             await self.ask_with_metadata(
-                scope, question, top_k=top_k, profile_name=profile_name, ai_options=ai_options
+                scope,
+                question,
+                top_k=top_k,
+                profile_name=profile_name,
+                ai_options=ai_options,
+                on_text=on_text,
             )
         ).answer
 
@@ -114,6 +121,7 @@ class MemoryRetrievalService:
         top_k: int | None = None,
         profile_name: str | None = None,
         ai_options: AIRequestOptions | None = None,
+        on_text: ChatProgressCallback | None = None,
     ) -> AskExecutionResult:
         started = time.perf_counter()
         scope_settings = await self.settings_profiles.get_scope_settings(scope)
@@ -188,10 +196,15 @@ class MemoryRetrievalService:
             temperature=0.1,
             max_tokens=700,
             reasoning_effort=reasoning_level,
+            on_text=on_text,
         )
         content = (
             execution.result.content if execution.result is not None else fallback_answer(results)
         )
+        if execution.stream_interrupted:
+            content = (
+                "Generation was interrupted. No completed answer was produced. Please try again."
+            )
         async with session_scope(self.session_factory) as session:
             await self.provider_operations.add_usage(session, execution.telemetry)
         return AskExecutionResult(
@@ -200,9 +213,12 @@ class MemoryRetrievalService:
             memory_profile=profile_name,
             selection=query_selection,
             results=tuple(results),
-            answer=append_answer_sources(content, results),
+            answer=content
+            if execution.stream_interrupted
+            else append_answer_sources(content, results),
             insufficient_context=False,
             elapsed_ms=int((time.perf_counter() - started) * 1000),
+            generation_interrupted=execution.stream_interrupted,
         )
 
     async def search(

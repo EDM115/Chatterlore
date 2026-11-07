@@ -409,8 +409,8 @@ class RecordingTelegramBot:
             raise AssertionError(f"offline development contacted Telegram through {name}")
         self.calls.append((name, value))
 
-    async def set_my_commands(self, commands: Any) -> None:
-        self._record("set_my_commands", commands)
+    async def delete_my_commands(self) -> None:
+        self._record("delete_my_commands", None)
 
     async def set_webhook(self, url: str, **kwargs: Any) -> bool:
         self._record("set_webhook", {"url": url, **kwargs})
@@ -428,6 +428,12 @@ class RecordingDispatcher:
         assert bot is not None
         assert update is not None
         self.updates += 1
+
+    def resolve_used_update_types(self) -> list[str]:
+        return ["message", "stopped_message_generation"]
+
+    async def emit_shutdown(self, **kwargs: Any) -> None:
+        return None
 
 
 def test_offline_development_runtime_performs_zero_telegram_calls_and_is_healthy(
@@ -531,8 +537,13 @@ def test_connected_development_registers_real_webhook_and_optional_alert_deliver
     assert health.status_code == 200
     assert "pzp-admin-alert-delivery" not in health.json()["tasks"]
     assert rejected.status_code == 401
-    assert [name for name, _ in bot.calls] == ["set_my_commands", "set_webhook"]
+    assert [name for name, _ in bot.calls] == ["delete_my_commands", "set_webhook"]
     assert bot.calls[1] == (
         "set_webhook",
-        {"url": webhook_url, "secret_token": webhook_secret, "drop_pending_updates": False},
+        {
+            "url": webhook_url,
+            "secret_token": webhook_secret,
+            "drop_pending_updates": False,
+            "allowed_updates": ["message", "stopped_message_generation"],
+        },
     )

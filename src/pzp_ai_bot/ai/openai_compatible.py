@@ -7,12 +7,21 @@ from dataclasses import dataclass
 from typing import Any, cast
 from urllib.parse import urlsplit
 
+import structlog
 from openai import AsyncOpenAI, DefaultAsyncHttpxClient
 from openai.types.chat import ChatCompletionMessageParam
 
-from pzp_ai_bot.ai.protocols import ChatMessage, ChatResult
+from pzp_ai_bot.ai.protocols import (
+    ChatMessage,
+    ChatProgressCallback,
+    ChatResult,
+    ChatStreamInterruptedError,
+)
 from pzp_ai_bot.ai.provider_call_policy import OpaqueCredentialLease, ProviderCallPolicy
 from pzp_ai_bot.ai.redaction import redact_text
+
+logger = structlog.get_logger(__name__)
+CHAT_STREAM_TIMEOUT_SECONDS = 120.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,14 +88,14 @@ class OpenAICompatibleProvider:
             attempts=retry_attempts, backoff_seconds=retry_backoff_seconds
         )
 
-    async def generate(
+    def _chat_request(
         self,
         messages: Sequence[ChatMessage],
         *,
         temperature: float = 0.2,
         max_tokens: int = 700,
         reasoning_effort: str | None = None,
-    ) -> ChatResult:
+    ) -> dict[str, Any]:
         payload = [
             cast(
                 ChatCompletionMessageParam,
@@ -117,6 +126,22 @@ class OpenAICompatibleProvider:
                 request["reasoning_effort"] = reasoning_effort
         else:
             request["temperature"] = temperature
+        return request
+
+    async def generate(
+        self,
+        messages: Sequence[ChatMessage],
+        *,
+        temperature: float = 0.2,
+        max_tokens: int = 700,
+        reasoning_effort: str | None = None,
+    ) -> ChatResult:
+        request = self._chat_request(
+            messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            reasoning_effort=reasoning_effort,
+        )
         outcome = await self._execute(lambda: self.client.chat.completions.create(**request))
         response = outcome.value
         content = response.choices[0].message.content or ""
@@ -127,6 +152,79 @@ class OpenAICompatibleProvider:
             prompt_tokens=usage.prompt_tokens if usage else None,
             completion_tokens=usage.completion_tokens if usage else None,
         )
+
+    async def generate_stream(
+        self,
+        messages: Sequence[ChatMessage],
+        *,
+        on_text: ChatProgressCallback,
+        temperature: float = 0.2,
+        max_tokens: int = 700,
+        reasoning_effort: str | None = None,
+    ) -> ChatResult:
+        request = self._chat_request(
+            messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            reasoning_effort=reasoning_effort,
+        )
+        request["stream"] = True
+        if self.api_dialect == "openai":
+            request["stream_options"] = {"include_usage": True}
+
+        async def consume() -> ChatResult:
+            stream = await self.client.chat.completions.create(**request)
+            content = ""
+            usage = None
+            finished = False
+            cancelled = False
+            try:
+                async for chunk in stream:
+                    if chunk.usage is not None:
+                        usage = chunk.usage
+                    for choice in chunk.choices:
+                        if choice.index != 0:
+                            continue
+                        if choice.finish_reason is not None:
+                            finished = True
+                        delta = choice.delta.content
+                        if isinstance(delta, str) and delta:
+                            if len(content) + len(delta) > 32768:
+                                raise ChatStreamInterruptedError("stream response limit exceeded")
+                            content += delta
+                            await on_text(content)
+                if not finished:
+                    raise ChatStreamInterruptedError("stream ended before completion")
+            except asyncio.CancelledError:
+                cancelled = True
+                raise
+            except Exception as exc:
+                if content:
+                    raise ChatStreamInterruptedError("stream interrupted after content") from exc
+                raise
+            finally:
+                try:
+                    await stream.close()
+                except Exception as close_error:
+                    if cancelled:
+                        logger.warning(
+                            "cancelled_stream_close_failed", error_type=type(close_error).__name__
+                        )
+                    elif content:
+                        raise ChatStreamInterruptedError(
+                            "stream cleanup failed after content"
+                        ) from close_error
+                    else:
+                        raise
+            return ChatResult(
+                content=content,
+                model=self.model,
+                prompt_tokens=usage.prompt_tokens if usage else None,
+                completion_tokens=usage.completion_tokens if usage else None,
+            )
+
+        async with asyncio.timeout(CHAT_STREAM_TIMEOUT_SECONDS):
+            return (await self._execute(consume)).value
 
     async def embed(self, texts: Sequence[str]) -> list[list[float]]:
         if not self.embedding_model:
