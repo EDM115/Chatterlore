@@ -134,7 +134,7 @@ class InsightRepository:
             select(
                 func.date(Message.created_at),
                 func.count(Message.id),
-                func.sum(cast(Message.learned, Integer)),
+                func.sum(cast(Message.learned, Integer())),
             )
             .where(Message.created_at >= cutoff)
             .group_by(func.date(Message.created_at))

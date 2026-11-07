@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { components } from "../types/openapi";
+import type { components } from "~/types/openapi";
 
 definePageMeta({ middleware: "auth" });
 

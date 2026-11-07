@@ -1,6 +1,6 @@
 # Combined Control-Plane Development Mode Design
 
-**Status:** Approved for implementation on 2026-08-01; not yet implemented.
+**Status:** Implemented and locally accepted on 2026-08-01, see the [completed execution plan](../plans/2026-08-01-control-plane-development-mode.md). This dated design records the original decision, current setup and release status live in `docs/setup.md`, `docs/testing.md` and `PLAN.md`.
 
 **Decision:** Make `pnpm dev` launch a loopback Nuxt development server and a dedicated FastAPI control-plane development runtime with backend-selected mock identity, while optionally enabling the real Telegram webhook only when a complete webhook configuration is deliberately supplied. Production builds and runtimes retain the existing HTTPS, Telegram OIDC, webhook and secret requirements.
 

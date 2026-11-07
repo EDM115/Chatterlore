@@ -1,7 +1,5 @@
 <script setup lang="ts">
-import type { components } from "../types/openapi";
-import { syncTelegramClosingConfirmation } from "../plugins/telegram.client";
-import { resolveQueryCatalogScope } from "../utils/queryCatalogScope";
+import type { components } from "~/types/openapi";
 
 definePageMeta({ middleware: "auth" });
 useSeoMeta({ title: "Query · PZP AI Control Plane" });

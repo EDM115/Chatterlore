@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import { syncTelegramClosingConfirmation } from "../plugins/telegram.client";
-
 definePageMeta({ middleware: "auth" });
 
 useSeoMeta({ title: "Chats · PZP AI Control Plane" });

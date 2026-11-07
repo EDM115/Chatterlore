@@ -2,6 +2,9 @@ allowBuilds:
   esbuild: true
   vue-demi: false
 
+minimumReleaseAgeExclude:
+  - tailwindcss
+
 peerDependencyRules:
   allowedVersions:
     "@napi-rs/wasm-runtime>@emnapi/core": ">=1.11.1 <3"

@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import type { components } from "../types/openapi";
-import { resolveQueryCatalogScope } from "../utils/queryCatalogScope";
+import type { components } from "~/types/openapi";
 
 definePageMeta({ middleware: "auth" });
 useSeoMeta({ title: "Operations · PZP AI Control Plane" });

@@ -1,4 +1,4 @@
-import type { components } from "../types/openapi";
+import type { components } from "~/types/openapi";
 
 type ManagedChatPage = components["schemas"]["ManagedChatPage"];
 

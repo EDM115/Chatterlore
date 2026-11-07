@@ -1,10 +1,10 @@
 ---
 goal: Secure Telegram-authenticated control plane and resilient provider API-key pools
-version: 1.16
+version: 1.17
 date_created: 2026-07-30
-last_updated: 2026-08-09
+last_updated: 2026-11-07
 owner: PZP-AI
-status: In progress — Phases 1–9 are implemented and locally validated; Phase 10 live and deployment acceptance remains
+status: In progress — implementation and current offline qualification pass, authorization-policy and live release acceptance remain
 tags:
   - feature
   - security
@@ -18,6 +18,8 @@ tags:
 ---
 
 # Introduction
+
+The 2026-11-07 maintenance checkpoint passes the current offline toolchain: 438 Python tests plus 1 live skip on both Python 3.12 and 3.14, 63 Vitest cases, 44 no-retry desktop/mobile Playwright cases, static/schema/migration/SSR/asset gates and real combined offline lifecycle smoke. This is not completion of TASK-081–084, the exact source/runtime ledger and remaining release/policy holds live in [the project review](../docs/project-review-2026-11-07.md#final-maintenance-verification-2026-11-07).
 
 ![Status: In progress](https://img.shields.io/badge/status-In_progress-yellow)
 
@@ -119,7 +121,7 @@ flowchart LR
     TG["Telegram Mini App"] --> EDGE["Caddy public HTTPS origin"]
     BR["Regular browser"] --> EDGE
     EDGE -->|HTML and browser assets| UI["Nuxt SSR presentation service"]
-    EDGE -->|/api, /auth, /telegram/webhook, /health| API["FastAPI webhook runtime"]
+    EDGE -->|/api/control, /auth, /telegram/webhook, /health| API["FastAPI webhook runtime"]
     BR -->|OIDC code + PKCE| OIDC["Telegram OAuth"]
     OIDC -->|code callback through Caddy| API
     API --> AUTH["Session, CSRF and authorization services"]
@@ -133,11 +135,13 @@ flowchart LR
     OUTBOX -->|best effort| DM["Bot-admin Telegram DMs"]
 ```
 
-Caddy is the only public service. It sends `/api`, `/auth`, `/telegram/webhook` and `/health` to the private FastAPI webhook runtime, sends all other paths to the private Nuxt Node service and removes cookies, authorization and CSRF headers before a request can reach Nuxt. The Nuxt development server still proxies the reserved paths to FastAPI so local development preserves same-origin cookie semantics. Nitro never owns authentication, authorization, secrets, provider calls or database access.
+Caddy is the only public service. It sends `/api/control` and `/auth` (including descendants), plus exact `/telegram/webhook` and `/health`, to the private FastAPI webhook runtime, sends all other paths to the private Nuxt Node service and removes cookies, authorization and CSRF headers before a request can reach Nuxt. Nuxt's internal icon API stays local, the development server proxies the same reserved paths to FastAPI. Nitro never owns authentication, authorization, secrets, provider calls or database access.
 
 `create_http_app(context, *, telegram_bot, dispatcher, include_webhook)` remains the FastAPI HTTP composition root. The production Compose topology runs exactly one bot process in webhook mode; the independent Nuxt and Caddy processes do not import the Python application or touch SQLite. `CONTROL_PLANE_ENABLED=false` still preserves bot-only polling/local operation, while an enabled production control plane requires the HTTPS public origin, OIDC bootstrap settings and master-key configuration before secret management or browser login becomes healthy.
 
 ### Identity and authorization matrix
+
+Release hold (2026-11-07 review): this approved matrix's bot-owner-only delegated-admin management differs from the implemented and contract-tested `chat_admin` grant endpoints. Keep the intended policy unresolved until the owner decides, the review does not authorize changing privileges or silently broadening this matrix. See [the exact finding](../docs/project-review-2026-11-07.md#authorization-policy-decision-before-release).
 
 | Capability                        | Unauthenticated | Authenticated non-admin | Telegram/delegated chat admin      | Managed bot admin      | Bootstrap bot admin    |
 | --------------------------------- | --------------- | ----------------------- | ---------------------------------- | ---------------------- | ---------------------- |
@@ -539,10 +543,10 @@ Phase 9 final implementation evidence:
 | TASK-078 | Run adversarial auth/authorization tests for forged/stale/future/replayed Mini App data, OIDC state/code/nonce replay, wrong issuer/audience/algorithm/key, CSRF, cross-origin requests, cookie flags, session fixation/account switch and revoked admins.                                                                                    | DONE      | 2026-08-09 |
 | TASK-079 | Run adversarial vault/pool tests for ciphertext/wrapped-key/AAD tampering, wrong/rotated master keys, reveal logging/cache leakage, ten-key exhaustion, invalid-request non-rotation, quota/rate/transport/server classification, concurrent rotation and alert failure.                                                                      | DONE      | 2026-08-09 |
 | TASK-080 | Run Playwright at desktop/mobile widths for regular browser OIDC stubs, injected Mini App SDK/initData, bot-admin/scoped-admin navigation, settings conflicts, credential reveal auto-clear, managed-chat lifecycle, query, memory and exports.                                                                                               | DONE      | 2026-08-09 |
-| TASK-081 | Run bot/frontend image builds plus the Caddy/webhook/Nuxt SSR Compose stack with doctor, migration, reserved-route/header-removal, readiness, non-root filesystem, TLS, independent replacement and restart-persistent sessions/pool state; keep polling a separate bot-only smoke.                                                   |           |      |
-| TASK-082 | Run live Telegram acceptance with the real Main Mini App/menu button, fresh Mini App login, regular-browser OIDC, account switch, scoped/native/delegated admin denial/allow, `requestChat` or fallback enrollment and sanitized DM alert delivery where Telegram permits.                                                                    |           |      |
-| TASK-083 | Run live provider acceptance with two disposable keys in one profile: healthy stickiness, forced safe authentication failure, rotation, DM alert, manual recovery and continued chat/embedding behavior using `gpt-5.6-terra` at `medium` reasoning plus the configured OpenAI embedding model; revoke disposable credentials after the test. |           |      |
-| TASK-084 | Update all canonical docs, `PLAN.md` status/version/changelog, this plan and `plans/README.md` with exact test/live/deployment evidence; mark DONE only when every done criterion and release gate below is satisfied.                                                                                                                        | PARTIAL   | 2026-08-02 |
+| TASK-081 | Run bot/frontend image builds plus the Caddy/webhook/Nuxt SSR Compose stack with doctor, migration, reserved-route/header-removal, readiness, non-root filesystem, TLS, independent replacement and restart-persistent sessions/pool state; keep polling a separate bot-only smoke.                                                   | PARTIAL | 2026-11-07 review |
+| TASK-082 | Run live Telegram acceptance with the real Main Mini App/menu button, fresh Mini App login, regular-browser OIDC, account switch, scoped/native/delegated admin denial/allow, `requestChat` or fallback enrollment and sanitized DM alert delivery where Telegram permits.                                                                    | PARTIAL | 2026-11-07 review |
+| TASK-083 | Run live provider acceptance with two disposable keys in one profile: healthy stickiness, forced safe authentication failure, rotation, DM alert, manual recovery and continued chat/embedding behavior using `gpt-5.6-terra` at `medium` reasoning plus the configured OpenAI embedding model; revoke disposable credentials after the test. | TODO | 2026-11-07 review |
+| TASK-084 | Update all canonical docs, `PLAN.md` status/version/changelog, this plan and `plans/README.md` with exact test/live/deployment evidence; mark DONE only when every done criterion and release gate below is satisfied.                                                                                                                        | PARTIAL | 2026-11-07 review |
 
 Phase 10 contract checkpoint evidence (2026-08-09):
 - The four strict OpenAPI contract xfails are removed and now pass as ordinary tests. The reviewed matrix exactly matches the 58 landed operations/capabilities; bounded `/chats` cursor pages, safe Mini App `422` envelopes, safe rate-limit declarations and version/audit contracts for runtime settings, scoped settings and managed-chat status are implemented rather than masked in the schema.
@@ -569,12 +573,12 @@ Phase 10 contract checkpoint evidence (2026-08-09):
 - **DEP-001**: Telegram BotFather configuration for Web Login client ID/secret, exact HTTPS allowed origin/callback and Main Mini App or menu-button URL.
 - **DEP-002**: Telegram OIDC discovery, authorization, token and JWKS endpoints at the documented `oauth.telegram.org` URLs.
 - **DEP-003**: Telegram Mini App Web App script and signed `initData` contract, plus Bot API/aiogram support or a tested fallback for `savePreparedKeyboardButton` and `requestChat`.
-- **DEP-004**: Nuxt `4.5.1`, Vue `3.5.40`, Vue Router `5.2.0`, TypeScript `6.0.3`, Nuxt UI `4.10.0` and Tailwind CSS `4.3.3`, pinned to the reviewed stable releases compatible with Node.js `24.18.0` LTS.
-- **DEP-005**: pnpm `11.18.0` and a committed frozen `pnpm-lock.yaml`; local Windows execution uses the configured PATH/fnm pnpm executable when necessary.
-- **DEP-006**: `cryptography==49.0.0` for AES-GCM, HKDF and asymmetric JWT primitives, pinned through uv and used by the Phase 3 authentication boundary plus the Phase 4 provider vault.
-- **DEP-007**: `PyJWT[crypto]==2.13.0`, pinned through uv as the single JWT/JWKS validation stack.
+- **DEP-004**: Current frontend declarations are Nuxt `~4.6.4`, Vue `~3.5.45`, Vue Router `~5.4.0`, Nuxt UI `~4.12.0`, Tailwind `~4.3.5` and the existing TypeScript 6 alias, with Node major `26` and actual resolutions in the committed pnpm lock. Older checkpoint versions below are historical
+- **DEP-005**: pnpm `11.28.11` and a committed frozen `pnpm-lock.yaml`, latest uv in CI/Docker and standalone installers follow the owner's November policy. Regenerate locks with their package managers, never by hand
+- **DEP-006**: Lockfile-resolved `cryptography==50.0.2` provides AES-GCM, HKDF and asymmetric primitives for the PKCE/vault boundaries, compare future upgrades with the Python dependency review
+- **DEP-007**: Lockfile-resolved `PyJWT[crypto]==2.15.1` is the fixed-RS256 JWT/JWK stack
 - **DEP-008**: Existing `httpx` for OIDC discovery/token/JWKS calls with bounded timeouts and mocked offline tests.
-- **DEP-009**: Existing OpenAI Python SDK 2.50.0 exception taxonomy and request behavior, revalidated if the locked version changes before execution.
+- **DEP-009**: Lockfile-resolved OpenAI Python SDK `3.46.0` and its httpx2 transport retain the characterized Chat Completions/embedding/classifier boundary, the new real-SDK MockTransport regression verifies serialization/redaction/vector decoding
 - **DEP-010**: Existing FastAPI/Uvicorn, SQLAlchemy/Alembic, aiogram, `build_context`, `MemoryService`, repository/session patterns and scheduler supervision.
 - **DEP-011**: Existing approved non-Pro GPT-5 model and reasoning allowlists, local MiniLM extra/model cache and provider telemetry/redaction boundaries.
 - **DEP-012**: A stable single public HTTPS origin and reverse proxy for production; preview/live origins must be registered separately in BotFather.
@@ -587,21 +591,21 @@ Phase 10 contract checkpoint evidence (2026-08-09):
 - **FILE-004**: `src/pzp_ai_bot/config.py` and `.env.example` — safe control-plane/OIDC/master-key/session settings without secret output.
 - **FILE-005**: `src/pzp_ai_bot/app_context.py` — construction of auth, provider-profile/pool, alert and control-plane services through the existing composition root.
 - **FILE-006**: `src/pzp_ai_bot/control_plane/app.py`, `schemas.py`, `middleware.py` — FastAPI composition, typed contracts and security middleware; FastAPI does not serve Nuxt output.
-- **FILE-007**: `src/pzp_ai_bot/control_plane/auth/mini_app.py`, `oidc.py`, `sessions.py`, `authorization.py` — isolated Telegram auth, sessions, CSRF and capabilities.
+- **FILE-007**: `src/pzp_ai_bot/control_plane/auth/mini_app.py`, `auth/oidc.py`, `auth/sessions.py`, `auth/transactions.py` and `control_plane/authorization.py` — isolated Telegram auth, sessions, CSRF and capabilities
 - **FILE-008**: `src/pzp_ai_bot/control_plane/secrets/crypto.py`, `service.py` — envelope encryption, reveal, fingerprint and master rewrap.
-- **FILE-009**: `src/pzp_ai_bot/control_plane/api/auth.py`, `bot_settings.py`, `providers.py`, `chats.py`, `query.py`, `memory.py`, `stats.py`, `audit.py`, `operations.py`, `alerts.py` — bounded versioned HTTP routes.
+- **FILE-009**: `src/pzp_ai_bot/control_plane/app.py` currently owns bounded versioned routes, service modules own their business behavior. The originally proposed `control_plane/api/*.py` route-family extraction was deferred and those files do not exist, do not treat this debt as missing functionality
 - **FILE-010**: `src/pzp_ai_bot/ai/factory.py`, `openai_compatible.py`, new `credential_pool.py`, `failure_classification.py` — dynamic managed profiles, pool selection, retry and safe classification.
 - **FILE-011**: `src/pzp_ai_bot/telegram/admin.py`, `dispatcher.py`, `polling.py`, `webhook.py`, `scheduler.py`, `commands.py` and relevant routers — shared admin model, HTTP lifecycle, enrollment updates and optional UI launch command/button.
 - **FILE-012**: `src/pzp_ai_bot/memory/contracts.py`, `service.py`, `retrieval_service.py`, `settings_profiles.py`, `provider_operations.py` — only the minimal shared provider-selection/settings/query extensions required by the control API.
 - **FILE-013**: `src/pzp_ai_bot/db/models.py`, `db/repos/control_plane.py`, `db/repos/provider_credentials.py`, `db/repos/alerts.py`, `db/repositories.py` — new models/repositories plus compatibility exports where required.
 - **FILE-014**: `alembic/versions/0013_control_plane_identity_access.py`, `0014_provider_credential_pools.py`, `0015_admin_alert_outbox.py`, `0016_managed_chat_enrollment_requests.py`, `0017_scope_settings_versions.py` — schema revisions and indexes.
 - **FILE-015**: `src/pzp_ai_bot/main.py` — secret status/rewrap commands and safe control-plane doctor/config output.
-- **FILE-016**: `web/nuxt.config.ts`, `web/app.vue`, `web/app.config.ts`, `web/app/assets/css/main.css`, `web/server/middleware/security-headers.ts` — Nuxt SSR build, Nuxt UI theme, Mini App/browser shell and document-security boundary.
+- **FILE-016**: `web/nuxt.config.ts`, `web/app/app.vue`, `web/app/app.config.ts`, `web/app/assets/css/main.css`, `web/server/middleware/security-headers.ts` — Nuxt SSR build, Nuxt UI theme, Mini App/browser shell and document-security boundary
 - **FILE-017**: `web/app/plugins/telegram.client.ts`, `web/app/composables/useControlApi.ts`, `useControlSession.ts`, `useControlFeedback.ts`, `useSensitiveReveal.ts` and route middleware — auth bootstrap, same-origin API/CSRF, capability navigation, shared feedback and reveal lifecycle.
 - **FILE-018**: `web/app/pages/index.vue`, `bot-settings.vue`, `providers.vue`, `chats.vue`, `query.vue`, `memory.vue`, `stats.vue`, `audit.vue`, `operations.vue`, `login.vue` — requested control-plane pages.
 - **FILE-019**: `web/app/components/` — focused dashboard, setting, provider-key, chat, query, memory, stats and confirmation components.
 - **FILE-020**: `web/app/types/openapi.d.ts` and schema-generation scripts — generated backend contract.
-- **FILE-021**: `tests/test_control_plane_auth.py`, `test_control_plane_authorization.py`, `test_control_plane_api.py` — Python auth/RBAC/API contract tests.
+- **FILE-021**: `tests/test_control_plane_identity.py`, `test_control_plane_mini_app.py`, `test_control_plane_oidc.py`, `test_control_plane_sessions.py`, `test_control_plane_authorization.py`, `test_control_plane_api.py` and `test_control_plane_contract.py` — ordinary Python auth/RBAC/API contract regressions
 - **FILE-022**: `tests/test_secret_vault.py`, `test_provider_key_pool.py`, `test_admin_alerts.py` — encryption, rotation, classification, concurrency and DM tests.
 - **FILE-023**: `tests/test_webhook.py`, `test_operations.py`, `test_deployment_artifacts.py`, `test_ai_providers.py`, `test_memory_service.py`, `test_telegram_integration.py` — affected regression suites.
 - **FILE-024**: `web/test/` and `web/e2e/` — Nuxt unit/component and Playwright browser/Mini App tests.
@@ -642,7 +646,7 @@ Phase 10 contract checkpoint evidence (2026-08-09):
 - Gate B — Provider resilience: classifier, concurrency, sticky rotation, telemetry, outbox/DM failure and controlled exhaustion suites pass; one real two-key rotation is accepted.
 - Gate C — Control-plane product: every requested settings, admins, chats, query, stats, memory, export, audit and operations page passes Python contract plus Nuxt component/Playwright coverage.
 - Gate D — Runtime and deployment: bot-only polling remains available for local/manual operation, the production webhook bot and Nuxt SSR services remain private behind Caddy, Docker/Compose/routing/health/migration/independent-replacement checks pass and production HTTPS/BotFather/master-key configuration is documented.
-- Gate E — Final acceptance: full `uv run ruff format --check .`, `uv run ruff check .`, `uv run ty check`, branch-coverage pytest, frozen frontend format/lint/typecheck/tests/build/asset-scan/SSR-smoke/Playwright gates, Docker smoke and live Telegram/OIDC/provider gates are recorded with exact results.
+- Gate E — Final acceptance: full `uv run ruff format --check .`, `uv run ruff check .`, `uv run ty check`, plain pytest without coverage instrumentation, frozen frontend format/lint/typecheck/tests/build/asset-scan/SSR-smoke/Playwright gates, Docker smoke and live Telegram/OIDC/provider gates are recorded with exact source/runtime results, then the owner manually dispatches hosted CI on the final pushed snapshot
 
 ### Done criteria
 

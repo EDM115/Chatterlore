@@ -2,7 +2,7 @@ import { clearNuxtState, useState } from "#app";
 import { mountSuspended } from "@nuxt/test-utils/runtime";
 import { flushPromises } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import ProviderCredentialSecret from "../app/components/ProviderCredentialSecret.vue";
+import ProviderCredentialSecret from "~/components/ProviderCredentialSecret.vue";
 
 const credential = {
   id: 42,

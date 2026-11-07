@@ -1,8 +1,8 @@
 import { clearNuxtState, useState } from "#app";
 import { mountSuspended } from "@nuxt/test-utils/runtime";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import ControlPlaneShell from "../app/components/ControlPlaneShell.vue";
-import DashboardPage from "../app/pages/index.vue";
+import ControlPlaneShell from "~/components/ControlPlaneShell.vue";
+import DashboardPage from "~/pages/index.vue";
 
 const session = {
   user: {

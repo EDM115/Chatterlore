@@ -1,10 +1,28 @@
 from __future__ import annotations
 
+import http.client
 from typing import Any
+
+import pytest
 
 from pzp_ai_bot.app_context import AppContext
 from pzp_ai_bot.control_plane.app import create_control_plane_schema_app
 from pzp_ai_bot.telegram.webhook import create_webhook_app
+
+
+def test_openapi_validation_descriptions_do_not_depend_on_python_status_phrases(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(http.client.responses, 422, "Interpreter-specific status phrase")
+    schema = create_control_plane_schema_app().openapi()
+    descriptions = {
+        operation["responses"]["422"]["description"]
+        for path in schema["paths"].values()
+        for operation in path.values()
+        if "422" in operation.get("responses", {})
+    }
+    assert descriptions == {"Unprocessable Content", "Validation Error"}
+
 
 AUTHORIZATION_MATRIX = {
     ("get", "/auth/telegram/start"): "public_oidc",

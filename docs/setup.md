@@ -4,9 +4,9 @@ This guide gets a local PZP AI instance ready for development, offline verificat
 
 ## Requirements
 
-- Python 3.12
+- Python 3.12 or newer (CI and the bot image use 3.12, the current offline suite is also verified on the existing 3.14 development environment)
 - [uv](https://docs.astral.sh/uv/) for dependency management and command execution
-- pnpm 11.18.0 for control-plane frontend development; `web/package.json` makes pnpm download and use the exact Node.js 24.18.0 runtime
+- pnpm 11.28.11 for control-plane frontend development, `web/package.json` declares Node.js major 26 and pnpm provisions the lockfile-resolved runtime (currently 26.13.0)
 - A Telegram bot token from BotFather for live Telegram use
 - Docker Desktop if you want to run the container smoke checks
 
@@ -51,7 +51,7 @@ Nuxt development proxies `/api/control`, `/auth`, `/telegram/webhook` and `/heal
 
 To opt into real Telegram connectivity during combined development, configure a complete non-placeholder `TELEGRAM_BOT_TOKEN`, HTTPS `WEBHOOK_URL` and `WEBHOOK_SECRET`. Connected mode deliberately registers commands, calls `setWebhook`, exposes `/telegram/webhook` and starts best-effort bot-admin DM alert delivery. The webhook must be publicly reachable over HTTPS even though the browser origin remains loopback HTTP, and enabling it changes this bot's Telegram update delivery mode. An incomplete connected configuration fails before any Telegram call.
 
-The protected SSR shell includes browser OIDC, signed Mini App exchange, server-side sessions, capability-driven navigation, bot-admin provider/credential APIs, controlled reveal, classified sticky key-pool failover, reloadless safe runtime settings, managed bot owners and managed-chat/delegated-admin/scoped-policy workflows. Providers, Bot Settings and Chats are available now; query, memory, statistics, audit and broader operations forms remain later Plan 021 phases.
+The protected SSR shell includes browser OIDC, signed Mini App exchange, server-side sessions, capability-driven navigation, bot-admin provider/credential APIs, controlled reveal, classified sticky key-pool failover, reloadless safe runtime settings, managed bot owners and managed-chat/delegated-admin/scoped-policy workflows. Dashboard, Providers, Bot Settings, Chats, Query, Memory, Stats, Audit and Operations are implemented, with bot-wide actions restricted to bot admins and scoped actions checked against current chat/topic authority. Real-client, deployed-runtime and two-key provider acceptance remain release gates, not missing pages.
 
 `BOT_ADMINS` remains the immutable recovery-owner set. A bootstrap owner can add reloadable database-managed bot owners in Bot Settings; removal requires exact-action Telegram step-up, revokes that user's live control-plane sessions and cannot remove a bootstrap owner or the last effective owner. The runtime form accepts only the existing safe setting allowlist and never accepts tokens, vault keys, provider secrets or OIDC configuration.
 

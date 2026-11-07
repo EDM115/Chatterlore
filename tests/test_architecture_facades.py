@@ -343,5 +343,5 @@ def test_registered_telegram_command_names_remain_unique_and_ordered() -> None:
     names = [name for name, _description in COMMAND_DESCRIPTIONS]
 
     assert len(names) == len(set(names))
-    assert names[0:3] == ["ask", "memory_search", "memory_export"]
+    assert names[0:4] == ["start", "ask", "memory_search", "memory_export"]
     assert names[-3:] == ["summarize_now", "forget", "help"]

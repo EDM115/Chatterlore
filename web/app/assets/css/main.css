@@ -20,13 +20,7 @@
   --pzp-content-safe-bottom: var(--tg-content-safe-area-inset-bottom, 0px);
   --pzp-content-safe-left: var(--tg-content-safe-area-inset-left, 0px);
   color-scheme: dark;
-  font-family:
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    sans-serif;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   background: var(--pzp-canvas);
   color: var(--pzp-text);
 }

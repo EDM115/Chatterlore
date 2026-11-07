@@ -29,7 +29,7 @@ PZP AI is a Telegram memory assistant that learns from live group conversations 
 
 ## Quick Start
 
-Prerequisites: Python 3.12, [uv](https://docs.astral.sh/uv/), pnpm 11.18.0 for the Nuxt control plane, and Docker if you want container smoke tests. The frontend package asks pnpm to download and use its exact Node.js 24.18.0 runtime.
+Prerequisites: Python 3.12+, [uv](https://docs.astral.sh/uv/), pnpm 11+ for the Nuxt control plane, and Docker if you want container smoke tests. The frontend declares Node.js major 26+ and lets pnpm provision the runtime resolved in `web/pnpm-lock.yaml`. CI and the Python image intentionally install the latest uv rather than pinning its version.
 
 ```powershell
 uv sync --extra dev --extra local
@@ -85,7 +85,7 @@ The production Compose topology runs the bot in webhook mode behind a dedicated 
 | Prepare a release                       | [Release checklist](docs/release.md)         |
 | Use project logo assets                 | [Branding](docs/branding.md)                 |
 
-The roadmap and implementation history are tracked in [PLAN.md](PLAN.md). The README intentionally stays focused on what the project is, how to try it, and where to go next.
+The roadmap and implementation history are tracked in [PLAN.md](PLAN.md). For the November resumption, start with the [full project review](docs/project-review-2026-11-07.md), [Python dependency audit](docs/dependency-review-python-2026-11-07.md) and [frontend dependency audit](docs/dependency-review-web-2026-11-07.md). Most implementation is complete, but Plan 021 remains partial until deployment, real Telegram/provider, authorization-policy and elapsed-retention acceptance are closed. The README intentionally stays focused on what the project is, how to try it, and where to go next.
 
 ## License And Attribution
 

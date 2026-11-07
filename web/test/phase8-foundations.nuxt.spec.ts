@@ -2,13 +2,10 @@ import { clearNuxtState, useState } from "#app";
 import { mountSuspended } from "@nuxt/test-utils/runtime";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineComponent } from "vue";
-import { controlErrorMessage } from "../app/composables/useControlFeedback";
-import {
-  configureTelegramChrome,
-  syncTelegramClosingConfirmation,
-} from "../app/plugins/telegram.client";
-import { useControlApi } from "../app/composables/useControlApi";
-import LoginPage from "../app/pages/login.vue";
+import { controlErrorMessage } from "~/composables/useControlFeedback";
+import { configureTelegramChrome, syncTelegramClosingConfirmation } from "~/utils/telegramChrome";
+import { useControlApi } from "~/composables/useControlApi";
+import LoginPage from "~/pages/login.vue";
 
 const ApiHarness = defineComponent({
   setup() {

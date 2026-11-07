@@ -1,10 +1,10 @@
 ---
 goal: Telegram Group Memory Assistant PoC v1
-version: 0.49
+version: 0.50
 date_created: 2026-06-16
-last_updated: 2026-08-09
+last_updated: 2026-11-07
 owner: PZP-AI
-status: In progress — Plan 021 Phases 1–9 are implemented and locally validated; Phase 10 live split-deployment, Telegram/provider and recovery acceptance plus elapsed-retention validation remain
+status: In progress — implementation and November offline qualification are complete, authorization-policy and live deployment/Telegram/provider/retention acceptance remain
 tags:
   - telegram
   - ai
@@ -19,7 +19,11 @@ tags:
 ![Status: In progress](https://img.shields.io/badge/status-In%20progress-yellow)  
 This is the living North Star for the Telegram group memory assistant. Keep it updated after every meaningful development pass. It must describe what exists, what is partial, what remains and what must be true before the project can be considered a working v1.  
 The bot learns scoped group memory from live Telegram messages. v1 learning means scoped RAG memory, not model fine-tuning: record allowed messages, summarize durable knowledge, store embeddings, compact Markdown memory and answer questions from the current chat or forum-topic scope by default.  
-The plan version evolves independently of the pyproject version. Whenever we move to a new Phase, we bump the minor of the pyproject, with patch evolving as bugfixes inside that phase arrive. v1 in the pyproject will be reached when all 6 phases are complete.
+The roadmap version evolves independently of the package version. The original six product phases and the added secure-control-plane release gate must all be accepted before v1, package minor/patch versions track implementation passes rather than replacing those gates.
+
+## Current Focus (2026-11-07)
+
+Plans 001–020 have their original implementation work complete, with Plan 016 now deliberately RETIRED. Plan 021's code, complete page family and deterministic acceptance through TASK-080 are not a new feature backlog. The November offline toolchain gate now passes, next resolve delegated-admin grant-management policy and qualify disposable split-runtime deployment, real Telegram/OIDC/client/enrollment, two-key provider/admin-DM, elapsed retention and deployed recovery before closing v1. See the [full review and all-plan matrix](docs/project-review-2026-11-07.md), [Python upgrade review](docs/dependency-review-python-2026-11-07.md) and [frontend upgrade review](docs/dependency-review-web-2026-11-07.md).
 
 ## 1. Product Requirements And Constraints
 
@@ -68,14 +72,14 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 ### Runtime And Packaging
 
 - **DONE**: `pyproject.toml` defines Python 3.12 package `pzp-ai`
-- **DONE**: `uv.lock` exists and CI/Docker consume it immutably with uv 0.12.0 pinned in both build surfaces
+- **DONE**: `uv.lock` exists and CI/Docker consume application dependencies through frozen uv syncs, uv itself deliberately tracks latest in CI and the standalone Docker installer
 - **DONE**: Runtime dependencies include `aiogram`, `fastapi`, `uvicorn[standard]`, `sqlalchemy[asyncio]`, `aiosqlite`, `alembic`, `openai`, `numpy`, `typer`, `rich`, `structlog`, `orjson`, `cryptography` and `PyJWT[crypto]`
-- **DONE**: Dev dependencies include `pytest`, `pytest-asyncio`, `pytest-cov`, `respx`, `freezegun`, `httpx2`, `ruff` and `ty`
+- **DONE**: Dev dependencies include `pytest`, `pytest-asyncio`, `respx`, `freezegun`, `httpx2`, `ruff` and `ty` (coverage instrumentation and pytest-cov were retired on 2026-11-07)
 - **DONE**: Optional local embedding extra includes `sentence-transformers`
 - **DONE**: `pzp-bot` console script points to `pzp_ai_bot.main:app`
 - **DONE**: `.env.example`, `.gitignore`, focused Docker ignores, independent multi-stage non-root bot/frontend Dockerfiles, `Caddyfile`, three-service `docker-compose.yml` and `.github/workflows/ci.yml` exist
 - **DONE**: CI checks lock consistency, performs a frozen development sync, upgrades one isolated runner-temp database and runs `alembic check` against the same schema so dependency or model/history drift fails before later gates
-- **DONE**: CI measures statement and branch coverage, prints missing lines and fails below the conservative 78% floor; the 2026-07-29 starting baseline is 81%
+- **DONE**: CI runs plain offline pytest without coverage instrumentation or a percentage floor, the historically completed Plan 016 is now RETIRED by owner request
 - **DONE**: The 2026-07-30 Plan 020 checkpoint passed whole-project Ruff format/lint and `ty`, a fresh full suite with 228 passed and 1 skipped at 82.43% branch coverage, and empty-database upgrade plus metadata drift checks through revision 0012
 
 ### Source Layout
@@ -91,7 +95,7 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 - **DONE**: `src/pzp_ai_bot/db/` defines async SQLAlchemy models and session helpers; cohesive implementations live in `db/repos/`, and `db/repositories.py` remains a stable compatibility re-export facade
 - **DONE**: `src/pzp_ai_bot/memory/` defines scopes, policy evaluation, vectors and deterministic Markdown projections; `MemoryService` remains the stable `build_context` facade while contracts, transfer, provider operations/telemetry, settings/profiles/templates, retrieval, mutation/reviews/retention and summary/compaction orchestration live in cohesive collaborator modules
 - **DONE**: `src/pzp_ai_bot/telegram/` defines admin checks, utility parsing, polling/webhook runtime and a stable root router that composes characterized command-family builders for learning, operations, settings, retrieval and memory behavior through shared authorization/safe-reply helpers
-- **DONE**: `alembic/versions/0001_initial.py` creates the initial SQLite schema, revisions 0002 through 0006 add the Phase 2-6 data surfaces, `0007_align_telegram_identifier_types.py` aligns persisted Telegram identifiers with the models' `BigInteger` declarations, `0008_message_logical_uniqueness.py` reconciles duplicate logical messages and enforces their SQLite expression index, `0009_summary_claims.py` adds persisted bounded summary-work claims, `0010_remove_cross_scope_can_learn.py` removes the unused cross-scope learning-permission column without changing query permissions, `0011_canonical_scope_snapshots.py` adds validated per-scope canonical derived-cache rows, `0012_telemetry_scope_indexes.py` normalizes usage scope and indexes usage/event query paths, `0013_control_plane_identity_access.py` adds indexed control-plane identity/session/OIDC/admin/managed-chat state, and `0014_provider_credential_pools.py` adds versioned managed provider profiles, encrypted credentials and pool state
+- **DONE**: `alembic/versions/` contains the initial schema and revisions 0002–0017, including identifier alignment (0007), logical uniqueness (0008), summary claims (0009), retrieval-only profile permission (0010), canonical snapshots (0011), telemetry indexes (0012), control-plane identity (0013), encrypted credentials (0014), admin alert outbox (0015), managed-chat enrollment (0016) and optimistic scoped settings (0017)
 - **DONE**: `docs/` contains setup, architecture, command, privacy, deployment, operations, secrets, release and test documentation
 - **DONE**: `tests/` contains offline unit/integration coverage for core behavior
 
@@ -236,7 +240,11 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 - **DONE**: `docs/testing.md` documents offline verification commands
 - **DONE**: Setup, architecture, deployment, secrets and testing docs distinguish frontend-only, combined offline, deliberate connected-Telegram and production modes, including the loopback mock-identity and colocated development-key boundaries
 
-### Current Verification Baseline
+### Verification History (Dated Snapshots)
+
+These checkpoints describe their own historical code/runtime snapshots, not the current dependency update. The 2026-11-07 review and final maintenance verification are tracked separately in [docs/project-review-2026-11-07.md](docs/project-review-2026-11-07.md), with per-package evidence in both dependency reviews.
+
+- **DONE (2026-11-07 current worktree)**: Python 3.12/dev-only and 3.14/dev+local each pass 438 tests with 1 live skip and zero xfails, Ruff/ty/locks/isolated migrations/CLI pass, frontend format/lint/typecheck/OpenAPI plus 63 Vitest and 44 no-retry desktop/mobile browser cases pass, production build/275-asset scan/nonce SSR and real combined offline start/proxy/login/stop smoke pass. Compose configuration validates, image/runtime/real-client/provider/retention and hosted-CI gates remain open, see the linked final evidence ledger for exact snapshot IDs and retained warnings
 
 - **DONE**: `uv sync --extra dev --extra local` passed on 2026-06-24 after plan v0.11
 - **DONE**: `uv run ruff format --check .` passed on 2026-06-24 after plan v0.11
@@ -276,8 +284,8 @@ The plan version evolves independently of the pyproject version. Whenever we mov
 ## 4. Known Partial Implementations
 
 - **PARTIAL**: Disposable-group Telegram command, privacy/admin, learning, summarization, retrieval, settings, export and forget behavior passed live on 2026-07-30; only retention after real elapsed age remains a manual Gate C validation.
-- **PARTIAL**: The former single bot-image Docker topology passed local acceptance on 2026-07-30, but it has been superseded by the unexecuted Caddy/Nuxt SSR/webhook Compose topology; current live Docker build, routing, health, TLS, migration and independent-replacement acceptance remain deferred until the daemon is available.
-- **PARTIAL**: Plan 021 Phases 1 through 9, the approved SSR/Caddy transition, the combined loopback development workflow, the Phase 10 reviewed OpenAPI contract closure, the complete deterministic authentication/authorization/vault/key-pool/classifier/concurrency/alert matrices and the full migration/encrypted-restore matrix are implemented and locally validated through revision `0017_scope_settings_versions`: the revocable browser/Mini App identity boundary, encrypted multi-key provider pools, safe alert outbox, complete bounded/versioned business APIs, every requested Nuxt page and safe runtime diagnostics have landed. Phase 10 still requires browser, split-deployment/BotFather/Telegram/provider/restart acceptance before the plan can be marked DONE.
+- **PARTIAL**: Historical July bot-image acceptance and later notes of non-root split-image builds/partial tunnel progress exist, the November dependency/runtime and installer changes still require fresh image, proxy, TLS, health, independent-replacement and restart qualification. The Docker daemon was unavailable during the November review
+- **PARTIAL**: Plan 021 Phases 1–9, SSR/Caddy development, reviewed contracts, deterministic auth/vault/pool/alerts, every requested page, browser emulation and synthetic migration/encrypted recovery through revision `0017_scope_settings_versions` are implemented with dated August acceptance. Phase 10 remains open for the current toolchain, deployed-runtime recovery, real Telegram/client/OIDC/enrollment, two-key provider/admin-DM and final release closure
 - **DONE**: Managed OpenAI-compatible profiles support up to ten environment/database credentials with sticky healthy selection, bounded same-key retry and one-pass rotation, classified cooldown/hard-disable/recovery, restart/cross-instance-safe persisted state, revision-aware cache invalidation, safe telemetry, controlled exhaustion and deduplicated best-effort current-admin DMs.
 - **DONE**: The Nuxt SSR control plane now includes the safe identity/hydration shell, Dashboard, Providers, Bot Settings, Chats, Query, Memory, Stats, Audit and Operations pages, reusable controlled reveal and shared feedback/session recovery over the complete bounded FastAPI business contracts; Caddy deployment artifacts remain subject to Phase 10 live acceptance.
 
@@ -368,7 +376,7 @@ Goal: make the bot safe to run for a real group over time.
 | TASK-049 | DONE   | Add retention pruning command and policy                     | Admin can prune raw messages older than configured window per scope                                                                                                  |
 | TASK-050 | DONE   | Add secrets handling guidance for deployment                 | Docs cover `.env`, Docker secrets, provider keys and Telegram token rotation                                                                                         |
 | TASK-051 | DONE   | Add Docker runtime verification                              | Docker build, container `doctor`, container migration and compose `doctor` smoke pass locally without starting Telegram polling                                      |
-| TASK-052 | DONE   | Add CI workflow                                              | GitHub Actions runs format, lint, type check, tests, Alembic upgrade, CLI help, doctor and Docker smoke on push and pull request                                     |
+| TASK-052 | DONE | Add CI workflow | Manually dispatched GitHub Actions runs format, lint, type checks, plain tests, isolated migration/drift, CLI, SSR and Docker gates, push/PR auto-triggering is intentionally disabled |
 | TASK-053 | DONE   | Add release checklist and versioning process                 | Releases specify migration state, config changes and manual Telegram smoke tests                                                                                     |
 | TASK-054 | DONE   | Add reloadless runtime settings refresh                      | File/env-backed settings have a validated reload path; long-running polling and webhook runtimes apply non-secret setting changes without process restart where safe |
 | TASK-055 | DONE   | Store editable bot settings in the database                  | Runtime settings that are safe to edit are persisted with schema, validation, defaults, scope overrides, audit events and rollback behavior                          |
@@ -396,7 +404,7 @@ Goal: make the assistant useful to group admins and participants beyond the mini
 
 Goal: add the requested operator experience and remove each provider profile's single-key failure domain without weakening Telegram scope authorization or secret handling.
 
-Plan 021 execution checkpoint: Implementation Phases 1 through 9 (`TASK-001` through `TASK-075`), the Nuxt SSR/Caddy transition and the combined loopback development workflow are DONE and locally validated through 2026-08-02; Phase 10 is the only remaining plan phase. On 2026-08-09 its reviewed OpenAPI contract gate became ordinary passing coverage with bounded chat pagination, safe validation/rate-limit envelopes and atomic version/audit contracts for runtime/scoped settings and managed-chat status; Alembic is now at `0017_scope_settings_versions`. TASK-077 through TASK-079 are DONE: 111 warning-free deterministic authentication/authorization tests, 46 warning-free vault/pool/classifier/concurrency/alert/provider tests and a complete disposable migration/restore matrix now prove strict Mini App percent decoding, fail-closed OIDC/JWKS endpoint and replay scenarios, absolute/action-bound session expiry, every vault identity/metadata tamper class, the hard ten-credential storage/traversal bound, shutdown-clean database fixtures, empty and seeded legacy upgrades, 0017-to-0012-to-0017 round-trip, online encrypted backup, correct-key restore, missing-key fail-closed behavior and recovery. The frontend baseline remains pnpm-managed Node.js `24.18.0`, pnpm `11.18.0`, Nuxt `4.5.1`, Nuxt UI `4.10.0`, TypeScript `6.0.3`, oxlint `1.76.0`, `oxlint-tsgolint` `7.0.2001` and oxfmt `0.61.0`; `cryptography==49.0.0` protects both Phase 3 PKCE transactions and the provider vault while `PyJWT[crypto]==2.13.0` remains the RS256 ID-token verification stack. Browser, live split-Docker/Caddy/TLS, registered real Telegram OIDC/Mini App/requestChat enrollment, authorized provider failover/admin-DM and restart/replacement acceptance remain release gates rather than completed evidence.
+Plan 021 execution checkpoint: TASK-001 through TASK-075 and deterministic TASK-076 through TASK-080 are implemented with dated August acceptance (including ordinary passing contracts, browser emulation and migration/encrypted-restore tests through `0017_scope_settings_versions`). TASK-081 and TASK-082 have historical partial image/Telegram evidence, TASK-083 live two-key failover/admin-DM is TODO and TASK-084 final closure is PARTIAL. The November toolchain is defined by current manifests/locks, not the older versions in dated checkpoints. Remaining release work is deployed Caddy/Compose/TLS/header/restart/replacement acceptance, real browser OIDC and Telegram client/enrollment/step-up matrices, authorized provider-pool/DM behavior, elapsed retention and explicit resolution of delegated-admin grant-management policy
 
 | Task     | Status | Description                                                                                     | Acceptance Criteria                                                                                                                                                                                     |
 | -------- | ------ | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -405,7 +413,7 @@ Plan 021 execution checkpoint: Implementation Phases 1 through 9 (`TASK-001` thr
 | TASK-070 | DONE   | Add Telegram OIDC, Mini App `initData` validation, opaque sessions, CSRF and step-up            | Both entry modes resolve the same Telegram identity and revocable server-side session; stale/replayed/tampered auth and same-identity step-up checks fail closed                                          |
 | TASK-071 | DONE    | Add the Nuxt 4/Vue 3/Nuxt UI SSR control plane and same-origin FastAPI API                    | The exact-pinned accessible SSR shell, safe hydration boundary, complete page family, shared feedback/Telegram integration, typed Phase 3–8 API handlers and Caddy ingress artifacts are implemented and locally verified                                      |
 | TASK-072 | DONE    | Add bot/scoped settings, admin, managed-chat, query, memory, stats, health and audit workflows | Backend and graphical workflows are implemented with validated/audited scoped controls, bounded pages/streams, safe aggregation, explicit side effects and no hidden reasoning or automatic paid diagnostics                                                  |
-| TASK-073 | PARTIAL | Integrate runtime supervision, migrations, Docker/CI/docs and complete offline/live acceptance | SSR build/smoke, backend/frontend artifact gates, revision 0016 and docs are DONE; live Caddy/Compose/TLS/independent-replacement, real Telegram OIDC/Mini App, authorized provider failover/DM and backup/restore evidence remain |
+| TASK-073 | PARTIAL | Integrate runtime supervision, migrations, Docker/CI/docs and complete offline/live acceptance | Deterministic contracts, migration/encrypted recovery through 0017 and emulated browsers have dated DONE evidence, current images/proxy/TLS/replacement/restart, real Telegram/OIDC and two-key provider/DM acceptance remain |
 
 ## 6. Test Plan
 
@@ -428,8 +436,8 @@ Plan 021 execution checkpoint: Implementation Phases 1 through 9 (`TASK-001` thr
 - **DONE**: Plan 019 transfer regressions across `tests/test_memory_service.py`, `tests/test_product_controls.py`, `tests/test_cli.py` and `tests/test_telegram_integration.py` verify a 1,000-row/10-provider-call batch ratio, original JSONL line errors, per-batch partial failure and idempotent retry, file/row limits, ijson parsing without `Path.read_text`, unsupported-shape preflight, primary-key export order, streamed canonical Markdown, incremental CLI output and bounded UTF-8-safe Telegram document names/content
 - **DONE**: `tests/test_telegram_commands.py` verifies command help text and mocked `set_my_commands` registration
 - **DONE**: `tests/test_admin_service.py` verifies configurable admin-cache TTL, cache reuse and cache stats
-- **DONE**: `tests/test_deployment_artifacts.py` verifies both Dockerfiles, focused Docker ignores, the private three-service Compose topology, exact Caddy pin/reserved paths/frontend credential-header removal, the shared pinned uv version, frozen non-editable bot installation, GitHub Actions quality gates including isolated Alembic upgrade/drift commands, Alembic runtime root discovery and complete CLI-reference coverage from the live Typer command inventory
-- **DONE**: `tests/test_architecture_facades.py` characterizes all 52 public `MemoryService` methods, exact repository compatibility identities, exact Telegram router composition order and dependency direction without lower-layer Telegram or collaborator-to-facade back-imports
+- **DONE**: `tests/test_deployment_artifacts.py` verifies multi-stage/non-root images, focused Docker ignores, private Compose services, major-version Caddy policy/reserved paths/credential-header removal, latest uv installer policy, frozen non-editable dependencies, manual GitHub Actions quality/migration gates, runtime root discovery and CLI-reference completeness
+- **DONE**: `tests/test_architecture_facades.py` characterizes the public `MemoryService` facade, repository compatibility identities, Telegram router composition/order and dependency direction without lower-layer Telegram or collaborator-to-facade back-imports
 - **DONE**: `tests/conftest.py` builds isolated SQLite and fake-provider context
 - **DONE**: `tests/test_control_plane_development.py` plus frontend session/reveal/coordinator/proxy/provider regressions verify command-scoped loopback settings, stable local key policy, production route isolation, real session/CSRF/exact-action development auth, offline/optional-connected lifecycles, Windows process-tree ownership, prefix-correct same-origin proxying and environment bootstrap-profile UX
 - **DONE**: `tests/test_control_plane_phase7.py` verifies secret-free capability catalogs, legacy/split provider selection, active-destination Search/Ask, safe selection/source metadata, insufficient context, persisted-owning-scope memory/review mutations, explicit audited raw sources, cancellable streaming exports, SQL-aggregated stats, sanitized audit/usage pages, explicit diagnostics and fixed bounded page-service query counts
@@ -444,9 +452,9 @@ Plan 021 execution checkpoint: Implementation Phases 1 through 9 (`TASK-001` thr
 - **DONE**: TEST-013 Docker smoke test and documentation are implemented
 - **DONE**: TEST-019 `/settings` view, direct edit compatibility, preview, confirm, rejection and unauthorized coverage is implemented
 - **PARTIAL**: Live Telegram acceptance passed with ordinary-message ingestion, 43 registered commands, scoped settings confirmation, OpenAI-backed summary/search/ask, redaction, document export and confirmed forget; retention after real elapsed age remains unverified
-- **PARTIAL**: The 78% global coverage floor is only a regression signal; current external gaps are production deployment, elapsed-retention behavior, authorized live provider-pool/Telegram-DM acceptance and uncovered configuration/Telegram error branches
+- **PARTIAL**: Current external verification gaps are deployed-runtime recovery, elapsed-retention behavior, real Telegram/OIDC/client acceptance, authorized live provider-pool/admin-DM behavior and deployment sizing. Coverage percentages are no longer a release signal
 - **DONE**: Plan 021 Phase 1 added characterization coverage for the current provider-registry cache boundary and pre-control-plane webhook OpenAPI route set
-- **DONE**: `tests/test_control_plane_contract.py --runxfail` reproduced five deliberate red contracts for the reviewed route/capability matrix, cursor bounds, safe error/conflict envelopes, optimistic versions and credential redaction; normal pytest keeps them as strict `xfailed` gates until their later implementation slices remove the markers
+- **DONE**: The original strict-xfail control-plane placeholders were removed in the August Phase 10 contract closure, route/capability, pagination, safe-error and optimistic-version/audit contracts are ordinary required tests. Earlier red/xfail counts below are historical snapshots only
 - **DONE**: Plan 021 Phase 1 focused verification produced 32 passed and 5 expected failures; the fresh full branch-coverage run produced 231 passed, 1 skipped, 5 expected failures and 82.41% coverage, with one non-fatal aiosqlite worker-thread/event-loop teardown warning retained as a recurrence watch item
 - **DONE**: Plan 021 Phase 2 historically established frozen install, pnpm-managed Node 24.18.0, peer resolution, Oxfmt, type-aware Oxlint/tsgolint, Nuxt typecheck, 5 unit/component tests, 4 Playwright checks across desktop Chromium and Pixel 7, deterministic OpenAPI/type drift, static generation and an 18-asset generated-secret scan; its `ssr: false` deployment boundary was intentionally superseded after Phase 4
 - **DONE**: Plan 021 Phase 2 fresh repository verification passed Ruff format/lint, `ty`, disposable empty-database Alembic upgrade/check and 235 passed, 1 skipped, 5 expected failures at 82.44% branch coverage; the earlier aiosqlite teardown warning did not recur
@@ -463,7 +471,7 @@ uv sync --extra dev --extra local
 uv run ruff format --check .
 uv run ruff check .
 uv run ty check
-uv run pytest -q --cov=pzp_ai_bot --cov-branch --cov-report=term-missing
+uv run pytest -q
 uv run alembic upgrade head
 uv run alembic check
 uv run pzp-bot --help
@@ -473,7 +481,7 @@ uv run pzp-bot doctor
 Use this explicit local binary if the PATH shim is broken on this Windows machine:
 
 ```powershell
-& '%LOCALAPPDATA%\Microsoft\WinGet\Packages\astral-sh.uv_Microsoft.Winget.Source_8wekyb3d8bbwe\uv.exe' run pytest
+& (Join-Path $env:LOCALAPPDATA 'Microsoft/WinGet/Packages/astral-sh.uv_Microsoft.Winget.Source_8wekyb3d8bbwe/uv.exe') run pytest
 ```
 
 ## 7. Release Gates
@@ -519,9 +527,9 @@ Required before inviting a real private group:
 Required before calling this v1 complete:
 
 - **DONE**: All Phase 1, Phase 2, Phase 3, Phase 4, Phase 5 and Phase 6 tasks are complete
-- **PARTIAL**: The frozen non-editable bot image has current historical doctor/migration/non-root evidence, while the new independent Nuxt SSR image and Caddy/webhook Compose topology have static/focused coverage but still require live build, route, health, TLS, migration and independent-replacement acceptance
-- **DONE**: CI workflow pins uv 0.12.0, rejects lock drift, performs a frozen sync, then runs formatting, linting, type checking, the 78% branch-coverage gate, migration checks, CLI checks and Docker smoke on GitHub Actions; the owner confirmed both hosted jobs green on 2026-07-30
-- **DONE**: Migration history is stable, tested from an empty database through `0012_telemetry_scope_indexes`, and compared with live SQLAlchemy metadata in CI; the SQLite expression index is asserted directly because the dialect cannot reflect it for autogenerate comparison
+- **PARTIAL**: Frozen non-editable bot and independent non-root Nuxt images have historical build observations, the November installer/runtime update still requires fresh image, ingress, TLS, health, migration, independent-replacement and restart acceptance
+- **PARTIAL**: The manually dispatched workflow installs latest uv, checks lock consistency and frozen dependencies, then runs formatting, linting, `ty`, plain pytest, migrations, CLI and frontend/Docker gates. Historical hosted green is recorded, the final November pushed snapshot requires a fresh user-dispatched run
+- **DONE**: Migration history reaches `0017_scope_settings_versions`, with empty and seeded upgrades, supported downgrade/re-upgrade and model-drift tests. The SQLite expression index is asserted directly because reflection cannot describe it for autogenerate comparison
 - **DONE**: Memory quality is covered by a representative imported dataset test using summarize, ask, export and forget
 - **DONE**: Privacy and operational documentation is complete
 - **DONE**: Manual runbook covers install, upgrade, backup, restore, token rotation, provider switching, prompt/template switching, reloadless settings, `/settings` and emergency forget
@@ -531,11 +539,11 @@ Required before calling this v1 complete:
 
 Required before enabling Plan 021 in a production deployment:
 
-- **TODO**: Every Plan 021 implementation task, security requirement, offline test and completion criterion is green
-- **TODO**: Real Telegram browser OIDC and Mini App authentication pass against registered production-like HTTPS URLs, including session revocation, account switching, scope authorization and step-up reveal denial/success
+- **PARTIAL**: Implementation and deterministic gates have dated acceptance, the current dependency/runtime snapshot and all remaining live completion criteria must be qualified before closing Plan 021
+- **PARTIAL**: Historical Mini App/admin-removal/delegated-access observations exist, complete current real browser OIDC, Mini App, account switch/revocation and step-up acceptance against registered HTTPS URLs remains required
 - **TODO**: A disposable multi-key provider profile proves sticky selection, classified failover, cooldown/recovery, pool exhaustion and deduplicated sanitized bot-admin DM notification without exposing credentials
-- **TODO**: Nuxt SSR passes responsive browser and Telegram Web/Mobile/Desktop acceptance through the real Caddy HTTPS origin, and reserved FastAPI API/auth/webhook/health paths plus credential-header removal are verified against the running proxy rather than only artifact tests
-- **TODO**: Encrypted database backup/restore and master-key rotation/recovery are rehearsed, while losing the referenced master key is documented as unrecoverable
+- **PARTIAL**: Deterministic desktop/mobile SSR/browser checks have dated acceptance, real Telegram Web/Mobile/Desktop and live Caddy routing/header-removal/TLS/replacement/restart qualification remain required
+- **PARTIAL**: Synthetic encrypted backup/restore, master-key rewrap and missing-key fail-closed recovery passed the dated August gate, deployed-runtime recovery and secret-injection rehearsal still need current evidence
 - **TODO**: Production deployment remains deferred until Gate E and the existing deployment-specific secret injection, sizing and elapsed-retention checks are all accepted
 
 ## 8. Operational Runbook
@@ -547,7 +555,8 @@ uv sync --extra dev --extra local
 Copy-Item .env.example .env
 uv run pzp-bot migrate
 uv run pytest
-AI_PROVIDER=fake uv run pzp-bot polling
+$env:AI_PROVIDER = "fake"
+uv run pzp-bot polling
 ```
 
 ### Docker Smoke
@@ -629,18 +638,19 @@ uv run pzp-bot webhook
 - **RUNTIME-001**: `src/pzp_ai_bot/main.py`, `src/pzp_ai_bot/app_context.py`, `src/pzp_ai_bot/config.py`, `src/pzp_ai_bot/logging.py`
 - **TELEGRAM-001**: `src/pzp_ai_bot/telegram/admin.py`, `src/pzp_ai_bot/telegram/commands.py`, `src/pzp_ai_bot/telegram/dispatcher.py`, `src/pzp_ai_bot/telegram/middleware.py`, `src/pzp_ai_bot/telegram/router.py`, `src/pzp_ai_bot/telegram/routers/__init__.py`, `src/pzp_ai_bot/telegram/routers/shared.py`, `src/pzp_ai_bot/telegram/routers/learning.py`, `src/pzp_ai_bot/telegram/routers/operations.py`, `src/pzp_ai_bot/telegram/routers/settings.py`, `src/pzp_ai_bot/telegram/routers/retrieval.py`, `src/pzp_ai_bot/telegram/routers/memory.py`, `src/pzp_ai_bot/telegram/safe_api.py`, `src/pzp_ai_bot/telegram/scheduler.py`, `src/pzp_ai_bot/telegram/utils.py`, `src/pzp_ai_bot/telegram/polling.py`, `src/pzp_ai_bot/telegram/webhook.py`
 - **MEMORY-001**: `src/pzp_ai_bot/memory/service.py`, `src/pzp_ai_bot/memory/contracts.py`, `src/pzp_ai_bot/memory/transfer.py`, `src/pzp_ai_bot/memory/provider_operations.py`, `src/pzp_ai_bot/memory/settings_profiles.py`, `src/pzp_ai_bot/memory/retrieval_service.py`, `src/pzp_ai_bot/memory/mutation_service.py`, `src/pzp_ai_bot/memory/summary_service.py`, `src/pzp_ai_bot/memory/prompts.py`, `src/pzp_ai_bot/memory/canonical.py`, `src/pzp_ai_bot/memory/policy.py`, `src/pzp_ai_bot/memory/retrieval.py`, `src/pzp_ai_bot/memory/markdown.py`, `src/pzp_ai_bot/memory/scope.py`, `src/pzp_ai_bot/memory/vector.py`
-- **AI-001**: `src/pzp_ai_bot/ai/protocols.py`, `src/pzp_ai_bot/ai/fake.py`, `src/pzp_ai_bot/ai/openai_compatible.py`, `src/pzp_ai_bot/ai/local.py`, `src/pzp_ai_bot/ai/factory.py`, `src/pzp_ai_bot/ai/redaction.py`
+- **AI-001**: `src/pzp_ai_bot/ai/protocols.py`, `fake.py`, `openai_compatible.py`, `local.py`, `factory.py`, `redaction.py`, `provider_call_policy.py`, `failure_classification.py`, `credential_pool.py` and `pooled_openai.py`
 - **WEB-001**: `.node-version`, `web/package.json`, `web/pnpm-lock.yaml`, `web/pnpm-workspace.yaml`, `web/nuxt.config.ts`, `web/app/`, `web/openapi/`, `web/scripts/`, `web/test/`, `web/e2e/`, `web/vitest.config.ts`, `web/playwright.config.ts`
-- **DB-001**: `src/pzp_ai_bot/db/models.py`, `src/pzp_ai_bot/db/repositories.py`, `src/pzp_ai_bot/db/repos/__init__.py`, `src/pzp_ai_bot/db/repos/shared.py`, `src/pzp_ai_bot/db/repos/messages.py`, `src/pzp_ai_bot/db/repos/knowledge.py`, `src/pzp_ai_bot/db/repos/canonical.py`, `src/pzp_ai_bot/db/repos/embeddings.py`, `src/pzp_ai_bot/db/repos/policy.py`, `src/pzp_ai_bot/db/repos/settings.py`, `src/pzp_ai_bot/db/repos/profiles.py`, `src/pzp_ai_bot/db/repos/challenges.py`, `src/pzp_ai_bot/db/repos/events.py`, `src/pzp_ai_bot/db/session.py`, `alembic/env.py`, `alembic/versions/0001_initial.py`, `alembic/versions/0002_phase2_memory_quality.py`, `alembic/versions/0003_phase2_remaining_memory_tools.py`, `alembic/versions/0004_phase3_provider_ai_hardening.py`, `alembic/versions/0005_phase5_operations_settings.py`, `alembic/versions/0006_phase6_product_completeness.py`, `alembic/versions/0007_align_telegram_identifier_types.py`, `alembic/versions/0008_message_logical_uniqueness.py`, `alembic/versions/0009_summary_claims.py`, `alembic/versions/0010_remove_cross_scope_can_learn.py`, `alembic/versions/0011_canonical_scope_snapshots.py`, `alembic/versions/0012_telemetry_scope_indexes.py`
+- **CONTROL-001**: `src/pzp_ai_bot/control_plane/app.py`, `development.py`, `runtime.py`, `schemas.py`, `middleware.py`, `authorization.py`, `management.py`, `catalog.py`, `audit.py`, `insights.py`, `operations.py`, `alerts.py`, `auth/` and `secrets/` (route-family extraction from `app.py` is deferred maintenance, not an implemented `api/` directory)
+- **DB-001**: `src/pzp_ai_bot/db/models.py`, `db/repositories.py`, `db/session.py`, cohesive `db/repos/` implementations (including control-plane identity, credentials and alert outbox), `alembic/env.py` and revisions `0001_initial` through `0017_scope_settings_versions` under `alembic/versions/`
 - **DOCS-001**: `docs/setup.md`, `docs/architecture.md`, `docs/commands.md`, `docs/privacy.md`, `docs/deployment.md`, `docs/operations.md`, `docs/secrets.md`, `docs/release.md`, `docs/testing.md`
-- **TESTS-001**: `tests/conftest.py`, `tests/test_admin_service.py`, `tests/test_ai_providers.py`, `tests/test_architecture_facades.py`, `tests/test_cli.py`, `tests/test_config.py`, `tests/test_control_plane_contract.py`, `tests/test_deployment_artifacts.py`, `tests/test_frontend_workspace.py`, `tests/test_memory_correctness.py`, `tests/test_memory_quality.py`, `tests/test_memory_service.py`, `tests/test_memory_tools.py`, `tests/test_operations.py`, `tests/test_policy_and_ingestion.py`, `tests/test_product_controls.py`, `tests/test_scope.py`, `tests/test_telegram_commands.py`, `tests/test_telegram_integration.py`, `tests/test_telegram_live.py`, `tests/test_webhook.py`
+- **TESTS-001**: `tests/conftest.py`, core behavior-oriented tests, control-plane identity/Mini App/OIDC/sessions/authorization/contracts/API/management/development/migration tests, vault/credential/pool/alert tests and `web/test/` plus `web/e2e/`, see `docs/testing.md` for the maintained behavior map
 
 ## 10. Risks And Assumptions
 
 - **RISK-001**: Telegram privacy mode or missing admin permissions can make live testing look broken even when code works
 - **RISK-003**: Provider costs and privacy risks can grow quickly if large raw chats are summarized by external models
 - **CLOSED-004**: Live `gpt-5.6-terra`/medium generation and `text-embedding-3-small` embeddings passed directly, then the same provider configuration passed the disposable-group summarize/search/ask suite with no AI errors
-- **RISK-005**: Bulk import atomicity is intentionally per 100-row checkpoint, so operators must inspect content-free checkpoint/failure events and retry the same input after a later parse, provider or write failure rather than assuming whole-file rollback
+- **RISK-019**: Bulk import atomicity is intentionally per 100-row checkpoint, operators must inspect content-free checkpoint/failure events and retry the same input after a later parse, provider or write failure rather than assuming whole-file rollback (renumbered from the duplicate RISK-005 during November reconciliation)
 - **RISK-005**: Current memory compaction performs deterministic heuristic deduplication but can still miss deeper semantic duplicates or keep low-value facts
 - **RISK-006**: Runtime scheduling has focused tests, but true long-running polling/webhook behavior can still differ under real Telegram load
 - **RISK-007**: Optional local embeddings can pull large model dependencies and still need explicit deployment sizing; the multilingual MiniLM model is now cached and passed online plus forced-offline semantic ordering acceptance at 384 dimensions
@@ -650,11 +660,13 @@ uv run pzp-bot webhook
 - **RISK-011**: `/settings` preview/confirmation reduces broad-change surprises, but concurrent admins can still preview overlapping scoped changes and apply the latest active token
 - **CLOSED-012**: The owner confirmed both hosted GitHub Actions jobs green on the pushed branch
 - **RISK-013**: Telegram Desktop JSON exports and Bot API update dumps can contain historical group content that predates bot consent; operators must review export files and target scopes before import
-- **RISK-014**: Historical Docker smoke proves bot-image startup, health checks and migrations, but the new frontend image plus Caddy/webhook topology still needs live routing, health, TLS, independent-replacement, production sizing and secret-injection validation
-- **RISK-015**: A selected provider profile still has a single-key failure domain. The planned pool must rotate among multiple external secret references without exposing key material, distinguish invalid requests from authentication/quota/rate-limit/provider failures, serialize concurrent health transitions and debounce sanitized bot-admin DM alerts; admins must first open the bot DM because Telegram bots cannot initiate a conversation with a user who has never contacted them.
+- **RISK-014**: Historical image builds and partial split-topology observations do not qualify the November runtime/installer changes, current routing, header removal, TLS, health, restart/replacement, sizing and secret-injection acceptance remains required
+- **CLOSED-015**: Managed profiles now implement encrypted multi-key pools, classified bounded rotation, persisted concurrency, cooldown/recovery, safe telemetry and deduplicated alerts. Real two-key/provider-wide outage and Telegram-DM delivery acceptance remains open, administrators must first open the bot DM
 - **RISK-016**: Full secret reveal intentionally increases impact if a bot-admin session is stolen; Plan 021 therefore requires fresh Telegram step-up, no-store responses, revocable server-side sessions, audit attribution and a deployment option to disable reveal without removing write/replace operations
 - **RISK-017**: Telegram OIDC, Mini App Web APIs and client cookie behavior can drift independently; implementation must re-read discovery/current official docs and pass real Web, Desktop and Mobile client checks rather than copying the older HandleHub popup shortcut
 - **RISK-018**: A dashboard can create unbounded memory/telemetry queries or Caddy route shadowing; every list/export requires pagination or streaming, every aggregation requires measured SQL, and reserved API/auth/webhook/health routes plus frontend credential-header removal require live ingress verification
+- **RISK-020**: The approved delegated-admin management matrix says bot-owner-only while current routes/contracts permit native/delegated admins to manage grants in their own active chat. Resolve this policy before release, neither documentation reconciliation nor dependency maintenance authorizes changing that boundary
+- **RISK-021**: Latest uv and major-only Node/Caddy selection are deliberate update policies, while application locks stay frozen. Record the actually selected tools/images at deployment and retain the visible `openapi-typescript` TypeScript 5 peer-range mismatch with the intentional TypeScript 6 alias until upstream support or a separately approved compiler decision resolves it
 - **CLOSED-001**: Global review IDs no longer let a Telegram admin act on another chat's review because approval and rejection authorize the persisted owning scope before mutation; same-chat and configured-bot-admin access remain covered by dispatcher tests
 - **CLOSED-002**: Daily Markdown no longer receives pre-commit appends or pending review proposals; it is rebuilt from committed knowledge after mutations and startup, so rejection, deletion, retention and forget operations remove projected content while audit metadata remains
 - **CLOSED-003**: Failed or empty summary generation no longer synthesizes durable raw-chat content or marks source messages summarized; messages remain retryable and diagnostics retain only safe provider/model/source-ID/exception-type metadata
@@ -695,6 +707,8 @@ uv run pzp-bot webhook
 - Inspiration project: https://github.com/lyzcoote/go-shitfuckllm
 
 ## 12. Changelog
+
+- **2026-11-07 / v0.50**: Reconciled all 21 plans and canonical docs after the owner's staged dependency refresh, retired Plan 016 without deleting behavioral tests, audited every changed direct Python/frontend dependency, fixed SQLAlchemy/typeshed compatibility and SDK boundary tests, stabilized cross-Python 422 descriptions, made optional-local tests explicit, corrected ignored Nuxt roots and auth-label hydration, and adopted auto-import/alias conventions. Latest uv, Node major 26 and standalone installers follow the owner's clarified policy, original staged changes remain untouched. Current offline Python 3.12/3.14, frontend and combined-development gates pass as recorded above, delegated-admin policy and real deployment/Telegram/provider/retention acceptance remain release holds
 
 - **2026-08-09 / v0.49**: Closed Plan 021 TASK-076 on the post-fix tree. Python synchronization, Ruff format/lint and `ty` pass; the complete suite is 414 passed, 1 live Telegram skip and zero xfails. A disposable empty database reaches the single `0017_scope_settings_versions` head with no model drift; CLI help, fake-provider doctor and non-secret show-config pass. The frozen frontend checkpoint passes Oxfmt, type-aware Oxlint, raw Nuxt typecheck, 51 tests, OpenAPI drift, a 3.22 MB production SSR build, 257 generated text assets scanned, direct SSR smoke and all 44 desktop/mobile Playwright cases. Docker/public Telegram/OIDC/OpenAI, persistence, final documentation and hosted CI remain.
 - **2026-08-09 / v0.48**: Closed Plan 021 TASK-080 with a 44-case desktop Chromium and Pixel 7 Playwright matrix plus 51 Nuxt unit/component tests. Browser acceptance now proves bounded regular OIDC starts, signed Mini App exchange, bot/scoped authorization, `401`/`403`/`409`/`422`/`429` recovery, provider credential lifecycle and explicit reveal masking, Search/Ask profile-model-reasoning selection, raw sources, review decisions, streamed export download, explicit operations and distinct pause/resume/detach/leave/forget actions. The matrix exposed and fixed direct SSR login dropping its safe post-authentication destination; deterministic browser, auth/vault/pool and migration/restore tasks are complete, while the full offline checkpoint, Docker/public Telegram/OIDC/OpenAI, persistence, final docs and hosted CI remain.

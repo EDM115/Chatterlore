@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -45,7 +45,7 @@ def create_webhook_app(
     telegram_dispatcher: Any = dispatcher or build_dispatcher(context)
 
     @asynccontextmanager
-    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         idle_task = start_idle_summarizer(context)
         settings_task = start_runtime_settings_refresher(context)
         alert_task = start_admin_alert_delivery(context, telegram_bot)

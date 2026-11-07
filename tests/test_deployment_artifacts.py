@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 
 import yaml
@@ -52,7 +51,7 @@ def test_github_actions_ci_runs_quality_migration_and_docker_gates() -> None:
         "uv run ruff format --check .",
         "uv run ruff check .",
         "uv run ty check",
-        "uv run pytest --cov=pzp_ai_bot --cov-branch --cov-report=term-missing",
+        "uv run pytest",
         "uv run alembic upgrade head",
         "uv run pzp-bot --help",
         "uv run pzp-bot doctor",
@@ -61,7 +60,7 @@ def test_github_actions_ci_runs_quality_migration_and_docker_gates() -> None:
         "docker run --rm",
     ]:
         assert expected in workflow
-    assert "\n        run: uv run pytest\n" not in workflow
+    assert "--cov" not in workflow
     assert (
         """      - name: Migration check
         env:
@@ -74,15 +73,18 @@ def test_github_actions_ci_runs_quality_migration_and_docker_gates() -> None:
     )
 
 
-def test_ci_and_docker_pin_the_same_uv_version() -> None:
+def test_ci_and_docker_use_latest_uv_with_frozen_project_dependencies() -> None:
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 
-    docker_match = re.search(r"^ARG UV_VERSION=(\S+)$", dockerfile, re.MULTILINE)
-    workflow_match = re.search(r"^\s+version: \"([^\"]+)\"$", workflow, re.MULTILINE)
-    assert docker_match is not None
-    assert workflow_match is not None
-    assert docker_match.group(1) == workflow_match.group(1) == "0.12.0"
+    assert "https://astral.sh/uv/install.sh" in dockerfile
+    assert "UV_VERSION" not in dockerfile
+    setup_uv = next(
+        step
+        for step in yaml.safe_load(workflow)["jobs"]["quality"]["steps"]
+        if step.get("uses", "").startswith("astral-sh/setup-uv@")
+    )
+    assert "version" not in setup_uv.get("with", {})
 
 
 def test_cli_reference_covers_every_registered_typer_command() -> None:
@@ -125,7 +127,7 @@ def test_compose_exposes_only_caddy_and_keeps_upstreams_independent() -> None:
         "NITRO_PORT": 3000,
         "NODE_ENV": "production",
     }
-    assert services["proxy"]["image"] == "caddy:2.11.4-alpine"
+    assert services["proxy"]["image"] == "caddy:2-alpine"
     assert services["proxy"]["ports"] == [
         "${PZP_HTTP_PORT:-80}:80",
         "${PZP_HTTPS_PORT:-443}:443",
@@ -146,10 +148,11 @@ def test_frontend_image_is_frozen_multi_stage_and_non_root() -> None:
     package = json.loads((ROOT / "web" / "package.json").read_text(encoding="utf-8"))
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 
-    assert "FROM node:24.19.0-bookworm-slim AS dependencies" in dockerfile
+    assert "FROM node:26-bookworm-slim AS dependencies" in dockerfile
     assert "FROM dependencies AS build" in dockerfile
-    assert "FROM node:24.19.0-bookworm-slim AS runtime" in dockerfile
-    assert "corepack prepare pnpm@11.24.0 --activate" in dockerfile
+    assert "FROM node:26-bookworm-slim AS runtime" in dockerfile
+    assert "https://get.pnpm.io/install.sh" in dockerfile
+    assert "PNPM_VERSION=11.28.11" in dockerfile
     assert "NODE_OPTIONS=--max-old-space-size=1024" in dockerfile
     assert "pnpm install --frozen-lockfile" in dockerfile
     assert "RUN pnpm build" in dockerfile
@@ -158,9 +161,20 @@ def test_frontend_image_is_frozen_multi_stage_and_non_root() -> None:
     assert 'CMD ["node", ".output/server/index.mjs"]' in dockerfile
     assert {".env", ".nuxt", ".output", "node_modules", "test-results"} <= ignored
     assert package["scripts"]["format:check"] == "oxfmt --check ."
-    assert package["packageManager"] == "pnpm@11.24.0"
-    assert package["devEngines"]["runtime"]["version"] == "24.19.0"
-    assert "          version: 11.24.0" in workflow
+    assert package["packageManager"] == "pnpm@11.28.11"
+    assert package["devEngines"]["runtime"]["version"] == "26"
+    assert "          working-directory: web" in workflow
+
+
+def test_default_tests_do_not_install_or_configure_code_coverage() -> None:
+    import tomllib
+
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    assert not any(
+        dependency.startswith("pytest-cov")
+        for dependency in project["project"]["optional-dependencies"]["dev"]
+    )
+    assert "coverage" not in project["tool"]
 
 
 def test_caddy_reserves_backend_paths_and_strips_frontend_credentials() -> None:

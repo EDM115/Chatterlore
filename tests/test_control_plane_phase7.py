@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import json
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
+from importlib.machinery import ModuleSpec
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -27,6 +29,20 @@ from pzp_ai_bot.memory.scope import Scope
 from test_control_plane_api import ORIGIN, FakeOIDCClient, settings_for, signed_init_data
 
 NOW = datetime(2026, 8, 2, 9, 0, tzinfo=UTC)
+
+
+@pytest.fixture(params=[False, True], ids=["without-local-extra", "with-local-extra"])
+def local_dependency_available(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch):
+    available = bool(request.param)
+    original_find_spec = importlib.util.find_spec
+
+    def find_spec(name: str, package: str | None = None):
+        if name == "sentence_transformers":
+            return ModuleSpec(name, loader=None) if available else None
+        return original_find_spec(name, package)
+
+    monkeypatch.setattr(importlib.util, "find_spec", find_spec)
+    return available
 
 
 def _build_phase7_app(tmp_path: Path, **overrides: object):
@@ -94,7 +110,7 @@ async def _measure_queries[T](
 
 
 def test_query_catalog_is_scope_authorized_capability_accurate_and_secret_free(
-    tmp_path: Path,
+    tmp_path: Path, local_dependency_available: bool
 ) -> None:
     context, app = _build_phase7_app(tmp_path)
 
@@ -141,9 +157,12 @@ def test_query_catalog_is_scope_authorized_capability_accurate_and_secret_free(
         assert profiles["default"]["availability"] == "ready"
         assert profiles["local"]["capabilities"] == ["embedding"]
         assert profiles["local"]["local_state"] == {
-            "dependency_available": True,
+            "dependency_available": local_dependency_available,
             "model_loaded": False,
         }
+        assert profiles["local"]["availability"] == (
+            "ready" if local_dependency_available else "unavailable"
+        )
         assert profiles["managed-openai"]["capabilities"] == ["chat", "embedding", "reasoning"]
         assert profiles["managed-openai"]["availability"] == "unavailable"
         assert profiles["managed-openai"]["pool"] == {"eligible": 0, "total": 0}
@@ -652,7 +671,7 @@ def test_memory_export_stream_closes_the_underlying_generator_on_cancellation(
 
 
 def test_stats_overview_and_timeseries_are_bounded_scoped_and_provider_side_effect_free(
-    tmp_path: Path,
+    tmp_path: Path, local_dependency_available: bool
 ) -> None:
     context, app = _build_phase7_app(tmp_path)
     stats_now = datetime.now(UTC)
@@ -703,7 +722,7 @@ def test_stats_overview_and_timeseries_are_bounded_scoped_and_provider_side_effe
     assert payload["administration"]["bot_admins"] == 1
     assert payload["administration"]["managed_chats"] == {"active": 1}
     assert payload["providers"]["profiles"] == 2
-    assert payload["providers"]["local_dependency_available"] is True
+    assert payload["providers"]["local_dependency_available"] is local_dependency_available
     assert payload["providers"]["local_models_loaded"] == 0
 
     assert timeseries.status_code == 200
@@ -766,7 +785,9 @@ def test_bounded_directory_size_stops_scandir_lazily_at_the_entry_cap(
     assert scan.next_calls == 3
 
 
-def test_audit_usage_and_manual_operations_are_paginated_safe_and_explicit(tmp_path: Path) -> None:
+def test_audit_usage_and_manual_operations_are_paginated_safe_and_explicit(
+    tmp_path: Path, local_dependency_available: bool
+) -> None:
     context, app = _build_phase7_app(tmp_path)
 
     async def seed() -> int:
@@ -855,8 +876,11 @@ def test_audit_usage_and_manual_operations_are_paginated_safe_and_explicit(tmp_p
     assert provider.json()["details"]["mode"] == "chat"
     assert "content" not in provider.text.lower()
     assert local.status_code == 200
-    assert local.json()["ok"] is True
-    assert local.json()["details"]["dependency_available"] is True
+    assert local.json()["ok"] is local_dependency_available
+    assert local.json()["result"] == (
+        "ready" if local_dependency_available else "dependency_unavailable"
+    )
+    assert local.json()["details"]["dependency_available"] is local_dependency_available
     assert local.json()["details"]["download_attempted"] is False
 
     async def usage_after() -> int:

@@ -381,7 +381,7 @@ class MessageRepository:
                 Message.chat_id,
                 Message.message_thread_id,
                 func.count(Message.id),
-                func.sum(cast(Message.learned, Integer)),
+                func.sum(cast(Message.learned, Integer())),
                 func.max(Message.created_at),
             )
             .group_by(Message.chat_id, Message.message_thread_id)

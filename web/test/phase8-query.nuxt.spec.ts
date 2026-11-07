@@ -1,7 +1,7 @@
 import { clearNuxtState, useState } from "#app";
 import { mountSuspended } from "@nuxt/test-utils/runtime";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import QueryPage from "../app/pages/query.vue";
+import QueryPage from "~/pages/query.vue";
 
 const session = {
   user: {

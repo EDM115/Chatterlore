@@ -1,7 +1,6 @@
 <script setup lang="ts">
 const route = useRoute();
 const controlSession = useControlSession();
-const accessLabel = controlSession.accessLabel;
 const hydrated = ref(false);
 const mobileMenu = ref<HTMLDetailsElement | null>(null);
 
@@ -22,6 +21,9 @@ const authenticated = computed(
   () => hydrated.value && controlSession.status.value === "authenticated",
 );
 const visibleUser = computed(() => (hydrated.value ? controlSession.user.value : null));
+const accessLabel = computed(() =>
+  hydrated.value ? controlSession.accessLabel.value : "Authentication required",
+);
 
 const navigation = computed(() => {
   if (authenticated.value) {

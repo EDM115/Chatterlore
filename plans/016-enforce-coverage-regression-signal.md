@@ -2,7 +2,7 @@
 > **Executor instructions**: Follow each step and gate. Do not add low-value tests merely to raise a percentage. Update plans/README.md when complete unless a reviewer owns it.
 > **Drift check (run first)**: <code>git diff --stat beda837..HEAD -- pyproject.toml .github/workflows/ci.yml tests/test_deployment_artifacts.py docs/testing.md PLAN.md</code>.
 ## Status
-- **Status**: DONE
+- **Status**: RETIRED on 2026-11-07 (owner-requested removal), historically implemented and verified on 2026-07-29
 - **Audit finding**: 16
 - **Priority**: P3
 - **Effort**: S
@@ -10,6 +10,7 @@
 - **Depends on**: none
 - **Category**: tests
 - **Planned at**: commit beda837, 2026-07-13
+This file preserves the historical rationale, commands and results below. It is not an active execution plan: pytest-cov, coverage configuration, percentage thresholds and CI instrumentation have been removed, plain behavioral tests remain required. Do not reintroduce this gate while replaying an old execution wave.
 ## Why this matters
 pytest-cov is installed and branch coverage is configured, but CI runs plain pytest. Coverage can regress without any signal. The audited baseline was 79 percent with branch measurement enabled; introduce a conservative 78-percent floor and visible missing-line report, while keeping critical-path behavior more important than maximizing the global number.
 ## Current state

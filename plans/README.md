@@ -1,7 +1,7 @@
 # Improvement plans
 Plans 001 through 020 turn the repository survey performed on 2026-07-13 into executor-ready implementation plans. Every finding that was reported to the user has its own audit plan written against commit `beda837`; later numbered plans capture explicitly requested product work and must perform their own drift refresh before implementation.
 ## How to use this index
-Read a plan completely before editing, run its drift check first, and leave its status as `TODO` until every done criterion is satisfied. `PARTIAL` means implementation has landed but a listed verification, documentation, migration, or release gate remains; `DONE` means the plan is fully implemented and verified. Plans deliberately contain no authorization for commits, staging, pushes, worktrees, or other git mutations.
+Read a plan completely before editing, run its drift check first, and leave its status as `TODO` until every done criterion is satisfied. `PARTIAL` means implementation has landed but a listed verification, documentation, migration, or release gate remains; `DONE` means the original implementation scope has completion evidence, `RETIRED` means the owner deliberately removed or superseded it. Dated results do not verify a newer dependency/runtime snapshot. Plans deliberately contain no authorization for commits, staging, pushes, worktrees, or other git mutations.
 ## Plan index
 | Plan | Audit finding | Title | Priority | Effort | Depends on | Status |
 | --- | ---: | --- | --- | --- | --- | --- |
@@ -20,20 +20,23 @@ Read a plan completely before editing, run its drift check first, and leave its 
 | [013](013-make-lockfile-consumption-reproducible.md) | 13 | Make CI and Docker consume the uv lockfile immutably | P2 | S | None | DONE |
 | [014](014-reconcile-living-roadmap.md) | 14 | Reconcile `PLAN.md` with current repository and release gates | P2 | S | None | DONE |
 | [015](015-complete-cli-command-reference.md) | 15 | Make the canonical CLI reference complete and self-checking | P3 | S | None | DONE |
-| [016](016-enforce-coverage-regression-signal.md) | 16 | Turn existing coverage tooling into a conservative CI regression gate | P3 | S | None | DONE |
+| [016](016-enforce-coverage-regression-signal.md) | 16 | Turn existing coverage tooling into a conservative CI regression gate | P3 | S | None | RETIRED (2026-11-07 owner decision) |
 | [017](017-load-policy-snapshots-once.md) | Additional A | Evaluate learning policy from one immutable snapshot per operation | P3 | S | None | DONE |
 | [018](018-aggregate-and-index-telemetry.md) | Additional B | Normalize telemetry scope, aggregate in SQL, and index audit queries | P3 | M | 006, 010 | DONE |
 | [019](019-stream-and-batch-bulk-transfer.md) | Additional C | Stream and batch memory imports and exports | P3 | L | 008, 013 | DONE |
 | [020](020-split-hotspots-behind-compatible-facades.md) | Additional D | Split service, repository, and router hotspots behind compatible facades | P3 | L | 001-005, 007-012, 017-019 | DONE |
-| [021](021-provider-key-pools-and-telegram-control-plane.md) | Product E | Add resilient provider key pools and a Telegram-authenticated Nuxt control plane | P1 | XL | 020 | PARTIAL — Phases 1–9 deterministic implementation DONE; Phase 10 live/deployment acceptance remains |
-## Recommended execution order
+| [021](021-provider-key-pools-and-telegram-control-plane.md) | Product E | Add resilient provider key pools and a Telegram-authenticated Nuxt control plane | P1 | XL | 020 | PARTIAL — implementation and deterministic TASK-076–080 have dated evidence, current live/deployment/provider/retention acceptance remains |
+## Current Next Work (2026-11-07)
+
+The old execution waves below are historical, do not restart completed plans or restore Plan 016. Start with the [full review](../docs/project-review-2026-11-07.md) and the [Python](../docs/dependency-review-python-2026-11-07.md)/[frontend](../docs/dependency-review-web-2026-11-07.md) changelog audits. The current offline toolchain gate is complete, next resolve delegated-admin grant-management policy, qualify isolated split images/proxy/restart recovery, complete real Telegram/OIDC/client and authorized two-key provider/DM acceptance, prove elapsed retention, then manually dispatch hosted CI on the final pushed snapshot. Plan 021 stays PARTIAL until these release gates are accepted.
+## Historical Execution Order
 Wave A contains the independent safety fixes, gates, documentation repairs, and low-risk efficiency work: 001, 002, 003, 004, 005, 006, 011, 013, 015, 016, and 017. Plan 014 is also independent, but it is usually cheaper to execute it after an implementation batch so `PLAN.md` is reconciled once against the resulting state.
 Wave B starts after the migration drift gate exists: 007 and 009.
 Wave C repairs the transactional summarization pipeline after its prerequisites: 008.
 Wave D adds durable failure accounting and scalable bulk transfer after the pipeline and lockfile foundations: 010 and 019.
 Wave E builds incremental maintenance and queryable telemetry on the stabilized persistence model: 012 and 018.
 Wave F performs structural extraction only after the behavioral changes have settled: 020. This avoids moving defects or creating merge-heavy duplicate edits while the service, repository, and router behavior is still changing.
-Wave G is the separately requested product expansion in 021: encrypted provider-key pools, Telegram OIDC and Mini App authentication, scoped authorization, a Nuxt control plane, observability and release integration. The user approved it on 2026-07-30; Phases 1 through 9, the protected Nuxt SSR/Caddy transition and the combined loopback development workflow are implemented and locally validated. Phase 10 remains for live split-deployment, BotFather/Telegram/provider and recovery acceptance before the plan can be marked DONE.
+Wave G is the separately requested product expansion in 021: encrypted provider-key pools, Telegram OIDC and Mini App authentication, scoped authorization, a Nuxt control plane, observability and release integration. The user approved it on 2026-07-30; Phases 1 through 9, the protected Nuxt SSR/Caddy transition and the combined loopback development workflow are implemented, deterministic Phase 10 browser/contract/migration/encrypted-recovery tasks also have dated August acceptance. Phase 10 remains open for fresh deployed-runtime, full real-client/Telegram/provider/DM, elapsed-retention and final closure evidence.
 ## Global execution rules
 - Preserve existing user changes and begin with read-only worktree inspection.
 - Use the project `.venv` and uv-managed Python; do not fall back to an outdated system Python. If the WinGet shim is broken, invoke uv from `%LOCALAPPDATA%\Microsoft\WinGet\Packages`.
@@ -45,7 +48,7 @@ Wave G is the separately requested product expansion in 021: encrypted provider-
 - Keep Telegram handlers, command descriptions, help text, tests, and `docs/commands.md` synchronized when command behavior changes.
 - Use `ty`; do not introduce mypy.
 - Keep default tests offline, and retain real Telegram checks behind the existing `telegram_live` marker.
-## Survey verification baseline
+## Historical Survey Verification Baseline
 At the audited commit, Ruff formatting, Ruff linting, and `ty` passed; pytest reported 138 passed and 1 skipped; the measured coverage result was 79%. These are historical baselines for drift detection, not substitutes for each plan's targeted and full verification after implementation.
 ## Assessed items not turned into findings
 - SQLite plus Markdown remains an explicit single-node v1 design choice, so the survey did not recommend replacing the persistence architecture.

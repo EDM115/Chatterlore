@@ -1,4 +1,4 @@
-import { TELEGRAM_WEB_APP_SCRIPT } from "../../telegram";
+import { TELEGRAM_WEB_APP_SCRIPT } from "~~/telegram";
 
 export const TELEGRAM_WEB_APP_READY_EVENT = "pzp:telegram-web-app-ready";
 

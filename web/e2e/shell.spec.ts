@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./fixtures";
 
 const sessionPayload = {
   user: {
@@ -197,6 +197,7 @@ test("keyboard users can skip navigation and focus the main content", async ({ p
 
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "The bot at a glance." })).toBeVisible();
+  await expect(page.locator(".sidebar-note strong")).toHaveText("Bot administrator");
 
   expect(browserErrors).toEqual([]);
 

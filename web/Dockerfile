@@ -1,18 +1,20 @@
 # syntax=docker/dockerfile:1
 
-FROM node:24.19.0-bookworm-slim AS dependencies
+FROM node:26-bookworm-slim AS dependencies
 
 ENV PNPM_HOME=/pnpm \
-    PATH=/pnpm:$PATH \
+    PATH=/pnpm:/pnpm/bin:$PATH \
     NODE_OPTIONS=--max-old-space-size=640 \
     pnpm_config_network_concurrency=1 \
     pnpm_config_child_concurrency=1
 
 WORKDIR /app
 
-RUN corepack enable && corepack prepare pnpm@11.24.0 --activate
-
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && \
+    curl -fsSL https://get.pnpm.io/install.sh -o /tmp/pnpm-install.sh && \
+    ENV=/root/.bashrc SHELL=/bin/bash bash /tmp/pnpm-install.sh && \
+    rm /tmp/pnpm-install.sh && rm -rf /var/lib/apt/lists/*
 RUN --mount=type=cache,id=pzp-ai-web-pnpm,target=/pnpm/store pnpm install --frozen-lockfile --prod
 
 FROM dependencies AS build
@@ -22,7 +24,7 @@ ENV NODE_OPTIONS=--max-old-space-size=1024
 COPY . .
 RUN pnpm build
 
-FROM node:24.19.0-bookworm-slim AS runtime
+FROM node:26-bookworm-slim AS runtime
 
 ENV NITRO_HOST=0.0.0.0 \
     NITRO_PORT=3000 \
