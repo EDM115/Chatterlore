@@ -178,16 +178,56 @@ def import_telegram_json(
     thread_id: Annotated[int | None, typer.Option("--thread-id")] = None,
 ) -> None:
     """Import Telegram Desktop JSON or Bot API updates into learned raw-message memory."""
-    settings = get_settings()
-    context = run(build_context(settings))
-    scope = Scope(chat_id, thread_id)
+    _import_telegram_command(file, Scope(chat_id, thread_id), label="Telegram JSON", json_only=True)
+
+
+@app.command("import-telegram")
+def import_telegram(
+    file: Annotated[Path, typer.Option("--file", exists=True, file_okay=True, dir_okay=True)],
+    chat_id: Annotated[int, typer.Option("--chat-id")],
+    thread_id: Annotated[int | None, typer.Option("--thread-id", min=1)] = None,
+) -> None:
+    """Import a JSON/HTML file or export directory (JSON preferred when both exist)."""
+    _import_telegram_command(file, Scope(chat_id, thread_id), label="Telegram")
+
+
+@app.command("import-telegram-html")
+def import_telegram_html(
+    file: Annotated[Path, typer.Option("--file", exists=True, file_okay=True, dir_okay=False)],
+    chat_id: Annotated[int, typer.Option("--chat-id")],
+    thread_id: Annotated[int | None, typer.Option("--thread-id", min=1)] = None,
+) -> None:
+    """Import Telegram Desktop HTML without executing scripts or fetching linked resources."""
+    if file.suffix.lower() not in {".html", ".htm"}:
+        raise typer.BadParameter("import-telegram-html requires an HTML export file")
+    _import_telegram_command(file, Scope(chat_id, thread_id), label="Telegram HTML")
+
+
+def _import_telegram_command(
+    file: Path, scope: Scope, *, label: str, json_only: bool = False
+) -> None:
+    async def execute():
+        context = await build_context(get_settings())
+        try:
+            if json_only:
+                return await context.memory.import_telegram_desktop_json(file, scope)
+            return await context.memory.import_telegram_export(file, scope)
+        finally:
+            try:
+                await context.memory.provider_registry.aclose()
+            finally:
+                await context.session_factory.kw["bind"].dispose()
+
     try:
-        result = run(context.memory.import_telegram_desktop_json(file, scope))
+        result = run(execute())
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
+    if scope.thread_id is None:
+        console.print(
+            "Target: aggregate chat memory only, topic ownership is not inferred. Use --thread-id for an individual topic export."  # noqa: E501
+        )
     console.print(
-        f"Imported {result.imported} Telegram JSON messages into {scope.key}; "
-        f"skipped {result.skipped}."
+        f"Imported {result.imported} {label} messages into {scope.key}, skipped {result.skipped}."
     )
 
 

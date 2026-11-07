@@ -19,6 +19,7 @@ PZP AI is a Telegram memory assistant that learns from live group conversations 
 ## Why Teams Use It
 
 - Scoped by default: memory stays tied to the current chat or forum topic unless an admin explicitly enables a cross-chat profile.
+- Historical imports: reviewed Telegram Desktop JSON and HTML archives share one bounded, retry-safe pipeline, Both exports prefer JSON and individual-topic imports use explicit topic targets (General is 1)
 - Admin-controlled learning: enable learning per chat/topic, allow or deny users, review proposed summaries and confirm destructive actions.
 - Useful answers: `/ask` retrieves durable memory, manual notes and recent learned context, then answers with source references when needed.
 - Portable storage: SQLite keeps operational state, Markdown keeps durable memory readable, and exports are available as Markdown or JSONL.

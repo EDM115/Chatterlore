@@ -413,6 +413,29 @@ def test_memory_status_and_telegram_json_import_commands(
     assert "learned: 1" in status_result.output
 
 
+@pytest.mark.parametrize("command", ["import-telegram", "import-telegram-html"])
+def test_telegram_html_import_cli_uses_the_shared_topic_pipeline(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, command: str
+) -> None:
+    configure_cli_env(monkeypatch, tmp_path)
+    export = tmp_path / "messages.html"
+    export.write_text(
+        '<html><body><div class="page_header"><div class="text bold">CLI Group</div></div><div class="page_body chat_page"><div class="history"><div class="message default" id="message10"><div class="body"><div class="date details" title="07.11.2026 19:18:44 UTC+01:00">19:18</div><div class="from_name">Dana</div><div class="text">HTML-only CLI archive</div></div></div></div></div></body></html>',  # noqa: E501
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        app, [command, "--file", str(export), "--chat-id", "-100901", "--thread-id", "5"]
+    )
+    status = runner.invoke(app, ["memory-status", "--scope", "-100901:5"])
+
+    assert result.exit_code == 0, result.output
+    assert "Imported 1 Telegram" in result.output
+    assert "-100901:5" in result.output
+    assert status.exit_code == 0, status.output
+    assert "messages: 1" in status.output
+
+
 def test_runtime_audit_and_db_maintenance_commands(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

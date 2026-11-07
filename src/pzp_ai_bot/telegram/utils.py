@@ -10,6 +10,9 @@ def scope_from_message(message: Any) -> Scope:
     chat_id = int(message.chat.id)
     is_topic = bool(getattr(message, "is_topic_message", False))
     thread_id = getattr(message, "message_thread_id", None) if is_topic else None
+    if thread_id is None and bool(getattr(message.chat, "is_forum", False)):
+        # General has no topic flag in Bot API updates, but must not become an aggregate scope
+        thread_id = 1
     return Scope(chat_id=chat_id, thread_id=thread_id)
 
 

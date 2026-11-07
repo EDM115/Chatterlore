@@ -22,6 +22,7 @@ from pzp_ai_bot.db.repos.shared import utc_now
 from pzp_ai_bot.db.session import session_scope
 from pzp_ai_bot.memory.markdown import MarkdownMemoryStore, format_sources
 from pzp_ai_bot.memory.scope import Scope
+from pzp_ai_bot.memory.telegram_html import iter_telegram_html
 
 MemoryExportFormat = Literal["md", "jsonl"]
 IMPORT_BATCH_SIZE = 100
@@ -53,6 +54,7 @@ class TelegramDesktopMessage:
     created_at: datetime
     reply_to_message_id: int | None
     chat_title: str | None
+    source_thread_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -354,21 +356,39 @@ class MemoryTransferService:
     async def import_telegram_desktop_json(
         self, path: Path, scope: Scope
     ) -> TelegramDesktopImportResult:
+        return await self._import_telegram_messages(path, scope, fmt="json")
+
+    async def import_telegram_export(self, path: Path, scope: Scope) -> TelegramDesktopImportResult:
+        path, fmt = resolve_telegram_export(path)
+        return await self._import_telegram_messages(path, scope, fmt=fmt)
+
+    async def _import_telegram_messages(
+        self, path: Path, scope: Scope, *, fmt: Literal["json", "html"]
+    ) -> TelegramDesktopImportResult:
         if scope.chat_id is None:
             raise ValueError("Telegram Desktop imports require a concrete chat or topic scope")
+        event_prefix = f"telegram_{fmt}_import"
+        import_kind = f"telegram_{fmt}"
         imported = 0
         skipped = 0
         completed_batches = 0
         try:
             ensure_import_file_size(path)
-            shape = detect_telegram_json_shape(path)
+            if fmt == "html" or scope.thread_id is not None:
+                for row in iter_telegram_export_rows(path, fmt):
+                    if (
+                        scope.thread_id is not None
+                        and row.source_thread_id is not None
+                        and row.source_thread_id != scope.thread_id
+                    ):
+                        raise ValueError("export message thread conflicts with the target topic")
             async with session_scope(self.session_factory) as session:
                 scope_settings = await ScopeSettingsRepository(session).effective(
                     scope, self.default_scope_settings()
                 )
             selection = self.select_provider(scope_settings)
             for batch_index, rows in enumerate(
-                batched(iter_telegram_json_import(path, shape), IMPORT_BATCH_SIZE), start=1
+                batched(iter_telegram_export_rows(path, fmt), IMPORT_BATCH_SIZE), start=1
             ):
                 batch_rows = list(rows)
                 seen_ids: set[int] = set()
@@ -389,7 +409,7 @@ class MemoryTransferService:
                 if not candidates:
                     async with session_scope(self.session_factory) as session:
                         await EventRepository(session).add(
-                            event_type="telegram_json_import_batch",
+                            event_type=f"{event_prefix}_batch",
                             scope=scope,
                             payload={
                                 "batch": batch_index,
@@ -411,7 +431,7 @@ class MemoryTransferService:
                     metadata={
                         "scope": scope.key,
                         "target_type": "message",
-                        "import": "telegram_json",
+                        "import": import_kind,
                         "batch": batch_index,
                     },
                 )
@@ -426,7 +446,7 @@ class MemoryTransferService:
                             metadata={
                                 "scope": scope.key,
                                 "target_type": "message",
-                                "import": "telegram_json",
+                                "import": import_kind,
                                 "batch": batch_index,
                             },
                         )
@@ -444,7 +464,7 @@ class MemoryTransferService:
                         metadata={
                             "scope": scope.key,
                             "target_type": "message",
-                            "import": "telegram_json",
+                            "import": import_kind,
                             "batch": batch_index,
                         },
                     )
@@ -461,7 +481,7 @@ class MemoryTransferService:
                             learned=True,
                             skip_reason=None,
                             reply_to_message_id=row.reply_to_message_id,
-                            created_at=row.created_at,
+                            created_at=row.created_at.astimezone(UTC),
                             chat_title=row.chat_title,
                             chat_username=None,
                             topic_title=None,
@@ -481,7 +501,7 @@ class MemoryTransferService:
                         )
                         batch_imported += 1
                     await EventRepository(session).add(
-                        event_type="telegram_json_import_batch",
+                        event_type=f"{event_prefix}_batch",
                         scope=scope,
                         payload={
                             "batch": batch_index,
@@ -497,7 +517,7 @@ class MemoryTransferService:
                 completed_batches = batch_index
         except Exception as exc:
             await self._record_import_failure(
-                event_type="telegram_json_import_failed",
+                event_type=f"{event_prefix}_failed",
                 scope=scope,
                 path=path,
                 imported=imported,
@@ -508,7 +528,7 @@ class MemoryTransferService:
             raise
         async with session_scope(self.session_factory) as session:
             await EventRepository(session).add(
-                event_type="telegram_json_import",
+                event_type=event_prefix,
                 scope=scope,
                 payload={
                     "imported": imported,
@@ -620,6 +640,41 @@ def iter_telegram_json_import(
         yield from _iter_telegram_desktop_messages(path)
         return
     yield from _iter_telegram_update_messages(path, shape)
+
+
+def resolve_telegram_export(path: Path) -> tuple[Path, Literal["json", "html"]]:
+    if path.is_dir():
+        for name in ("result.json", "messages.html"):
+            candidate = path / name
+            if candidate.is_file():
+                path = candidate
+                break
+        else:
+            raise ValueError("Telegram export directory requires result.json or messages.html")
+    suffix = path.suffix.lower()
+    if suffix == ".json":
+        return path, "json"
+    if suffix in {".html", ".htm"}:
+        return path, "html"
+    raise ValueError("Telegram export must be a JSON/HTML file or export directory")
+
+
+def iter_telegram_export_rows(
+    path: Path, fmt: Literal["json", "html"]
+) -> Iterator[TelegramDesktopMessage]:
+    if fmt == "json":
+        yield from iter_telegram_json_import(path, detect_telegram_json_shape(path))
+        return
+    for row in iter_telegram_html(path, max_rows=MAX_IMPORT_ROWS, max_bytes=MAX_IMPORT_FILE_BYTES):
+        yield TelegramDesktopMessage(
+            telegram_message_id=row.telegram_message_id,
+            user_id=None,
+            username=row.username,
+            text=row.text,
+            created_at=row.created_at,
+            reply_to_message_id=row.reply_to_message_id,
+            chat_title=row.chat_title,
+        )
 
 
 def _iter_telegram_desktop_messages(path: Path) -> Iterator[TelegramDesktopMessage]:
@@ -790,6 +845,7 @@ def telegram_desktop_export_row(
         created_at=telegram_desktop_datetime(raw),
         reply_to_message_id=telegram_desktop_optional_int(raw.get("reply_to_message_id")),
         chat_title=chat_title,
+        source_thread_id=telegram_export_thread_id(raw.get("message_thread_id")),
     )
 
 
@@ -818,7 +874,28 @@ def telegram_update_row(raw: dict[str, Any]) -> TelegramDesktopMessage:
         created_at=telegram_update_datetime(raw),
         reply_to_message_id=telegram_update_reply_to_message_id(raw),
         chat_title=telegram_update_chat_title(raw),
+        source_thread_id=(
+            telegram_export_thread_id(raw.get("message_thread_id"))
+            if raw.get("is_topic_message")
+            else 1
+            if isinstance(raw.get("chat"), dict) and raw["chat"].get("is_forum")
+            else None
+        ),
     )
+
+
+def telegram_export_thread_id(value: Any) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not str(value).isascii() or not str(value).isdecimal():
+        raise ValueError("Telegram export thread id must be a positive integer")
+    try:
+        thread_id = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Telegram export thread id must be a positive integer") from exc
+    if thread_id <= 0:
+        raise ValueError("Telegram export thread id must be a positive integer")
+    return thread_id
 
 
 def telegram_update_message_payloads(payload: Any) -> list[dict[str, Any]] | None:

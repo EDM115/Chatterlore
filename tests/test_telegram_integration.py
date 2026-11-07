@@ -1076,6 +1076,47 @@ async def test_topic_command_uses_topic_scope(context: AppContext) -> None:
 
 
 @pytest.mark.asyncio
+async def test_forum_general_storage_and_search_do_not_include_sibling_topics(
+    context: AppContext,
+) -> None:
+    session = RecordingTelegramSession(chat_admin_ids={111})
+    bot = Bot(context.settings.telegram_bot_token, session=session)
+    dispatcher = build_dispatcher(context)
+    await context.memory.set_learning(Scope(-10012345, None), True, 111)
+    for message_id, text, thread_id in [
+        (1, "General rehearsal venue: Maple Pier 3107", None),
+        (2, "News release flag: Coral Lantern 8426", 3),
+        (3, "Private archive marker: Silver Otter 9731", 5),
+    ]:
+        payload = message_update(
+            text,
+            update_id=message_id,
+            message_id=message_id,
+            is_topic_message=thread_id is not None,
+            thread_id=thread_id,
+        )
+        payload["message"]["chat"]["is_forum"] = True
+        await feed(dispatcher, bot, payload)
+
+    request = message_update("/memory_search archive marker", update_id=4, message_id=4)
+    request["message"]["chat"]["is_forum"] = True
+    await feed(dispatcher, bot, request)
+
+    answer = session.sent_texts()[-1]
+    assert "Maple Pier 3107" in answer
+    assert "Silver Otter 9731" not in answer
+    assert "Coral Lantern 8426" not in answer
+    async with session_scope(context.session_factory) as database:
+        rows = list((await database.scalars(select(Message).order_by(Message.id))).all())
+    assert [(row.telegram_message_id, row.message_thread_id) for row in rows] == [
+        (1, 1),
+        (2, 3),
+        (3, 5),
+    ]
+    assert len(await context.memory.search(Scope(-10012345, None), "marker")) == 3
+
+
+@pytest.mark.asyncio
 async def test_ingestion_update_edges_match_scope_and_skip_rules(context: AppContext) -> None:
     session = RecordingTelegramSession(chat_admin_ids={111})
     bot = Bot(context.settings.telegram_bot_token, session=session)
