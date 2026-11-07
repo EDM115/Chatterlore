@@ -43,6 +43,7 @@ from pzp_ai_bot.db.repos.provider_credentials import (
 )
 from pzp_ai_bot.db.session import create_schema, create_session_factory, session_scope
 from pzp_ai_bot.memory.provider_operations import ProviderOperations
+from test_chat_streaming import ControlledStream, StreamEndpoint, chunk
 
 NOW = datetime(2026, 8, 1, 12, 0, tzinfo=UTC)
 
@@ -186,6 +187,67 @@ async def create_pool(
             "pooled", label=label, value=f"credential-secret-{index}", actor_user_id=111, now=NOW
         )
     return (CredentialPoolService(settings, factory, secrets.vault, clock=lambda: NOW), settings)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fail_after_content", [False, True])
+async def test_managed_stream_rotates_before_output_but_never_replays_after_output(
+    tmp_path: Path, fail_after_content: bool
+) -> None:
+    pool, settings = await create_pool(tmp_path)
+    failure = (
+        APIConnectionError(request=httpx.Request("POST", "https://example.invalid/v1"))
+        if fail_after_content
+        else status_error(AuthenticationError, 401)
+    )
+    first = ControlledStream([chunk("Partial"), failure] if fail_after_content else [failure])
+    second = ControlledStream([chunk("Completed"), chunk(finish=True), chunk(usage=True)])
+    endpoints = {
+        "credential-secret-0": StreamEndpoint([first]),
+        "credential-secret-1": StreamEndpoint([second]),
+    }
+
+    def client_factory(key: str, _base_url: str):
+        return SimpleNamespace(chat=SimpleNamespace(completions=endpoints[key]))
+
+    registry = ProviderRegistry(settings, openai_client_factory=client_factory)
+    registry.configure_credential_pool(pool)
+    secrets = ProviderSecretService(settings, pool.session_factory, registry)
+    await secrets.refresh_registry()
+    progress_values: list[str] = []
+
+    async def progress(text: str) -> None:
+        progress_values.append(text)
+
+    try:
+        execution = await ProviderOperations().execute_chat(
+            registry.select("pooled"),
+            [ChatMessage("user", "test")],
+            operation="ask",
+            metadata={"scope": "-1001:3"},
+            temperature=0.2,
+            max_tokens=32,
+            reasoning_effort="medium",
+            on_text=progress,
+        )
+        metadata = dict(execution.telemetry.metadata)
+        if fail_after_content:
+            assert execution.result is None and progress_values == ["Partial"]
+            assert endpoints["credential-secret-1"].requests == []
+            assert metadata["rotation_count"] == 0
+        else:
+            assert execution.result is not None and execution.result.content == "Completed"
+            assert progress_values == ["Completed"]
+            assert metadata["rotation_count"] == 1 and metadata["credential_label"] == "second"
+            assert (execution.telemetry.prompt_tokens, execution.telemetry.completion_tokens) == (
+                13,
+                7,
+            )
+        assert first.closed
+        assert "credential-secret" not in json.dumps(metadata)
+    finally:
+        await registry.aclose()
+        await pool.session_factory.kw["bind"].dispose()
 
 
 @pytest.mark.asyncio

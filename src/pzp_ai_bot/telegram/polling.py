@@ -5,7 +5,7 @@ from typing import Any
 from aiogram import Bot, Dispatcher
 
 from pzp_ai_bot.app_context import AppContext
-from pzp_ai_bot.telegram.commands import register_bot_commands
+from pzp_ai_bot.telegram.commands import clear_bot_commands
 from pzp_ai_bot.telegram.dispatcher import build_dispatcher
 from pzp_ai_bot.telegram.scheduler import (
     start_admin_alert_delivery,
@@ -30,7 +30,7 @@ async def run_polling(
     alert_task = start_admin_alert_delivery(context, telegram_bot)
     try:
         await telegram_bot.delete_webhook(drop_pending_updates=False)
-        await register_bot_commands(telegram_bot)
+        await clear_bot_commands(telegram_bot)
         await telegram_dispatcher.start_polling(telegram_bot)
     finally:
         await stop_task(idle_task)

@@ -22,6 +22,10 @@ PZP AI is built around explicit learning consent, scoped retrieval and reviewabl
 - `/memory_debug` explains skip reasons by message id and policy reason only; it does not return the skipped message body.
 - `/ask` may append compact source references such as `<scope>#<message_id>` when the generated answer does not already cite sources. These are identifiers for auditability, not raw message dumps.
 
+## Telegram Rich Replies And Streaming
+Rich formatting is presentation, not a new retrieval permission. The same destination scope and explicit cross-chat profile grants are resolved before any generated text is streamed. Private drafts are sent to the owning private chat, group/topic partial answers are visible to their existing audience and marked Generating until finalized, do not treat unfinished output as a verified answer. Native Stop matches the exact private chat/thread/draft and cannot cancel another user's scope.  
+Only visible answer-content deltas are forwarded, provider reasoning fields and hidden reasoning are never rendered or logged. Raw model HTML and image/media rules are disabled before native rich HTML delivery, linked files are not fetched by this renderer. Structured non-AI values stay literal, Telegram delivery logs use controlled exception types and safe identifiers rather than raw rejected content or API exception messages. Cancellation usage records contain no partial prose, outbound previews are not added as learned knowledge.  
+
 ## Imports And Exports
 
 - Manual notes can include tags, priority and source metadata; exports include that metadata alongside source message IDs and links when available.

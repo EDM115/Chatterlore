@@ -31,7 +31,7 @@
 ## Telegram Command Coupling
 
 - Telegram handlers are built in `src/pzp_ai_bot/telegram/router.py`, command registration and help text live in `src/pzp_ai_bot/telegram/commands.py`, and CLI commands live in `src/pzp_ai_bot/main.py`. When adding or renaming a Telegram command, keep the router handler, `COMMAND_DESCRIPTIONS`, `command_help_text()`, tests and `docs/commands.md` synchronized.
-- Use `safe_answer` and `safe_answer_document` for Telegram replies. Existing handlers cap normal text responses around 3900 characters and split memory export documents below Telegram's 50 MB upload limit.
+- Use `safe_answer` and `safe_answer_document` for Telegram replies, mark intended Markdown explicitly and keep raw status/configuration values literal. `telegram.streaming` owns request-local draft/edit progress, the shared presentation boundary bounds rich and literal fallback payloads, memory export documents remain below Telegram's 50 MB upload limit.
 - Reuse the local admin checks: `require_admin(...)` for chat-admin-or-bot-admin commands, and `context.admins.is_bot_admin(...)` for global/all-scope operations that should be restricted to configured bot admins.
 - Preserve confirmation flows for destructive or sensitive changes. `/forget` and confirmed `/settings` use token challenge repositories with TTLs rather than applying broad changes immediately.
 

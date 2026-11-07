@@ -1,6 +1,7 @@
 # Commands
 
 This page is the command reference for Telegram admins, configured bot admins and local operators. Commands use the current chat or forum topic unless a `scope=` argument is accepted.
+The supported slash handlers below remain usable by typing the command, including `/command@bot_username` in groups with several bots. Polling, webhook and connected-development startup clear the default-language/default-scope list this application previously published through `deleteMyCommands`, they never republish the large menu. The Main Mini App/menu button and owner-managed custom language/chat command scopes are left unchanged. Menu visibility is not permission, existing admin and scope checks still apply. The Mini App covers routine administration but is not declared a complete replacement for every local import, range-summary, template or power-user command.  
 
 ## Conversation And Retrieval
 
@@ -60,7 +61,7 @@ This page is the command reference for Telegram admins, configured bot admins an
 - `/stats`: show global message, knowledge, embedding and event counts. `/stats scope=...` shows the richer scoped status view and requires admin access.
 - `/help`: show command help inside Telegram.
 
-Configured `BOT_ADMINS` can administer every scope, including from a bot DM: `/runtime_settings` changes safe bot-wide defaults, `/settings scope=all ...` changes the global scope overlay, `/settings scope=<chat_id> ...` targets a chat and `/settings scope=<chat_id>:<thread_id> ...` targets a topic. Telegram chat admins can administer only the current chat they administer; commands that accept `scope=` reject foreign chat scopes for chat admins instead of applying current-chat authorization to another target. Effective scoped settings resolve from safe runtime defaults to the global scope, then the chat and finally the topic, so a chat setting is inherited by its topics but never by another chat. Global profile, runtime-setting, summary-template and system-prompt mutations are restricted to configured bot admins. Polling and webhook startup register the current command list with Telegram through `set_my_commands`.
+Configured `BOT_ADMINS` can administer every scope, including from a bot DM: `/runtime_settings` changes safe bot-wide defaults, `/settings scope=all ...` changes the global scope overlay, `/settings scope=<chat_id> ...` targets a chat and `/settings scope=<chat_id>:<thread_id> ...` targets a topic. Telegram chat admins can administer only the current chat they administer, commands that accept `scope=` reject foreign scopes instead of applying current-chat authorization to another target. Effective settings resolve from safe runtime defaults through global, chat and topic overlays. Global profile, runtime-setting, summary-template and system-prompt mutations remain bot-admin-only, clearing the visible command menu changes none of these rules.
 
 ## Independent Route Settings
 

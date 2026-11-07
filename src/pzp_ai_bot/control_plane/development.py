@@ -22,7 +22,7 @@ from fastapi.responses import JSONResponse
 from pzp_ai_bot.app_context import AppContext, build_context
 from pzp_ai_bot.config import Settings
 from pzp_ai_bot.control_plane.app import DevelopmentAuthConfig, install_control_plane
-from pzp_ai_bot.telegram.commands import register_bot_commands
+from pzp_ai_bot.telegram.commands import clear_bot_commands
 from pzp_ai_bot.telegram.dispatcher import build_dispatcher
 from pzp_ai_bot.telegram.scheduler import (
     ADMIN_ALERT_DELIVERY_TASK_NAME,
@@ -146,15 +146,18 @@ def create_control_plane_development_app(
         if alert_task is not None:
             app.state.background_tasks[ADMIN_ALERT_DELIVERY_TASK_NAME] = alert_task
         try:
-            if telegram_bot is not None:
-                await register_bot_commands(telegram_bot)
+            if telegram_bot is not None and telegram_dispatcher is not None:
+                await clear_bot_commands(telegram_bot)
                 await telegram_bot.set_webhook(
                     context.settings.webhook_url,
                     secret_token=context.settings.webhook_secret,
                     drop_pending_updates=False,
+                    allowed_updates=telegram_dispatcher.resolve_used_update_types(),
                 )
             yield
         finally:
+            if telegram_dispatcher is not None:
+                await telegram_dispatcher.emit_shutdown(bot=telegram_bot)
             await stop_task(idle_task)
             await stop_task(settings_task)
             await stop_task(index_task)

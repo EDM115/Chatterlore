@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from aiogram.types import BotCommand
-
 COMMAND_DESCRIPTIONS: tuple[tuple[str, str], ...] = (
     ("start", "Show welcome and command help"),
     ("ask", "Answer from current chat/topic memory"),
@@ -51,11 +49,6 @@ COMMAND_DESCRIPTIONS: tuple[tuple[str, str], ...] = (
     ("forget", "Delete memory after confirmation"),
     ("help", "Show command help"),
 )
-
-BOT_COMMANDS = [
-    BotCommand(command=command, description=description)
-    for command, description in COMMAND_DESCRIPTIONS
-]
 
 
 def command_help_text() -> str:
@@ -117,5 +110,6 @@ def command_help_text() -> str:
     return "\n".join(lines)
 
 
-async def register_bot_commands(bot: Any) -> None:
-    await bot.set_my_commands(BOT_COMMANDS)
+async def clear_bot_commands(bot: Any) -> None:
+    """Remove the default menu previously published by this app without disabling handlers."""
+    await bot.delete_my_commands()

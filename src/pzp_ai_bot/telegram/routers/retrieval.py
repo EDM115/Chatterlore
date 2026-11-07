@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import shlex
 from collections.abc import AsyncIterator
 
-from aiogram import Router
+from aiogram import Bot, Router
 from aiogram.filters import Command, CommandObject
-from aiogram.types import BufferedInputFile, Message
+from aiogram.types import BufferedInputFile, Message, MessageGenerationStopped
 
 from pzp_ai_bot.app_context import AppContext
 from pzp_ai_bot.memory.scope import parse_scope
@@ -19,6 +20,7 @@ from pzp_ai_bot.memory.service import (
 from pzp_ai_bot.telegram.commands import command_help_text
 from pzp_ai_bot.telegram.routers.shared import RouterGuards
 from pzp_ai_bot.telegram.safe_api import safe_answer, safe_answer_document
+from pzp_ai_bot.telegram.streaming import AnswerRegistry
 from pzp_ai_bot.telegram.utils import scope_from_message
 
 TELEGRAM_DOCUMENT_MAX_BYTES = 50 * 1024 * 1024
@@ -26,6 +28,13 @@ EXPORT_DOCUMENT_CHUNK_BYTES = 45 * 1024 * 1024
 
 
 def register_query_handlers(router: Router, context: AppContext, guards: RouterGuards) -> None:
+    answers = AnswerRegistry()
+    router.shutdown.register(answers.aclose)
+
+    @router.stopped_message_generation()
+    async def generation_stopped(event: MessageGenerationStopped, bot: Bot) -> None:
+        answers.stop(bot.id, event)
+
     @router.message(Command("ask"))
     async def ask(message: Message, command: CommandObject) -> None:
         try:
@@ -45,16 +54,34 @@ def register_query_handlers(router: Router, context: AppContext, guards: RouterG
         if admin_override and not await guards.require_admin(message):
             return
         try:
+            delivery = answers.start(message)
+        except ValueError as exc:
+            await safe_answer(message, str(exc))
+            return
+        try:
             answer = await context.memory.ask(
                 scope_from_message(message),
                 question,
                 profile_name=profile_name,
                 ai_options=ai_options,
+                on_text=delivery.update,
             )
         except ValueError as exc:
-            await safe_answer(message, str(exc))
-            return
-        await safe_answer(message, answer[:3900])
+            await delivery.finish(str(exc), markdown=False)
+        except asyncio.CancelledError:
+            if not delivery.stopped:
+                raise
+            if not delivery.superseded or not delivery.private:
+                status = (
+                    "Superseded by a newer request."
+                    if delivery.superseded
+                    else "Generation stopped."
+                )
+                await delivery.finish(status, markdown=False)
+        else:
+            await delivery.finish(answer)
+        finally:
+            answers.discard(delivery)
 
     @router.message(Command("memory_search"))
     async def memory_search(message: Message, command: CommandObject) -> None:
@@ -79,11 +106,11 @@ def register_query_handlers(router: Router, context: AppContext, guards: RouterG
         except ValueError as exc:
             await safe_answer(message, str(exc))
             return
-        await safe_answer(message, format_results(results)[:3900])
+        await safe_answer(message, format_results(results), markdown=True)
 
     @router.message(Command("start", "help"))
     async def help_command(message: Message) -> None:
-        await safe_answer(message, command_help_text()[:3900])
+        await safe_answer(message, command_help_text())
 
     @router.message(Command("memory_export"))
     async def memory_export(message: Message, command: CommandObject) -> None:
@@ -173,7 +200,7 @@ def register_range_summary_handler(
         except ValueError as exc:
             await safe_answer(message, str(exc))
             return
-        await safe_answer(message, format_range_summary(result)[:3900])
+        await safe_answer(message, format_range_summary(result), markdown=True)
 
 
 def _extract_ai_query_args(

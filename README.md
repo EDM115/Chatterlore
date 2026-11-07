@@ -28,6 +28,7 @@ PZP AI is a Telegram memory assistant that learns from live group conversations 
 - Graphical administration: the Telegram-authenticated SSR control plane provides a live Dashboard plus Bot Settings, Providers, Chats, Query, Memory, Stats, Audit and Operations workspaces for reloadless safe defaults, encrypted multi-key credentials, scoped memory and source-backed inspection on desktop, mobile browsers and Telegram Mini Apps.
 - Bounded control APIs: the authenticated backend exposes capability-aware Search/Ask, memory/review maintenance, cancellable Markdown/JSONL downloads, SQL-backed statistics, sanitized audit/usage pages and explicit diagnostics without triggering paid or local-model work during ordinary status loads; paid provider and optional local-model download checks remain separately labeled manual actions.
 - Operationally ready: structured logs, audit events, runtime settings, database maintenance commands, Docker support and GitHub Actions CI are included.
+- Telegram presentation: rich headings/lists/tables/code for AI answers, literal structured status replies, real streamed private drafts or throttled group/topic edits, and a quiet slash-command menu with manual command handlers retained. Providers without a streaming implementation send one completed reply
 
 ## Quick Start
 

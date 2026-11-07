@@ -150,6 +150,7 @@ class ChatProviderExecution:
     result: ChatResult | None
     failure: ProviderOperationError | None
     telemetry: ProviderCallTelemetry
+    stream_interrupted: bool = False
 
 
 @dataclass

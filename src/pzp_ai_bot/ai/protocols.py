@@ -1,10 +1,15 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
 Role = Literal["system", "user", "assistant"]
+ChatProgressCallback = Callable[[str], Awaitable[None]]
+
+
+class ChatStreamInterruptedError(RuntimeError):
+    """A partial stream cannot safely be restarted or used as a completed answer."""
 
 
 @dataclass(frozen=True)
