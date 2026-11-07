@@ -1,15 +1,18 @@
 FROM python:3.12-slim AS builder
 
-ARG UV_VERSION=0.12.0
-
 ENV UV_COMPILE_BYTECODE=1 \
+    UV_INSTALL_DIR=/usr/local/bin \
+    UV_NO_MODIFY_PATH=1 \
     UV_LINK_MODE=copy \
     UV_PROJECT_ENVIRONMENT=/opt/venv \
     UV_PYTHON_DOWNLOADS=never
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir "uv==$UV_VERSION"
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && \
+    curl -LsSf https://astral.sh/uv/install.sh -o /tmp/uv-install.sh && \
+    sh /tmp/uv-install.sh && \
+    rm /tmp/uv-install.sh && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml uv.lock README.md ./
 RUN uv sync --frozen --no-dev --no-install-project

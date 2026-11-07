@@ -2135,7 +2135,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2193,7 +2193,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2244,7 +2244,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2296,7 +2296,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2383,7 +2383,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2443,7 +2443,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2517,7 +2517,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneConflictEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2586,7 +2586,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneConflictEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2657,7 +2657,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneConflictEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2722,7 +2722,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneConflictEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2791,7 +2791,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneConflictEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2859,7 +2859,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneConflictEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2928,7 +2928,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneConflictEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2995,7 +2995,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneConflictEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3062,7 +3062,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneConflictEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3133,7 +3133,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneConflictEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3205,7 +3205,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneConflictEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3276,7 +3276,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneConflictEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3347,7 +3347,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneConflictEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3416,7 +3416,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneConflictEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3489,7 +3489,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneConflictEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3560,7 +3560,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneConflictEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3617,7 +3617,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3687,7 +3687,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3754,7 +3754,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3821,7 +3821,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3892,7 +3892,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3959,7 +3959,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4028,7 +4028,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4095,7 +4095,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4162,7 +4162,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4224,7 +4224,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4271,7 +4271,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4318,7 +4318,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4369,7 +4369,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4418,7 +4418,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4480,7 +4480,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneConflictEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4551,7 +4551,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneConflictEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4600,7 +4600,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4653,7 +4653,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4725,7 +4725,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneConflictEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4797,7 +4797,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneConflictEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4860,7 +4860,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneConflictEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4919,7 +4919,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4982,7 +4982,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -5049,7 +5049,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -5109,7 +5109,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -5176,7 +5176,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -5245,7 +5245,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -5332,7 +5332,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -5382,7 +5382,7 @@ export interface operations {
                     "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
                 };
             };
-            /** @description Unprocessable Entity */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;

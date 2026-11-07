@@ -1,8 +1,8 @@
 import { clearNuxtState, useState } from "#app";
 import { mountSuspended } from "@nuxt/test-utils/runtime";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import BotSettingsPage from "../app/pages/bot-settings.vue";
-import ChatsPage from "../app/pages/chats.vue";
+import BotSettingsPage from "~/pages/bot-settings.vue";
+import ChatsPage from "~/pages/chats.vue";
 
 const session = {
   user: {

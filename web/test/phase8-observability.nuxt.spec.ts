@@ -1,9 +1,9 @@
 import { clearNuxtState, useState } from "#app";
 import { mountSuspended } from "@nuxt/test-utils/runtime";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import AuditPage from "../app/pages/audit.vue";
-import OperationsPage from "../app/pages/operations.vue";
-import StatsPage from "../app/pages/stats.vue";
+import AuditPage from "~/pages/audit.vue";
+import OperationsPage from "~/pages/operations.vue";
+import StatsPage from "~/pages/stats.vue";
 
 const session = {
   user: {

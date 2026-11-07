@@ -2,6 +2,7 @@
 > **Executor instructions**: Follow each step and gate, use the authorized uv runtime rather than system Python, and update plans/README.md when complete unless a reviewer owns it.
 > **Drift check (run first)**: <code>git diff --stat beda837..HEAD -- pyproject.toml uv.lock Dockerfile .github/workflows/ci.yml tests/test_deployment_artifacts.py docs/deployment.md docs/testing.md PLAN.md</code>.
 ## Status
+The original exact shared-uv pin is superseded by the owner's 2026-11-07 policy: CI and the Docker standalone installer deliberately select latest uv. The frozen application-lock and lock-freshness mechanisms remain required, historical pin values/commands below must not be used to undo that decision.
 - **Status**: DONE
 - **Audit finding**: 12
 - **Priority**: P2

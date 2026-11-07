@@ -1,7 +1,7 @@
 import { clearNuxtState, useState } from "#app";
 import { mountSuspended } from "@nuxt/test-utils/runtime";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import MemoryPage from "../app/pages/memory.vue";
+import MemoryPage from "~/pages/memory.vue";
 
 const session = {
   user: {

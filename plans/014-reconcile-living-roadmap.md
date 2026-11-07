@@ -2,6 +2,7 @@
 > **Executor instructions**: This is documentation-only. Inspect the live tree first, change only PLAN.md and the plan index, and update plans/README.md when complete unless a reviewer owns it.
 > **Drift check (run first)**: <code>git diff --stat beda837..HEAD -- PLAN.md tests docs/testing.md pyproject.toml</code>. If implementation or test names changed, remap from the live tree before editing.
 ## Status
+- **Status**: DONE for the original audit scope, reconciled again on 2026-11-07 as ongoing roadmap maintenance
 - **Audit finding**: 14
 - **Priority**: P2
 - **Effort**: S
@@ -69,11 +70,11 @@ Run reference, status, diff-name, and diff-hygiene commands.
 - No application tests; this is documentation-only per AGENTS.md.
 - Mechanically verify file paths, version monotonicity, status consistency, and diff scope.
 ## Done criteria
-- [ ] Header version/date/status match the latest roadmap state.
-- [ ] Every active test/file reference exists.
-- [ ] Gate C TODOs and Gate D readiness are unambiguous.
-- [ ] Historical changelog entries remain intact and one new entry records reconciliation.
-- [ ] No source or unrelated docs changed.
+- [x] Header version/date/status match the latest roadmap state.
+- [x] Active test/file references were reconciled with the current tree, dated references remain historical.
+- [x] Gate C, Gate D and the added control-plane Gate E distinguish implementation from remaining release acceptance.
+- [x] Historical changelog entries remain intact and new entries record later reconciliation.
+- [x] The original documentation-only plan scope is preserved, the separately authorized November maintenance pass also includes dependency, test and frontend changes.
 ## STOP conditions
 - Live repo state cannot determine whether a gate has actually passed.
 - Another in-progress change is simultaneously editing PLAN.md.

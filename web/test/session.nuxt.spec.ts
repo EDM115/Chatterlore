@@ -2,9 +2,9 @@ import { clearNuxtState, useState } from "#app";
 import { mountSuspended } from "@nuxt/test-utils/runtime";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineComponent } from "vue";
-import LoginPage from "../app/pages/login.vue";
-import { useControlSession } from "../app/composables/useControlSession";
-import { TELEGRAM_WEB_APP_READY_EVENT, waitForTelegramInitData } from "../app/utils/telegramWebApp";
+import LoginPage from "~/pages/login.vue";
+import { useControlSession } from "~/composables/useControlSession";
+import { TELEGRAM_WEB_APP_READY_EVENT, waitForTelegramInitData } from "~/utils/telegramWebApp";
 
 const Harness = defineComponent({
   setup() {

@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import type { components } from "../types/openapi";
-import { syncTelegramClosingConfirmation } from "../plugins/telegram.client";
+import type { components } from "~/types/openapi";
 
 definePageMeta({ middleware: "auth" });
 useSeoMeta({ title: "Providers · PZP AI Control Plane" });
@@ -572,15 +571,9 @@ function formatTimestamp(value: string | null): string {
         <article>
           <span>Active key</span><strong>{{ pool.active_credential_label ?? "None" }}</strong>
         </article>
-        <article>
-          <span>Cooldown</span><strong>{{ pool.cooldown_credentials }}</strong>
-        </article>
-        <article>
-          <span>Disabled</span><strong>{{ pool.disabled_credentials }}</strong>
-        </article>
-        <article>
-          <span>Health epoch</span><strong>{{ pool.health_epoch }}</strong>
-        </article>
+        <article><span>Cooldown</span><strong>{{ pool.cooldown_credentials }}</strong></article>
+        <article><span>Disabled</span><strong>{{ pool.disabled_credentials }}</strong></article>
+        <article><span>Health epoch</span><strong>{{ pool.health_epoch }}</strong></article>
         <article>
           <span>Last recovery</span><strong>{{ formatTimestamp(pool.last_recovered_at) }}</strong>
         </article>

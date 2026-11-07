@@ -36,7 +36,7 @@ services:
     restart: unless-stopped
 
   proxy:
-    image: caddy:2.11.4-alpine
+    image: caddy:2-alpine
     environment:
       CADDY_SITE_ADDRESS: ${CADDY_SITE_ADDRESS:-${CONTROL_PLANE_PUBLIC_ORIGIN:-https://localhost}}
     ports:

@@ -1,9 +1,14 @@
 import { mountSuspended } from "@nuxt/test-utils/runtime";
+import { useAppConfig } from "#imports";
 import { describe, expect, it } from "vitest";
-import ControlPlaneShell from "../app/components/ControlPlaneShell.vue";
-import { TELEGRAM_WEB_APP_SCRIPT } from "../telegram";
+import ControlPlaneShell from "~/components/ControlPlaneShell.vue";
+import { TELEGRAM_WEB_APP_SCRIPT } from "~~/telegram";
 
 describe("ControlPlaneShell", () => {
+  it("applies the control-plane brand configuration from the Nuxt app directory", () => {
+    expect(useAppConfig().ui.colors.primary).toBe("sky");
+  });
+
   it("keeps the main content reachable by keyboard before navigation", async () => {
     const wrapper = await mountSuspended(ControlPlaneShell, {
       slots: { default: "<h1>Workspace overview</h1>" },

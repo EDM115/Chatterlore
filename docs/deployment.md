@@ -32,7 +32,7 @@ The FastAPI endpoint rejects requests whose `X-Telegram-Bot-Api-Secret-Token` he
 
 Webhook deployments should probe `GET /health`. It returns HTTP 200 with `pzp-idle-summarizer` and `pzp-runtime-settings-refresher` set to `true` only while both critical background task handles are running; it returns HTTP 503 with the failed task set to `false` when either loop has stopped. Ordinary iteration failures are retried with bounded exponential backoff and do not make health fail unless the task itself terminates.
 
-When `CONTROL_PLANE_ENABLED=true`, the webhook FastAPI application also installs Telegram OIDC, Mini App exchange, session, provider, bot-settings and managed-chat endpoints plus the `chat_shared` enrollment handler. The public origin must be the exact HTTPS origin used by the browser and registered with BotFather. Caddy routes `/api`, `/auth`, `/telegram/webhook` and `/health` directly to FastAPI, including each descendant path, and sends every other route to Nuxt SSR. Reserved backend paths never fall through to frontend HTML.
+When `CONTROL_PLANE_ENABLED=true`, the webhook FastAPI application also installs Telegram OIDC, Mini App exchange, session, provider, bot-settings and managed-chat endpoints plus the `chat_shared` enrollment handler. The public origin must be the exact HTTPS origin used by the browser and registered with BotFather. Caddy routes `/api/control` and `/auth` (including descendants), plus exact `/telegram/webhook` and `/health`, directly to FastAPI, and sends every other route to Nuxt SSR. Reserved backend paths never fall through to frontend HTML.
 
 ## Combined Loopback Development
 
@@ -44,9 +44,9 @@ With `CONTROL_PLANE_DEV_USER_ID` set and `WEBHOOK_URL` empty, the combined runti
 
 ## Docker
 
-The bot image uses a multi-stage `python:3.12-slim` build, pins uv 0.12.0, installs the exact production dependency set from `uv.lock` through frozen syncs, installs the project non-editably so the copied runtime environment is self-contained, runs as the non-root `pzp` user and includes a `pzp-bot doctor` image healthcheck. The dependency layer copies `pyproject.toml`, `uv.lock` and `README.md` before application source so ordinary source edits reuse the locked dependency layer.
+The bot image uses a multi-stage `python:3.12-slim` build, installs the latest uv through Astral's standalone installer, installs the exact production dependency set from `uv.lock` through frozen syncs, installs the project non-editably so the copied runtime environment is self-contained, runs as the non-root `pzp` user and includes a `pzp-bot doctor` image healthcheck. The dependency layer copies `pyproject.toml`, `uv.lock` and `README.md` before application source so ordinary source edits reuse the locked dependency layer. The installer version intentionally floats, application dependency resolution does not.
 
-The frontend image uses dependency, build and runtime stages based on `node:24.18.0-bookworm-slim`, activates pnpm 11.18.0, installs the frozen production dependency graph with a persistent BuildKit pnpm store and bounded install/build memory, runs `pnpm build`, copies only Nuxt's `.output` directory and runs `.output/server/index.mjs` as the non-root `node` user. Caddy is pinned to `caddy:2.11.4-alpine`; only that service publishes host ports 80 and 443, while Nuxt port 3000 and FastAPI port 8080 remain internal.
+The frontend image uses dependency, build and runtime stages based on `node:26-bookworm-slim`, installs pnpm 11.28.11 through its standalone installer (without relying on the removed bundled Corepack), installs the frozen production dependency graph with a persistent BuildKit pnpm store and bounded install/build memory, runs `pnpm build`, copies only Nuxt's `.output` directory and runs `.output/server/index.mjs` as the non-root `node` user. Caddy uses the deliberately mutable major tag `caddy:2-alpine`, only that service publishes host ports 80 and 443, while Nuxt port 3000 and FastAPI port 8080 remain internal. Record the actual uv, Node, pnpm and Caddy versions/image digests when qualifying a deployment, a floating tool/base-image policy is not a promise of byte-identical future builds.
 
 ```powershell
 docker build --tag pzp-ai:local .
@@ -81,7 +81,7 @@ docker compose up -d --no-deps bot
 ```
 
 `uv run pzp-bot polling` remains the supported local and manual polling command. Polling does not expose FastAPI or the browser control plane, so a control-plane deployment uses the Compose webhook topology.
-GitHub Actions installs the same uv 0.12.0 release, runs `uv lock --check`, then uses `uv sync --frozen --extra dev`. Ordinary CI and Docker builds therefore fail on project/lock drift instead of rewriting the lock; dependency upgrades must deliberately refresh and review `uv.lock` in their own change.
+The manually dispatched GitHub Actions workflow installs the latest uv, runs `uv lock --check`, then uses `uv sync --frozen --extra dev,local`. The pnpm setup action reads `web/package.json` through its explicit `working-directory: web` input. CI rejects project/lock drift, frozen installs do not rewrite either lockfile, and dependency upgrades must deliberately regenerate and review their lock changes. Keep tool versions floating as requested while recording their actual versions in acceptance evidence.
 
 ## Runtime Checklist
 
@@ -89,7 +89,7 @@ GitHub Actions installs the same uv 0.12.0 release, runs `uv lock --check`, then
 - Run `pzp-bot doctor` after changing secrets, provider profiles, database paths or memory paths.
 - For webhook mode, configure the orchestrator's runtime readiness/liveness probe against `GET /health` and investigate any HTTP 503 before routing Telegram traffic.
 - For polling mode, monitor process state plus `background_task_iteration_failed` and `background_task_stopped_unexpectedly` structured events because polling does not expose an HTTP health route.
-- Verify Caddy routes `/api`, `/auth`, `/telegram/webhook` and `/health` to FastAPI and strips `Cookie`, `Authorization` and `X-CSRF-Token` before frontend requests; the Nuxt service must never receive backend credentials.
+- Verify Caddy routes `/api/control`, `/auth`, `/telegram/webhook` and `/health` to FastAPI and strips `Cookie`, `Authorization` and `X-CSRF-Token` before frontend requests; the Nuxt service must never receive backend credentials.
 - Run `pnpm build`, `pnpm scan:generated` and `pnpm smoke:ssr` before replacing the frontend image.
 - Keep `.env`, SQLite files and generated memory out of git.
 - Use [operations.md](operations.md) for audit, backup, integrity and maintenance commands.

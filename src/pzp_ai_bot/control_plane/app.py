@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from collections import defaultdict, deque
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -162,7 +162,7 @@ def create_control_plane_app(
         runtime.oidc = oidc_client
 
     @asynccontextmanager
-    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
         try:
             yield
         finally:
@@ -501,7 +501,7 @@ def _build_auth_router(development_auth: DevelopmentAuthConfig | None = None) ->
         responses={
             401: {"model": ControlPlaneErrorEnvelope},
             403: {"model": ControlPlaneErrorEnvelope},
-            422: {"model": ControlPlaneErrorEnvelope},
+            422: {"model": ControlPlaneErrorEnvelope, "description": "Unprocessable Content"},
             429: {"model": ControlPlaneErrorEnvelope},
         },
     )
@@ -603,7 +603,7 @@ def _build_auth_router(development_auth: DevelopmentAuthConfig | None = None) ->
         responses={
             401: {"model": ControlPlaneErrorEnvelope},
             403: {"model": ControlPlaneErrorEnvelope},
-            422: {"model": ControlPlaneErrorEnvelope},
+            422: {"model": ControlPlaneErrorEnvelope, "description": "Unprocessable Content"},
             429: {"model": ControlPlaneErrorEnvelope},
         },
     )
@@ -672,7 +672,7 @@ def _build_provider_router() -> APIRouter:
     common_errors: dict[int | str, dict[str, Any]] = {
         401: {"model": ControlPlaneErrorEnvelope},
         403: {"model": ControlPlaneErrorEnvelope},
-        422: {"model": ControlPlaneErrorEnvelope},
+        422: {"model": ControlPlaneErrorEnvelope, "description": "Unprocessable Content"},
     }
     versioned_errors: dict[int | str, dict[str, Any]] = {
         **common_errors,
@@ -983,7 +983,7 @@ def _build_alert_router() -> APIRouter:
     common_errors: dict[int | str, dict[str, Any]] = {
         401: {"model": ControlPlaneErrorEnvelope},
         403: {"model": ControlPlaneErrorEnvelope},
-        422: {"model": ControlPlaneErrorEnvelope},
+        422: {"model": ControlPlaneErrorEnvelope, "description": "Unprocessable Content"},
     }
 
     @router.get(
@@ -1032,7 +1032,7 @@ def _build_management_router() -> APIRouter:
         403: {"model": ControlPlaneErrorEnvelope},
         404: {"model": ControlPlaneErrorEnvelope},
         409: {"model": ControlPlaneConflictEnvelope},
-        422: {"model": ControlPlaneErrorEnvelope},
+        422: {"model": ControlPlaneErrorEnvelope, "description": "Unprocessable Content"},
     }
 
     @router.get(
@@ -1378,7 +1378,7 @@ def _build_query_router() -> APIRouter:
         401: {"model": ControlPlaneErrorEnvelope},
         403: {"model": ControlPlaneErrorEnvelope},
         404: {"model": ControlPlaneErrorEnvelope},
-        422: {"model": ControlPlaneErrorEnvelope},
+        422: {"model": ControlPlaneErrorEnvelope, "description": "Unprocessable Content"},
         429: {"model": ControlPlaneErrorEnvelope},
     }
 
@@ -1449,7 +1449,7 @@ def _build_memory_router() -> APIRouter:
         401: {"model": ControlPlaneErrorEnvelope},
         403: {"model": ControlPlaneErrorEnvelope},
         404: {"model": ControlPlaneErrorEnvelope},
-        422: {"model": ControlPlaneErrorEnvelope},
+        422: {"model": ControlPlaneErrorEnvelope, "description": "Unprocessable Content"},
         429: {"model": ControlPlaneErrorEnvelope},
     }
 
@@ -1662,7 +1662,7 @@ def _build_stats_router() -> APIRouter:
     common_errors: dict[int | str, dict[str, Any]] = {
         401: {"model": ControlPlaneErrorEnvelope},
         403: {"model": ControlPlaneErrorEnvelope},
-        422: {"model": ControlPlaneErrorEnvelope},
+        422: {"model": ControlPlaneErrorEnvelope, "description": "Unprocessable Content"},
     }
 
     @router.get(
@@ -1703,7 +1703,7 @@ def _build_audit_router() -> APIRouter:
     common_errors: dict[int | str, dict[str, Any]] = {
         401: {"model": ControlPlaneErrorEnvelope},
         403: {"model": ControlPlaneErrorEnvelope},
-        422: {"model": ControlPlaneErrorEnvelope},
+        422: {"model": ControlPlaneErrorEnvelope, "description": "Unprocessable Content"},
     }
 
     @router.get(
@@ -1754,7 +1754,7 @@ def _build_operations_router() -> APIRouter:
     common_errors: dict[int | str, dict[str, Any]] = {
         401: {"model": ControlPlaneErrorEnvelope},
         403: {"model": ControlPlaneErrorEnvelope},
-        422: {"model": ControlPlaneErrorEnvelope},
+        422: {"model": ControlPlaneErrorEnvelope, "description": "Unprocessable Content"},
     }
 
     @router.get(

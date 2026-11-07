@@ -54,7 +54,7 @@ class EmbeddingRepository:
     ) -> list[tuple[Embedding, list[float]]]:
         if limit < 1:
             raise ValueError("retrieval candidate limit must be positive")
-        knowledge_stmt: Select[tuple[Embedding]] = (
+        knowledge_stmt: Select[Embedding] = (
             select(Embedding)
             .join(KnowledgeItem, Embedding.target_id == KnowledgeItem.id)
             .where(scope_filter(Embedding, scope), Embedding.target_type == "knowledge_item")
@@ -64,7 +64,7 @@ class EmbeddingRepository:
         rows = list((await self.session.scalars(knowledge_stmt)).all())
         remaining = limit - len(rows)
         if remaining > 0:
-            message_stmt: Select[tuple[Embedding]] = (
+            message_stmt: Select[Embedding] = (
                 select(Embedding)
                 .join(Message, Embedding.target_id == Message.id)
                 .where(

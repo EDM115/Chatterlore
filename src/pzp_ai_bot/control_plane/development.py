@@ -6,7 +6,7 @@ import hashlib
 import json
 import os
 import secrets
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncGenerator, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -133,7 +133,7 @@ def create_control_plane_development_app(
     telegram_dispatcher: Any | None = dispatcher or build_dispatcher(context) if connected else None
 
     @asynccontextmanager
-    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         idle_task = start_idle_summarizer(context)
         settings_task = start_runtime_settings_refresher(context)
         alert_task = (

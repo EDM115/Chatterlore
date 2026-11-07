@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import importlib
+import json
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import httpx2 as httpx
 import pytest
-from openai import APIConnectionError, BadRequestError
+from openai import APIConnectionError, AsyncOpenAI, BadRequestError
 from sqlalchemy import select
 from typer.testing import CliRunner
 
@@ -168,6 +169,78 @@ async def test_openai_compatible_retries_and_redacts_chat_and_embedding_payloads
     assert "user@example.com" not in embedding_payload
     assert "secret2" not in embedding_payload
     assert "embed-secret" not in embedding_payload
+
+
+@pytest.mark.asyncio
+async def test_openai_compatible_real_sdk_preserves_redaction_usage_and_embedding_vectors() -> None:
+    requests: list[httpx.Request] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path == "/v1/chat/completions":
+            return httpx.Response(
+                200,
+                json={
+                    "id": "chat-test",
+                    "object": "chat.completion",
+                    "created": 1,
+                    "model": "gpt-5.6-terra",
+                    "choices": [
+                        {
+                            "index": 0,
+                            "message": {"role": "assistant", "content": "SDK answer"},
+                            "finish_reason": "stop",
+                        }
+                    ],
+                    "usage": {"prompt_tokens": 11, "completion_tokens": 2, "total_tokens": 13},
+                },
+            )
+        if request.url.path == "/v1/embeddings":
+            return httpx.Response(
+                200,
+                json={
+                    "object": "list",
+                    "data": [{"object": "embedding", "index": 0, "embedding": "AACAPwAAAAAAAIC/"}],
+                    "model": "embed-a",
+                    "usage": {"prompt_tokens": 3, "total_tokens": 3},
+                },
+            )
+        return httpx.Response(404)
+
+    async with (
+        httpx.AsyncClient(transport=httpx.MockTransport(respond), trust_env=False) as http_client,
+        AsyncOpenAI(
+            api_key="sk-test", base_url="https://provider.example.test/v1", http_client=http_client
+        ) as client,
+    ):
+        provider = OpenAICompatibleProvider(
+            api_key="sk-test",
+            base_url="https://provider.example.test/v1",
+            chat_model="gpt-5.6-terra",
+            embedding_model="embed-a",
+            client=client,
+        )
+        result = await provider.generate(
+            [ChatMessage(role="user", content="contact me@example.com")],
+            max_tokens=123,
+            reasoning_effort="medium",
+        )
+        vectors = await provider.embed(["contact me@example.com"])
+
+    assert result.content == "SDK answer"
+    assert result.prompt_tokens == 11
+    assert result.completion_tokens == 2
+    assert vectors == [[1.0, 0.0, -1.0]]
+    assert provider.dimensions == 3
+    assert len(requests) == 2
+    chat_payload = json.loads(requests[0].content)
+    assert chat_payload["messages"] == [{"role": "user", "content": "contact [REDACTED_EMAIL]"}]
+    assert chat_payload["max_completion_tokens"] == 123
+    assert chat_payload["reasoning_effort"] == "medium"
+    assert "temperature" not in chat_payload
+    embedding_payload = json.loads(requests[1].content)
+    assert embedding_payload["input"] == ["contact [REDACTED_EMAIL]"]
+    assert embedding_payload["encoding_format"] == "base64"
 
 
 @pytest.mark.asyncio
