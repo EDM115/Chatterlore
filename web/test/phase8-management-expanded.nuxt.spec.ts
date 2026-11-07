@@ -37,6 +37,117 @@ afterEach(() => {
 });
 
 describe("Phase 8 settings and chat reconciliation", () => {
+  it.each(["blank", "reset"])(
+    "removes a persisted scope override using %s without copying the parent value",
+    async (action) => {
+      const saved = {
+        scope: "-1001",
+        effective: { retrieval_top_k: 9, summary_batch_size: 25 },
+        inherited: { retrieval_top_k: 6, summary_batch_size: 20 },
+        overrides: { retrieval_top_k: 9, summary_batch_size: 25 },
+        policy: { learning_enabled: true, allow_admins: false },
+        version: 3,
+      };
+      const request = vi.fn(
+        async (input: string, options?: { method?: string; body?: unknown }) => {
+          if (input.endsWith("/chats?limit=100"))
+            return {
+              items: [
+                {
+                  chat_id: -1001,
+                  title: "Engineering",
+                  username: null,
+                  status: "active",
+                  version: 1,
+                  updated_at: "2026-11-07T12:00:00Z",
+                },
+              ],
+              next_cursor: null,
+              has_more: false,
+            };
+          if (input.endsWith("/chats/-1001/admins")) return [];
+          if (input.endsWith("/chats/-1001/settings"))
+            return options?.method === "PATCH"
+              ? {
+                  ...saved,
+                  effective: { retrieval_top_k: 6, summary_batch_size: 25 },
+                  overrides: { summary_batch_size: 25 },
+                  version: 4,
+                }
+              : saved;
+          throw new Error(`Unexpected request: ${input}`);
+        },
+      );
+      vi.stubGlobal("$fetch", request);
+      const wrapper = await mountSuspended(ChatsPage);
+      await vi.waitFor(() => expect(wrapper.text()).toContain("Inherited: 6"));
+      if (action === "blank") {
+        const label = wrapper
+          .findAll("label")
+          .find((item) => item.text().includes("retrieval_top_k"));
+        await label!.get("input").setValue("");
+      } else {
+        await wrapper.get('[aria-label="Reset retrieval_top_k to inherited"]').trigger("click");
+      }
+      await wrapper
+        .findAll("button")
+        .find((button) => button.text() === "Apply scope settings")!
+        .trigger("click");
+      await vi.waitFor(() => expect(wrapper.text()).toContain("Settings for -1001 were applied."));
+      expect(request).toHaveBeenCalledWith(
+        "/api/control/v1/chats/-1001/settings",
+        expect.objectContaining({
+          method: "PATCH",
+          body: {
+            settings: { retrieval_top_k: null, summary_batch_size: 25 },
+            learning_enabled: true,
+            allow_admins: false,
+            version: 3,
+          },
+        }),
+      );
+      expect(wrapper.text()).toContain("Inherited: 6");
+      const label = wrapper
+        .findAll("label")
+        .find((item) => item.text().includes("retrieval_top_k"));
+      expect((label!.get("input").element as HTMLInputElement).value).toBe("");
+    },
+  );
+
+  it("keeps scoped settings available without requesting or exposing bot-only delegation", async () => {
+    useState("control-plane-session").value = {
+      ...session,
+      capabilities: [],
+      chat_capabilities: { "-1001": ["chat.admin"] },
+    };
+    const request = vi.fn(async (input: string) => {
+      if (input.endsWith("/chats?limit=100"))
+        return {
+          items: [{ chat_id: -1001, title: "Scoped group", status: "active", version: 1 }],
+          next_cursor: null,
+          has_more: false,
+        };
+      if (input.endsWith("/chats/-1001/settings"))
+        return {
+          scope: "-1001",
+          effective: { retrieval_top_k: 6 },
+          inherited: { retrieval_top_k: 6 },
+          overrides: {},
+          policy: { learning_enabled: true, allow_admins: false },
+          version: 0,
+        };
+      throw new Error(`Unexpected request: ${input}`);
+    });
+    vi.stubGlobal("$fetch", request);
+    const wrapper = await mountSuspended(ChatsPage);
+    await vi.waitFor(() => expect(wrapper.text()).toContain("Chat and topic settings"));
+    await vi.waitFor(() => expect(wrapper.text()).toContain("retrieval_top_k"));
+    expect(wrapper.find("#delegated-admins-title").exists()).toBe(false);
+    expect(wrapper.find("#new-chat-admin").exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("could not be loaded");
+    expect(request.mock.calls.some(([input]) => input.includes("/admins"))).toBe(false);
+  });
+
   it("shows approved model/reasoning controls and actionable version-conflict recovery", async () => {
     const request = vi.fn(async (input: string, options?: { method?: string }) => {
       if (input.endsWith("/bot-settings/admins"))

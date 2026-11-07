@@ -57,6 +57,8 @@ Later fixes are supported by code and regression definitions: natural-language a
 
 ## Authorization Policy Decision Before Release
 
+Resolved in the owner's subsequent authorized execution: all three grant endpoints and the UI now use the approved bot-admin-only boundary, with explicit native/delegated/ordinary denials across both auth clients. See the [current execution and live ledger](live-acceptance-2026-11-07.md), the following paragraphs describe the immutable review-start finding rather than current behavior.  
+
 The reviewed Plan 021 authorization matrix and API table say that managing delegated chat admins is bot-admin-only. The implemented GET/POST/DELETE `/chats/{chat_id}/admins` routes instead use `_require_chat_admin`, their OpenAPI capability is `chat_admin`, `tests/test_control_plane_contract.py` encodes that capability, and `ControlPlaneManagementService.grant_chat_admin`/`revoke_chat_admin` do not add a bot-owner restriction. Native and delegated chat admins can therefore create or revoke delegated grants inside their own active chat, not merely inspect settings or revoke themselves. The later recorded self-revocation is consistent with this implementation.  
 This is a concrete specification/implementation mismatch, not proof of cross-chat escalation or a new November regression. Resolve the intended policy explicitly before public acceptance: either retain scoped delegation and update the approved matrix/docs with its persistence/revocation consequences, or restrict grant mutations to bot owners and add discriminating API tests for native/delegated actors. Do not silently broaden the plan or change working authority while doing a documentation refresh.
 

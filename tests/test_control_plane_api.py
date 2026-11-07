@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 from urllib.parse import parse_qs, urlencode, urlsplit
 
+import pytest
 from aiogram import Bot, Dispatcher
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
@@ -125,6 +126,13 @@ class ControlPlaneManagementBotDouble:
     async def get_chat_member(self, chat_id: int, user_id: int) -> Any:
         return self.chat_members[(chat_id, user_id)]
 
+    async def get_chat_administrators(self, chat_id: int) -> list[Any]:
+        return [
+            member
+            for (member_chat_id, _), member in self.chat_members.items()
+            if member_chat_id == chat_id and member.status == "administrator"
+        ]
+
     async def leave_chat(self, chat_id: int) -> bool:
         self.left_chats.append(chat_id)
         return True
@@ -165,7 +173,7 @@ def test_mini_app_session_csrf_logout_headers_and_audit_are_fail_closed(tmp_path
         session = client.get("/api/control/v1/session")
         assert session.status_code == 200
         assert session.json()["user"]["telegram_user_id"] == 887_758_628
-        assert session.json()["csrf_token"] != csrf
+        assert session.json()["csrf_token"] == csrf
         csrf = session.json()["csrf_token"]
 
         no_csrf = client.post("/api/control/v1/auth/logout", headers={"Origin": ORIGIN})
@@ -191,6 +199,106 @@ def test_mini_app_session_csrf_logout_headers_and_audit_are_fail_closed(tmp_path
             assert events
 
     asyncio.run(inspect())
+
+
+@pytest.mark.parametrize("client_kind", ["browser", "mini_app"])
+def test_session_refresh_keeps_other_tab_csrf_valid(tmp_path: Path, client_kind: str) -> None:
+    context, app = build_test_app(tmp_path)
+    assert context.control_plane is not None
+    issued = asyncio.run(
+        context.control_plane.sessions.issue(
+            TelegramIdentity(
+                telegram_user_id=111,
+                first_name="Owner",
+                last_name=None,
+                username=None,
+                language_code=None,
+                photo_url=None,
+                is_bot=False,
+                is_premium=None,
+                authenticated_at=datetime.now(UTC),
+            ),
+            client_kind=client_kind,
+            now=datetime.now(UTC),
+        )
+    )
+    with TestClient(app, base_url=ORIGIN) as client:
+        client.cookies.set("pzp_control_session", issued.session_token)
+        first_tab = client.get("/api/control/v1/session")
+        second_tab = client.get("/api/control/v1/session")
+        assert first_tab.status_code == second_tab.status_code == 200
+        assert (
+            client.post(
+                "/api/control/v1/auth/logout",
+                headers={"Origin": ORIGIN, "X-CSRF-Token": first_tab.json()["csrf_token"]},
+            ).status_code
+            == 204
+        )
+        assert client.get("/api/control/v1/session").status_code == 401
+
+
+def test_scoped_settings_resets_restore_complete_parent_values_and_preserve_other_overrides(
+    tmp_path: Path,
+) -> None:
+    context, app = build_test_app(tmp_path)
+
+    async def seed() -> None:
+        assert context.control_plane is not None
+        await context.control_plane.management.enroll_chat(
+            chat_id=-1001, title="Engineering", username=None, actor_user_id=111, now=NOW
+        )
+        await context.memory.set_scope_settings(
+            Scope.global_scope(), {"retrieval_top_k": 6, "review_before_compact": True}
+        )
+        await context.memory.set_scope_settings(
+            Scope(-1001, None),
+            {"retrieval_top_k": 9, "review_before_compact": False, "summary_batch_size": 25},
+        )
+        await context.memory.set_scope_settings(Scope(-1001, 22), {"retrieval_top_k": 13})
+
+    asyncio.run(seed())
+    with TestClient(app, base_url=ORIGIN) as client:
+        login = client.post(
+            "/api/control/v1/auth/mini-app",
+            headers={"Origin": ORIGIN},
+            json={"init_data": signed_init_data(111)},
+        )
+        headers = {"Origin": ORIGIN, "X-CSRF-Token": login.json()["csrf_token"]}
+        url = "/api/control/v1/chats/-1001/settings"
+        chat = client.get(url).json()
+        topic = client.get(f"{url}?thread_id=22").json()
+        assert chat["effective"]["retrieval_top_k"] == 9
+        assert chat["inherited"]["retrieval_top_k"] == 6
+        assert topic["effective"]["retrieval_top_k"] == 13
+        assert topic["inherited"]["retrieval_top_k"] == 9
+        reset_topic = client.patch(
+            f"{url}?thread_id=22",
+            headers=headers,
+            json={"settings": {"retrieval_top_k": None}, "version": topic["version"]},
+        )
+        assert reset_topic.status_code == 200
+        assert reset_topic.json()["effective"]["retrieval_top_k"] == 9
+        assert "retrieval_top_k" not in reset_topic.json()["overrides"]
+        reset = client.patch(
+            url,
+            headers=headers,
+            json={
+                "settings": {"retrieval_top_k": None, "review_before_compact": None},
+                "version": chat["version"],
+            },
+        )
+        assert reset.status_code == 200
+        assert reset.json()["effective"]["retrieval_top_k"] == 6
+        assert reset.json()["effective"]["review_before_compact"] is True
+        assert reset.json()["overrides"] == {"summary_batch_size": 25}
+        assert reset.json()["version"] == chat["version"] + 1
+        assert reset.json()["audit_event_id"] > 0
+        stale = client.patch(
+            url, headers=headers, json={"settings": {"summary_batch_size": None}, "version": 1}
+        )
+        assert stale.status_code == 409
+        asyncio.run(context.memory.set_scope_settings(Scope.global_scope(), {"retrieval_top_k": 7}))
+        assert client.get(f"{url}?thread_id=22").json()["effective"]["retrieval_top_k"] == 7
 
 
 def test_oidc_callback_consumes_state_on_error_and_mints_the_shared_session_model(
@@ -974,6 +1082,73 @@ async def _seed_phase6_scoped_authorization_matrix(context: AppContext) -> None:
         )
 
 
+@pytest.mark.parametrize("client_kind", ["browser", "mini_app"])
+@pytest.mark.parametrize("user_id", [111, 222, 333, 444, 555])
+def test_delegated_admin_management_is_bot_admin_only(
+    tmp_path: Path, client_kind: str, user_id: int
+) -> None:
+    settings = settings_for(tmp_path)
+    asyncio.run(create_schema(settings))
+    context = asyncio.run(build_context(settings, ensure_schema=False))
+    app = create_control_plane_app(context, oidc_client=FakeOIDCClient(user_id=user_id))
+    bot = ControlPlaneManagementBotDouble()
+    bot.chat_members[(-1001, 555)] = SimpleNamespace(
+        status="administrator", user=SimpleNamespace(id=555, is_bot=False)
+    )
+    bot.chat_members[(-1001, 666)] = SimpleNamespace(
+        status="member", user=SimpleNamespace(id=666, is_bot=False)
+    )
+    app.state.telegram_bot = bot
+    asyncio.run(_seed_phase6_scoped_authorization_matrix(context))
+    asyncio.run(_grant_bot_admin(context, 222))
+    context.admins.set_managed_chat_active(-1001, True)
+
+    with TestClient(app, base_url=ORIGIN) as client:
+        if client_kind == "mini_app":
+            login = client.post(
+                "/api/control/v1/auth/mini-app",
+                headers={"Origin": ORIGIN},
+                json={"init_data": signed_init_data(user_id)},
+            )
+            assert login.status_code == 200
+            csrf = login.json()["csrf_token"]
+        else:
+            start = client.get("/auth/telegram/start", follow_redirects=False)
+            state = parse_qs(urlsplit(start.headers["location"]).query)["state"][0]
+            callback = client.get(
+                f"/auth/telegram/callback?state={state}&code=telegram-code", follow_redirects=False
+            )
+            assert callback.status_code == 303
+            csrf = client.get("/api/control/v1/session").json()["csrf_token"]
+        headers = {"Origin": ORIGIN, "X-CSRF-Token": csrf}
+        allowed = user_id in {111, 222}
+        results = [
+            client.get("/api/control/v1/chats/-1001/admins"),
+            client.post(
+                "/api/control/v1/chats/-1001/admins",
+                headers=headers,
+                json={"telegram_user_id": 666},
+            ),
+            client.request(
+                "DELETE",
+                "/api/control/v1/chats/-1001/admins/333",
+                headers=headers,
+                json={"version": 1},
+            ),
+        ]
+        assert [response.status_code for response in results] == [200 if allowed else 403] * 3
+        if not allowed:
+            assert {response.json()["error"]["code"] for response in results} == {
+                "bot_admin_required"
+            }
+            assert context.control_plane is not None
+            grants = asyncio.run(context.control_plane.management.list_chat_admins(-1001))
+            assert [grant.telegram_user_id for grant in grants] == [333]
+            assert client.get("/api/control/v1/session").status_code == 200
+            if user_id in {333, 555}:
+                assert client.get("/api/control/v1/chats/-1001/settings").status_code == 200
+
+
 def test_phase6_scoped_authorization_matrix_matches_browser_and_mini_app_sessions(
     tmp_path: Path,
 ) -> None:
@@ -1018,12 +1193,19 @@ def test_phase6_scoped_authorization_matrix_matches_browser_and_mini_app_session
                 client.get("/api/control/v1/chats/-1002/settings?thread_id=77").status_code == 403
             )
 
-            revoked = client.request(
-                "DELETE",
-                "/api/control/v1/chats/-1001/admins/333",
-                headers=headers,
-                json={"version": 1},
-            )
+            with TestClient(app, base_url=ORIGIN) as owner:
+                owner_login = owner.post(
+                    "/api/control/v1/auth/mini-app",
+                    headers={"Origin": ORIGIN},
+                    json={"init_data": signed_init_data(111)},
+                )
+                assert owner_login.status_code == 200
+                revoked = owner.request(
+                    "DELETE",
+                    "/api/control/v1/chats/-1001/admins/333",
+                    headers={"Origin": ORIGIN, "X-CSRF-Token": owner_login.json()["csrf_token"]},
+                    json={"version": 1},
+                )
             assert revoked.status_code == 200
             assert (
                 client.get("/api/control/v1/chats/-1001/settings?thread_id=77").status_code == 403

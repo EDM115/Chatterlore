@@ -561,7 +561,7 @@ def _build_auth_router(development_auth: DevelopmentAuthConfig | None = None) ->
         _, runtime = _services(request)
         token = _session_token(request)
         authenticated = await _authenticate(runtime, token)
-        csrf_token = await runtime.sessions.rotate_csrf(token, now=datetime.now(UTC))
+        csrf_token = await runtime.sessions.get_csrf_token(token, now=datetime.now(UTC))
         actor = await runtime.authorization.resolve(authenticated.identity.telegram_user_id)
         return _session_payload(authenticated=authenticated, csrf_token=csrf_token, actor=actor)
 
@@ -1266,23 +1266,23 @@ def _build_management_router() -> APIRouter:
     @router.get(
         "/chats/{chat_id}/admins",
         response_model=list[ChatAdminResponse],
-        openapi_extra={"x-pzp-capability": "chat_admin"},
+        openapi_extra={"x-pzp-capability": "bot_admin"},
         responses=common_errors,
     )
     async def list_chat_admins(request: Request, chat_id: int) -> list[Any]:
-        _, runtime, _, _ = await _require_chat_admin(request, chat_id)
+        _, runtime, _, _ = await _require_bot_admin(request)
         return await runtime.management.list_chat_admins(chat_id)
 
     @router.post(
         "/chats/{chat_id}/admins",
         response_model=ChatAdminResponse,
-        openapi_extra={"x-pzp-capability": "chat_admin"},
+        openapi_extra={"x-pzp-capability": "bot_admin"},
         responses=common_errors,
     )
     async def create_chat_admin(
         request: Request, chat_id: int, payload: ChatAdminCreateRequest
     ) -> Any:
-        _, runtime, authenticated, _ = await _require_chat_admin(request, chat_id)
+        _, runtime, authenticated, _ = await _require_bot_admin(request)
         try:
             return await runtime.management.grant_chat_admin(
                 chat_id=chat_id,
@@ -1296,7 +1296,7 @@ def _build_management_router() -> APIRouter:
     @router.delete(
         "/chats/{chat_id}/admins/{telegram_user_id}",
         response_model=ChatAdminResponse,
-        openapi_extra={"x-pzp-capability": "chat_admin"},
+        openapi_extra={"x-pzp-capability": "bot_admin"},
         responses=common_errors,
     )
     async def delete_chat_admin(
@@ -1305,7 +1305,7 @@ def _build_management_router() -> APIRouter:
         telegram_user_id: int,
         payload: VersionedMutationRequest = Body(),
     ) -> Any:
-        _, runtime, authenticated, _ = await _require_chat_admin(request, chat_id)
+        _, runtime, authenticated, _ = await _require_bot_admin(request)
         try:
             return await runtime.management.revoke_chat_admin(
                 chat_id=chat_id,

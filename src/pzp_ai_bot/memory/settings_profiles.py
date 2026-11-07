@@ -88,7 +88,7 @@ def validate_scope_settings(
     optional_positive_int_fields = {"raw_message_retention_days", "knowledge_retention_days"}
     for field in positive_int_fields:
         value = updates.get(field)
-        if field in updates and (not isinstance(value, int) or value < 1):
+        if field in updates and value is not None and (not isinstance(value, int) or value < 1):
             raise ValueError(f"{field} must be a positive integer")
     for field in optional_positive_int_fields:
         value = updates.get(field)
@@ -114,7 +114,7 @@ def validate_scope_settings(
             if field == "reasoning_level":
                 value = active_settings.validate_reasoning_level(value)
             updates[field] = value
-    if "review_before_compact" in updates and not isinstance(
+    if updates.get("review_before_compact") is not None and not isinstance(
         updates["review_before_compact"], bool
     ):
         raise ValueError("review_before_compact must be true or false")

@@ -122,7 +122,9 @@ async function loadSelectedChat() {
     : "";
   try {
     [chatAdmins.value, scopeSettings.value] = await Promise.all([
-      api.request<ChatAdmin[]>(`/chats/${selectedChatId.value}/admins`),
+      isBotAdmin.value
+        ? api.request<ChatAdmin[]>(`/chats/${selectedChatId.value}/admins`)
+        : Promise.resolve([]),
       api.request<ScopeSettings>(`/chats/${selectedChatId.value}/settings${query}`),
     ]);
     settingsDraft.value = Object.fromEntries(
@@ -239,6 +241,7 @@ async function runConfirmedAction(chat: ManagedChat, action: "leave" | "forget")
 }
 
 async function addChatAdmin() {
+  if (!isBotAdmin.value) return;
   if (selectedChatId.value === null) return;
   const telegramUserId = Number(newChatAdminId.value);
   if (!Number.isSafeInteger(telegramUserId) || telegramUserId < 1) {
@@ -264,6 +267,7 @@ async function addChatAdmin() {
 }
 
 async function removeChatAdmin(admin: ChatAdmin) {
+  if (!isBotAdmin.value) return;
   try {
     await api.request(`/chats/${admin.chat_id}/admins/${admin.telegram_user_id}`, {
       body: { version: admin.version },
@@ -281,8 +285,10 @@ async function saveScopeSettings() {
   if (selectedChatId.value === null) return;
   const settings = Object.fromEntries(
     Object.entries(settingsDraft.value)
-      .filter(([, value]) => value.trim() !== "")
-      .map(([key, value]) => [key, parseScopeValue(key, value)]),
+      .filter(
+        ([key, value]) => value.trim() !== "" || key in (scopeSettings.value?.overrides ?? {}),
+      )
+      .map(([key, value]) => [key, value.trim() === "" ? null : parseScopeValue(key, value)]),
   );
   const query = threadId.value.trim()
     ? `?thread_id=${encodeURIComponent(threadId.value.trim())}`
@@ -483,7 +489,7 @@ function delay(milliseconds: number): Promise<void> {
     </section>
 
     <template v-if="selectedChat">
-      <section class="management-panel" aria-labelledby="delegated-admins-title">
+      <section v-if="isBotAdmin" class="management-panel" aria-labelledby="delegated-admins-title">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Delegation</p>
@@ -558,19 +564,30 @@ function delay(milliseconds: number): Promise<void> {
           <article>
             <h3>Overrides</h3>
             <div class="settings-list">
-              <label v-for="(value, key) in scopeSettings.effective" :key="String(key)"
-                ><span>{{ key }}</span
-                ><input
-                  v-model="settingsDraft[String(key)]"
-                  :placeholder="
-                    scopeSettings.inherited[String(key)] === undefined
-                      ? formatDraft(value)
-                      : `Inherited: ${formatDraft(scopeSettings.inherited[String(key)])}`
-                  "
-                /><small
-                  >Inherited: {{ formatDraft(scopeSettings.inherited[String(key)]) }}</small
-                ></label
-              >
+              <div v-for="(value, key) in scopeSettings.effective" :key="String(key)">
+                <label
+                  ><span>{{ key }}</span
+                  ><input
+                    v-model="settingsDraft[String(key)]"
+                    :placeholder="
+                      scopeSettings.inherited[String(key)] === undefined
+                        ? formatDraft(value)
+                        : `Inherited: ${formatDraft(scopeSettings.inherited[String(key)])}`
+                    "
+                  /><small
+                    >Inherited: {{ formatDraft(scopeSettings.inherited[String(key)]) }}</small
+                  ></label
+                >
+                <UButton
+                  type="button"
+                  color="neutral"
+                  variant="soft"
+                  :aria-label="`Reset ${key} to inherited`"
+                  :disabled="!settingsDraft[String(key)]?.trim()"
+                  @click="settingsDraft[String(key)] = ''"
+                  >Reset to inherited</UButton
+                >
+              </div>
             </div>
           </article>
         </div>

@@ -27,6 +27,9 @@ export function controlErrorMessage(
     case 401:
       return "Your Telegram session expired. Sign in again.";
     case 403:
+      if (controlResponseCode(error) === "csrf_rejected") {
+        return "Your session security token is out of date. Refresh this page and retry.";
+      }
       return "Your Telegram account does not have access to this scope.";
     case 409:
       return "This record changed in another session. Refresh before retrying.";

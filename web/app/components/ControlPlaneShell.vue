@@ -3,6 +3,8 @@ const route = useRoute();
 const controlSession = useControlSession();
 const hydrated = ref(false);
 const mobileMenu = ref<HTMLDetailsElement | null>(null);
+const loggingOut = ref(false);
+const logoutError = ref<string | null>(null);
 
 onMounted(() => {
   hydrated.value = true;
@@ -21,6 +23,9 @@ const authenticated = computed(
   () => hydrated.value && controlSession.status.value === "authenticated",
 );
 const visibleUser = computed(() => (hydrated.value ? controlSession.user.value : null));
+const showLogout = computed(
+  () => authenticated.value && controlSession.clientKind.value === "browser",
+);
 const accessLabel = computed(() =>
   hydrated.value ? controlSession.accessLabel.value : "Authentication required",
 );
@@ -51,6 +56,21 @@ const isCurrent = (to: string) => route.path === to;
 function closeMobileMenu() {
   if (mobileMenu.value) mobileMenu.value.open = false;
 }
+
+async function logout() {
+  if (!showLogout.value || loggingOut.value) return;
+  loggingOut.value = true;
+  logoutError.value = null;
+  try {
+    await controlSession.logout();
+    closeMobileMenu();
+    await navigateTo("/login");
+  } catch {
+    logoutError.value = "Log out could not be completed. Please retry.";
+  } finally {
+    loggingOut.value = false;
+  }
+}
 </script>
 
 <template>
@@ -76,6 +96,16 @@ function closeMobileMenu() {
         >
           {{ item.label }}
         </NuxtLink>
+        <button
+          v-if="showLogout"
+          class="navigation-link"
+          type="button"
+          aria-label="Log out"
+          :disabled="loggingOut"
+          @click="logout"
+        >
+          {{ loggingOut ? "Logging out…" : "Log out" }}
+        </button>
       </nav>
 
       <div class="sidebar-note">
@@ -110,11 +140,22 @@ function closeMobileMenu() {
             >
               {{ item.label }}
             </NuxtLink>
+            <button
+              v-if="showLogout"
+              class="navigation-link"
+              type="button"
+              aria-label="Log out"
+              :disabled="loggingOut"
+              @click="logout"
+            >
+              {{ loggingOut ? "Logging out…" : "Log out" }}
+            </button>
           </nav>
         </details>
       </header>
 
       <main id="control-plane-content" class="shell-content" tabindex="-1">
+        <p v-if="logoutError" role="alert">{{ logoutError }}</p>
         <slot />
       </main>
 
