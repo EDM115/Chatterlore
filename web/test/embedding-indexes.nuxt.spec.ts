@@ -1,5 +1,6 @@
-import { clearNuxtState, useState } from "#app";
+import { clearNuxtState, useRouter, useState } from "#app";
 import { mountSuspended } from "@nuxt/test-utils/runtime";
+import { flushPromises } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import EmbeddingIndexesPage from "~/pages/embedding-indexes.vue";
 import ControlPlaneShell from "~/components/ControlPlaneShell.vue";
@@ -311,7 +312,7 @@ describe("Embedding index migrations", () => {
     expect(wrapper.find('[data-testid="start-embedding-job"]').exists()).toBe(false);
   });
 
-  it("hides the owner-only navigation and never requests index data for scoped admins", async () => {
+  it("redirects scoped admins without showing owner navigation or requesting index data", async () => {
     useState("control-plane-session").value = {
       ...ownerSession,
       capabilities: [],
@@ -321,7 +322,11 @@ describe("Embedding index migrations", () => {
     vi.stubGlobal("$fetch", request);
     const shell = await mountSuspended(ControlPlaneShell);
     expect(shell.text()).not.toContain("Embedding indexes");
-    await mountSuspended(EmbeddingIndexesPage);
+    const page = await mountSuspended(EmbeddingIndexesPage);
+    await vi.waitFor(() => expect(useRouter().currentRoute.value.path).toBe("/unauthorized"));
+    await flushPromises();
     expect(request).not.toHaveBeenCalled();
+    page.unmount();
+    shell.unmount();
   });
 });

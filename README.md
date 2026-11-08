@@ -8,7 +8,9 @@
 
 <p align="center">
   <a href="https://github.com/EDM115/Chatterlore/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/EDM115/Chatterlore/actions/workflows/ci.yml/badge.svg"></a>
-  <img alt="Python 3.12+" src="https://img.shields.io/badge/python-3.12%2B-blue.svg">
+  <img alt="Python 3.12+" src="https://img.shields.io/badge/Python-3.12%2B-26A5E4?logo=python&logoColor=white">
+  <img alt="Telegram bot" src="https://img.shields.io/badge/Telegram-bot-26A5E4?logo=telegram&logoColor=white">
+  <img alt="Docker ready" src="https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white">
   <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-green.svg">
 </p>
 
