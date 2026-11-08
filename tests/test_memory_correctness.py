@@ -164,16 +164,26 @@ async def test_retrieval_query_count_is_constant_and_candidate_work_is_bounded(
     assert query_count == 4
 
 
-def test_normalized_cosine_similarity_matches_existing_numeric_behavior() -> None:
+def test_cosine_similarity_matches_hand_worked_geometry() -> None:
     query = [3.0, 4.0, 0.0]
-    candidates = ([5.0, 0.0, 12.0], [0.0, 0.0, 0.0], [3.0, 4.0, 0.0])
-    normalized_query = normalize(query)
+    normalized_query = [0.6, 0.8, 0.0]
+    assert normalize(query) == pytest.approx(normalized_query, abs=1e-12)
 
-    for candidate in candidates:
+    cases = [
+        ([5.0, 0.0, 12.0], 3 / 13),
+        ([4.0, -3.0, 0.0], 0.0),
+        ([-3.0, -4.0, 0.0], -1.0),
+        ([3.0, 4.0, 0.0], 1.0),
+        ([0.0, 0.0, 0.0], 0.0),
+        ([1.0, 2.0], 0.0),
+        ([], 0.0),
+    ]
+    for candidate, expected in cases:
+        assert cosine_similarity(query, candidate) == pytest.approx(expected, abs=1e-12)
         assert normalized_cosine_similarity(normalized_query, candidate) == pytest.approx(
-            cosine_similarity(query, candidate), abs=1e-12
+            expected, abs=1e-12
         )
-    assert normalized_cosine_similarity(normalized_query, [1.0, 2.0]) == 0.0
+    assert cosine_similarity([], []) == 0.0
     assert normalized_cosine_similarity([], []) == 0.0
 
 

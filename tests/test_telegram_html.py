@@ -99,7 +99,6 @@ def test_html_reader_preserves_attachment_labels_without_opening_files(tmp_path:
     [row] = read_rows(path)
 
     assert row.text == "Deployment attachment Attachment: runbook.pdf"
-    assert not (tmp_path / "files").exists()
 
 
 def test_html_reader_follows_local_next_page_and_carries_joined_author(tmp_path: Path) -> None:

@@ -1,22 +1,52 @@
 # Testing
 
-The default test suite is offline and deterministic. It does not connect to Telegram or external AI providers.
+Use the offline suite for application regressions, production SSR/browser checks for the frontend and disposable live environments for Telegram/provider/deployment acceptance. Keep those results separate in the [release checklist](release.md), a passing mocked request does not establish a real client's behavior.
+
+## Python checks
+
+Run from the repository root:
 
 ```powershell
-uv lock --check
 uv sync --frozen --extra dev
-uv run pytest
 uv run ruff format --check .
 uv run ruff check .
 uv run ty check
+uv run pytest -m "not telegram_live"
 ```
 
-Use `AI_PROVIDER=fake` for deterministic no-network behavior.
-
-The Nuxt workspace has an independent frozen frontend gate:
+Python 3.12 is the production-image baseline. Use the project's uv environment rather than an unrelated system interpreter, `ty` is the type checker. `uv lock --check` provides an optional local lock-consistency check, frozen synchronization is the CI installation contract. Plain pytest is the regression gate, the repository has no coverage instrumentation or percentage floor.  
+The `context` fixture builds a normal application with a temporary SQLite database/memory directory and fake provider, tests isolate settings from repository `.env`. Prefer it over production-service hand-wiring. Per-test engine ownership disposes contexts created by synchronous API fixtures as well as async fixtures. Keep loop scope explicit and investigate thread/closed-loop warnings rather than suppressing them.  
+`AI_PROVIDER=fake` avoids remote AI calls in manual command checks, Telegram connectivity still depends on the runtime you start. Default tests mock network/provider boundaries, local-package tests use constructed artifacts without downloads. To exercise actual optional embedded dependencies:
 
 ```powershell
-Set-Location web
+uv sync --frozen --extra dev --extra local
+uv run pytest tests/test_local_inference.py
+```
+
+Optional cases skip when local packages are absent, a skipped run does not establish embedded inference. For release checks run the complete suite with the local extra installed. Check relevant warnings, including upstream AnyIO deprecation and SQLite expression-index reflection limitations, without treating them as proof of application failure or hiding unrelated warnings.
+
+## Choose tests by behavior
+
+| Change | Relevant test files |
+| --- | --- |
+| Scope, learning, reviews, notes and summaries | `test_scope.py`, `test_memory_service.py`, `test_memory_tools.py`, `test_memory_quality.py`, `test_product_controls.py` |
+| Telegram commands, delivery and runtime | `test_telegram_commands.py`, `test_telegram_integration.py`, `test_telegram_presentation.py`, `test_telegram_streaming.py`, `test_chat_streaming.py` |
+| JSON/HTML transfer and provenance | `test_telegram_html.py`, `test_telegram_import_formats.py`, `test_cli.py` |
+| Provider requests, routes and local inference | `test_ai_providers.py`, `test_operation_routing.py`, `test_provider_operation_profiles.py`, `test_local_inference.py` |
+| Index coverage, migration, adoption and activation | `test_embedding_indexes.py`, `test_embedding_index_controls.py`, `test_legacy_adoption.py`, `test_legacy_adoption_controls.py` |
+| Identity, authorization, grants and sessions | `test_control_plane_identity.py`, `test_control_plane_mini_app.py`, `test_control_plane_oidc.py`, `test_control_plane_sessions.py`, `test_control_plane_authorization.py`, `test_control_plane_management.py` |
+| Vault, credentials, failover and alerts | `test_secret_vault.py`, `test_provider_credentials.py`, `test_provider_secret_service.py`, `test_provider_key_pool.py`, `test_admin_alerts.py` |
+| API contracts, settings and diagnostics | `test_control_plane_api.py`, `test_control_plane_development.py`, `test_control_plane_phase7.py`, `test_control_plane_phase8.py` |
+| Operations, schema, wiring and deployment | `test_operations.py`, `test_admin_service.py`, `test_deployment_artifacts.py`, architecture/migration tests under `tests/` |
+
+Add assertions that distinguish the intended behavior from plausible failures. Scope tests need a sibling/aggregate negative control, revocation tests need a previously authorized actor, migrations need existing data and rollback/fail-closed checks, imports need retry and partial-failure cases. Provider tests should inspect serialized SDK requests and prove no credential crosses endpoints. Index activation must reject stale coverage/epochs, streaming tests must reject post-output replay and source-only false success. Keep provider calls outside write transactions and verify failed operations leave business state retryable.  
+For delivery, test text and caption commands through HTTP/dispatcher boundaries, immediate webhook acknowledgement, Stop ownership, replay suppression, overload/shutdown and ambiguous-send duplicate prevention. Test rendered chunk boundaries with long code/tables/Unicode and assert exact literal content survives fallback. Use SQL-count/payload bounds for scalability regressions, timing on one workstation is not a portable pass threshold.
+
+## Frontend and API contracts
+
+From `web/`:
+
+```powershell
 pnpm install --frozen-lockfile
 pnpm runtime:check
 pnpm format:check
@@ -30,72 +60,51 @@ pnpm smoke:ssr
 pnpm test:e2e
 ```
 
-After a Playwright upgrade, install its matching browser with `pnpm playwright install chromium`. Do not run Nuxt unit tests and production builds concurrently because they share generated configuration and type directories.  
-Run `pnpm typecheck` directly rather than through RTK because RTK's `typecheck` shortcut invokes `tsc` instead of the Nuxt typecheck script. Use the declared `pnpm test:e2e` script for Playwright; it rebuilds the production SSR output and runs against `.output/server/index.mjs` in desktop Chromium and Pixel 7 profiles. The asset scanner checks the complete `.output` tree for server-only configuration names, development-auth markers, credential patterns, database URLs, private-key material and sensitive values loaded from local environment files. The SSR smoke launches the production Node entrypoint separately and verifies public/protected direct HTML, response security headers, distinct per-response CSP nonces on every inline script without `script-src 'unsafe-inline'`, the neutral authentication gate and absence of deployment-secret sentinels from returned documents and hydration data.
+Use the package scripts directly, `pnpm typecheck` runs Nuxt's checker. Do not run Nuxt unit tests and production builds concurrently, they share generated configuration/type directories. After a Playwright upgrade install the matching Chromium with `pnpm exec playwright install chromium`.  
+The backend snapshot in `web/openapi/` and declarations in `web/app/types/` must match the application. `pnpm openapi:check` checks declarations against that committed snapshot, Python contract tests check the snapshot against the backend. From the repository root, `uv run python scripts/export_control_plane_openapi.py --check web/openapi/control-plane.openapi.json` checks the snapshot, omit `--check` to regenerate it. From `web/`, `pnpm openapi:types` regenerates client declarations after an intentional API change.  
+The asset scanner inspects the complete `.output` tree for secret patterns, server-only configuration/development-auth markers, database URLs and sensitive local environment values. The SSR smoke starts the production Node server and checks public/protected direct HTML, private/no-store headers, distinct CSP nonces on inline scripts and a neutral pre-authentication gate without secret-bearing hydration data.  
+`pnpm test:e2e` builds production SSR and runs desktop Chromium plus Pixel 7 emulation against `.output/server/index.mjs`. Privileged API interception supplies deterministic identities and exercises Query/Memory actions, session feedback and Telegram chrome. JavaScript-disabled tests inspect protected direct routes before hydration. These tests do not replace real Telegram Web/mobile or OIDC acceptance.
 
-## Behavioral Regression Policy
+## Migration drift
 
-Coverage instrumentation, pytest-cov, its transitive coverage package and the percentage floor were deliberately removed on 2026-11-07. Plain pytest remains required, with focused regressions for authorization, privacy, destructive operations, migrations, concurrency and provider boundaries. Plan 016 and dated measurement results remain historical evidence, not instructions to restore a coverage gate.
+Use a disposable database, applying `upgrade head` to an operator database changes it:
 
-Green offline tests do not close real Telegram/OIDC/client acceptance, image and proxy smoke, two-key live failover/admin-DM delivery, deployed restore/restart or elapsed-age retention. The credential-gated live test currently checks `get_me()` only, the broader release matrix must be recorded separately. Keep the declared fixture event-loop scope explicit and do not suppress upstream warnings to make a run look clean.
+```powershell
+$env:DB_URL = "sqlite+aiosqlite:///C:/path/to/disposable/migration-check.db"
+uv run alembic upgrade head
+uv run alembic check
+```
 
-## Behavior Map
+Expect `No new upgrade operations detected.` Check both a fresh schema and a disposable copy of the prior release's backup before rollout. Model changes normally need a migration plus tests for upgrade/runtime behavior. SQLite cannot reflect expression indexes, focused schema tests inspect those indexes directly. Restore the intended `DB_URL` or start a fresh shell before running application commands.
 
-- Independent routing and provider compatibility live in `tests/test_operation_routing.py` and `tests/test_provider_operation_profiles.py`: profile/model precedence and resets, all content/query/summary routes, embedding epoch retries, SDK-level OpenAI/DeepSeek/generic payloads and effective reasoning, endpoint-specific credential isolation, local origin/path limits, disabled capabilities and profile dependency conflicts
-- Embedded inference lives in `tests/test_local_inference.py`: real tiny locally constructed tokenizer/causal model and Sentence Transformer fixtures (no downloads), generated-token-only decoding, offline safe loading, chat-template/context limits, duplicate loads, concurrency/cancellation/timeouts and malformed vector rejection. These real optional-package cases skip if the local extra is absent, run `uv sync --extra dev --extra local` and this file explicitly to establish actual local execution
-- Index storage and owner controls live in `tests/test_embedding_indexes.py` and `tests/test_embedding_index_controls.py`: legacy upgrades and bounded fingerprint backfill, exact-space/freshness retrieval, SQL-only coverage and bounded payload reads, source edits/deletes, leased resumable jobs, concurrent activation/write fencing, bot-owner-only API/CLI/Telegram workflows, exact confirmation/fresh verification, metadata zero-inference behavior and bounded preparation. `web/test/mixed-provider-ui.nuxt.spec.ts` and `web/test/embedding-indexes.nuxt.spec.ts` cover route inheritance, local forms and explicit migration actions
-- Provider and AI behavior lives in `tests/test_ai_providers.py`: OpenAI-compatible retry/redaction payloads, local optional-dependency failure messaging, provider-profile fail-closed behavior, CLI doctor diagnostics, embedding usage metadata, insufficient-context answers and prompt/model/reasoning usage metadata.
-- Telegram integration lives in `tests/test_telegram_integration.py`: aiogram dispatcher-fed command and normal-message updates, mocked Bot API methods, valid webhook dispatch, polling startup sequencing, command matrix coverage, ingestion edge cases, `/settings` view/edit/preview/confirm/reject paths, Telegram API failure/rate-limit handling and export chunking.
-- Operations coverage lives in `tests/test_operations.py`, `tests/test_cli.py`, `tests/test_admin_service.py` and `tests/test_deployment_artifacts.py`: persisted forget confirmations across context restart, expired confirmation rejection, runtime settings refresh/audit events, audit scope filtering, configurable admin-cache TTL/stats, SQLite maintenance helpers/CLI commands, successful CLI import/export/summarize/show-config paths, Dockerfile structure and GitHub Actions gate coverage.
-- Product controls live in `tests/test_product_controls.py`, `tests/test_telegram_integration.py` and `tests/test_cli.py`: scoped memory status and topic discovery, skipped-message diagnostics, Telegram Desktop JSON import, Bot API update dump import, representative import/export/forget memory quality, memory item browse/delete/refresh, `/settings` preview/confirmation, document metadata ingestion and compact source references.
-- `tests/test_telegram_html.py` and `tests/test_telegram_import_formats.py` cover the shared JSON/HTML import pipeline, actual Telegram-shaped text/entities/links/attachments, joined and forwarded authors, UTC timestamps, bounded local pagination, unsafe/cyclic paths, malformed input, aggregate-only forum imports, explicit target-thread conflicts, content-free checkpoints and cross-format retry idempotency with provider calls outside write transactions. `tests/test_scope.py` and the dispatcher-fed forum regression prove General uses topic 1 and cannot retrieve sibling or aggregate memory, while explicit chat scope remains hierarchical
-- Control-plane coverage lives in `tests/test_control_plane_identity.py`, `tests/test_control_plane_mini_app.py`, `tests/test_control_plane_oidc.py`, `tests/test_control_plane_sessions.py`, `tests/test_control_plane_authorization.py`, `tests/test_control_plane_api.py`, `tests/test_control_plane_management.py`, `tests/test_control_plane_development.py`, `tests/test_secret_vault.py`, `tests/test_provider_credentials.py`, `tests/test_provider_secret_service.py`, `tests/test_provider_key_pool.py` and `tests/test_admin_alerts.py`: fail-closed production settings, loopback-only command-scoped development settings, stable local key behavior, offline zero-Telegram-call runtime, optional connected lifecycle, development login/step-up isolation, revisions 0013–0017, strict Mini App signatures, fixed-RS256 OIDC/PKCE/nonce validation, encrypted one-time transactions, hash-only sessions/CSRF, action-bound step-up, bootstrap/managed/delegated/native authorization across browser and Mini App sessions, foreign/topic/revoked/detached boundaries, requester-bound `requestChat` enrollment, managed-chat lifecycle/ingestion/summary gates, safe runtime/scoped settings, live grant invalidation, envelope encryption, managed/environment overlay precedence, optimistic conflicts, controlled reveal/rewrap, SDK failure classification, sticky bounded selection, same-key retry, restart/cross-instance concurrency, chat/embedding cache invalidation, safe telemetry, cooldown recovery, pool exhaustion, deduplicated alert intent, current-admin delivery and Telegram retry/unreachable behavior. `web/test/dev-coordinator.unit.spec.ts` covers the combined runner's exact child specifications, prefixed streams and sibling shutdown; `web/test/session.nuxt.spec.ts` covers browser restoration, one-time Mini App exchange, development auto-login and the OIDC login route; `web/test/sensitive-reveal.nuxt.spec.ts` proves exact-action step-up, default masking, explicit copy and 30-second/visibility/identity clearing; `web/test/providers.nuxt.spec.ts` covers post-hydration bot-admin provider health, explicit paid checks and sanitized alert retry; `web/test/management.nuxt.spec.ts` covers bot settings, prepared Mini App enrollment and browser DM fallback.
-- Phase 7 business-API coverage lives in `tests/test_control_plane_phase7.py`: safe capability catalogs, backward-compatible and split retrieval/chat selection, authorized Search/Ask metadata and insufficient-context behavior, owning-scope memory/review mutations, explicit audited raw sources, cancellable streamed exports, SQL-aggregated stats, safe audit/usage pages and explicit diagnostics. Its query-count case seeds 150 items/events and fixes service SQL counts at one memory query, one audit query, seven overview queries and three timeseries queries while asserting page/time bounds and zero export initialization.
-- Phase 8 coverage lives in `tests/test_control_plane_phase8.py` plus `web/test/phase8-*.nuxt.spec.ts`: atomic versioned credential replacement, secret-safe diagnostics, Dashboard metrics, complete settings/provider/chat workflows, split-profile Query and cancellation, Memory raw-source/action/export behavior, Stats/Audit/Operations presentation, shared 401/403/409/422/429 feedback, session expiry, Telegram chrome/dirty forms and accessibility foundations. `web/e2e/phase8.spec.ts` runs direct production-SSR hydration and Query/Memory/Telegram interaction paths at desktop and Pixel 7 sizes without real provider or Telegram calls.
-- Optional live Telegram smoke coverage lives in `tests/test_telegram_live.py`. It is marked `telegram_live`, skipped unless `TELEGRAM_LIVE_BOT_TOKEN` and `TELEGRAM_LIVE_CHAT_ID` are set, and should not run in default CI.
-- `tests/test_telegram_presentation.py`, `tests/test_chat_streaming.py`, `tests/test_telegram_streaming.py` and the managed-key pool/dispatcher regressions cover serialized rich requests, literal values, safe Markdown/code/media handling, Unicode chunking, rejection-only fallback and no duplicate on ambiguous failure, real incremental SSE/usage/redaction, pre/post-output retry boundaries, cleanup errors and whole-stream deadline, private draft persistence/Stop ownership, group/topic throttling, full final source content and shutdown cleanup. Command/startup coverage proves the old default menu is cleared without disabling manually entered handlers
-- Logical chunking regressions exercise complete sentences, document-wide references, long fenced code in direct sends and group finalization, table rows/repeated headers, list numbering, oversized literal rows and exact literal source preservation after rich rejection. Dispatcher regressions require private/group post-output failures to report interruption rather than silently substituting ordinary retrieval excerpts, code budgets include HTML escaping and language/wrapper metadata
+## Offline command and image smoke
 
-Run live Telegram smoke explicitly only against a disposable chat:
+```powershell
+uv run pzp-bot --help
+uv run pzp-bot doctor
+docker version
+docker compose config --quiet
+docker build --tag pzp-ai:local .
+docker build --tag pzp-ai-web:local ./web
+docker run --rm -e AI_PROVIDER=fake -e DB_URL=sqlite+aiosqlite:////tmp/pzp/bot.db -e MEMORY_DIR=/tmp/pzp/memory pzp-ai:local pzp-bot doctor
+docker run --rm -e AI_PROVIDER=fake -e DB_URL=sqlite+aiosqlite:////tmp/pzp/bot.db -e MEMORY_DIR=/tmp/pzp/memory pzp-ai:local pzp-bot migrate
+```
+
+These image commands neither start polling nor contact Telegram. Set the host command environment to fake/disposable paths when testing without a real `.env`, `doctor` inspects configured state. Plain `docker compose config` can print expanded secrets, use its quiet validation form for shared output.  
+Use [setup](setup.md) to run combined offline development with disposable paths, an exact loopback origin, positive development UID and empty `WEBHOOK_URL`. Verify `/health`, automatic development session bootstrap, safe settings changes, stale-save 409 handling and Ctrl+C cleanup of both child processes. Enrollment/membership/leave should remain unavailable offline. Connected development changes Telegram delivery mode, coordinate it with other consumers.
+
+## Live acceptance
+
+The optional test requires `TELEGRAM_LIVE_BOT_TOKEN` and `TELEGRAM_LIVE_CHAT_ID`:
 
 ```powershell
 uv run pytest -m telegram_live tests/test_telegram_live.py
 ```
 
-For a manual combined offline smoke, set a disposable `DB_URL`, `MEMORY_DIR`, positive `CONTROL_PLANE_DEV_USER_ID`, exact loopback `CONTROL_PLANE_DEV_ORIGIN`, matching `CONTROL_PLANE_DEV_API_PORT`/`PZP_API_DEV_ORIGIN`, and an empty `WEBHOOK_URL`; then run `pnpm dev` from `web/`. Wait for both prefixed servers, open `/providers`, `/bot-settings` and `/chats`, verify the anonymous session is replaced automatically by the configured development administrator, exercise safe runtime/scoped settings against disposable state, and confirm `GET /health` returns HTTP 200 with `pzp-idle-summarizer` and `pzp-runtime-settings-refresher` both true. Group enrollment, delegated-admin membership verification and leave should fail closed in this Telegram-offline mode. Stop with Ctrl+C and verify both child processes exit and both ports are released. Connected enrollment acceptance is separate and deliberately requires a public HTTPS webhook plus disposable Telegram configuration.
-
-## Migration Drift
-
-Run the same migration gate as CI against a disposable database, never an operator database:
-
-```powershell
-$env:DB_URL = "sqlite+aiosqlite:///C:/path/to/disposable/pzp-ai-migration-check.db"
-uv run alembic upgrade head
-uv run alembic check
-```
-
-The drift check must exit successfully with `No new upgrade operations detected.` Any generated operation means the SQLAlchemy models and Alembic history disagree and requires either the missing schema revision or a narrowly justified comparison fix.
-
-## Docker Smoke
-
-```powershell
-docker version
-docker compose config
-docker build --tag pzp-ai:local .
-docker build --tag pzp-ai-web:local ./web
-docker run --rm -e AI_PROVIDER=fake -e DB_URL=sqlite+aiosqlite:////tmp/pzp/bot.db -e MEMORY_DIR=/tmp/pzp/memory pzp-ai:local pzp-bot doctor
-docker run --rm -e AI_PROVIDER=fake -e DB_URL=sqlite+aiosqlite:////tmp/pzp/bot.db -e MEMORY_DIR=/tmp/pzp/memory pzp-ai:local pzp-bot migrate
-docker compose run --rm bot pzp-bot doctor
-docker compose down
-```
-
-These commands do not start polling or the Compose webhook stack and do not connect to Telegram. A full deployment acceptance additionally requires a configured disposable webhook/OIDC environment, `docker compose up -d --build --wait`, direct checks of `/`, `/login`, `/health`, reserved-path failure behavior and headers, Telegram webhook delivery, `docker compose up -d --no-deps frontend` replacement and restart recovery.
-
-The optional Playwright suite runs `pnpm test:e2e` against the declared production Nuxt Node server in desktop Chromium and Pixel 7 profiles. Authenticated client tests use deterministic same-origin API interception for every privileged route, Query/Memory source interactions and injected Telegram chrome/closing-confirmation behavior, while JavaScript-disabled tests prove protected direct routes contain only the neutral access gate before hydration and `/login` carries the private SSR policy. The outer test timeout remains 90 seconds for slower Windows runners, while production page assertions complete independently of Nuxt development compilation.
+It calls `get_me()` only, the chat ID gates execution but this test does not send or validate a chat message. Plain `uv run pytest` also collects it and runs it when those credentials exist, use `-m "not telegram_live"` to enforce an offline run. Real provider checks need explicit disposable credentials and quotas, keep secrets and synthetic content out of saved evidence.  
+Qualify the three-service public stack separately: TLS/headers, backend-path routing, frontend header stripping, real webhook delivery, browser/Mini App identity, independent frontend replacement, restart and key-injected restore. Run actual learning/scope/review/forget and elapsed-retention checks on disposable data. [Release](release.md) carries the full manual matrix and unresolved credential/client/capacity gates.
 
 ## CI
 
-The [2026-11-08 closure report](release-closure-acceptance-2026-11-08.md) owns current combined evidence: 689 passed/1 credential-gated skip/3 known warnings on each of Python 3.12.16 and 3.14.7, 101-unit/52-emulated-browser frontend, source-matched images and qualified real acceptance. HTTP-level streaming regressions require webhook acknowledgement before Stop, exact text/caption command handling, in-flight/recent update replay suppression, bounded overload and shutdown drain. Test-only per-case engine ownership explicitly disposes databases created by synchronous API builders as well as the ordinary async context fixture, strict complete gates promote unhandled thread warnings to errors instead of suppressing them. Earlier counts in the following paragraph retain their dated source-only boundaries.  
-The [2026-11-07 maintenance ledger](project-review-2026-11-07.md#final-maintenance-verification-2026-11-07) records its earlier offline snapshot and interpreter/frontend gates. The later [mixed-provider and Telegram import acceptance](mixed-provider-acceptance-2026-11-07.md#final-corrected-source-verification) records the deployed 602-pass Python source, upstream warnings, production 3.12 image and scoped real-client evidence. The subsequent [rich Telegram presentation pass](superpowers/plans/2026-11-07-telegram-rich-replies.md) passed 648 tests/one credential-gated live skip on the final frozen Python 3.14 source in 211.29 seconds, plus the final 71-case presentation/SSE/managed-key-pool slice and repository Ruff/ty/lock/API checks. Its two Important review findings were reproduced RED then fixed GREEN, three known warnings remain (AnyIO's deprecated Pytest CallSpec2 import and two SQLite expression-index reflection warnings), no frontend or container/live acceptance was rerun for this source-only pass. Counts are snapshot-specific, earlier Docker unavailability and revoked-key results do not describe the current live stack, the complete current-source Python 3.12 suite and manually dispatched hosted CI remain separate gates.
-
-`.github/workflows/ci.yml` intentionally runs only through `workflow_dispatch`. It installs the latest uv without a version pin and runs `uv lock --check`, `uv sync --frozen --extra dev,local`, format check, lint, `ty`, plain pytest, Alembic upgrade plus metadata drift detection against the same isolated runner-temp database, CLI help, `doctor` and a Docker build/run smoke. A separate frontend job reads pnpm 11.28.11 and Node major 26 from `web/package.json` through `pnpm/setup@v3` with `working-directory: web`, uses a frozen install and runs format, lint, Nuxt typecheck, unit/component, OpenAPI drift, SSR build, generated-browser-asset secret scan and production SSR smoke gates. The Docker job builds both independent images, while the bot image receives the offline doctor run. Installer and base-image versions deliberately float, application dependencies remain frozen in their committed locks. The optional `telegram_live` test, frontend Playwright suite and live three-container proxy acceptance are intentionally excluded from default CI, prior hosted green results do not qualify a new pushed snapshot.
+`.github/workflows/ci.yml` runs through `workflow_dispatch`, push and pull-request events do not start it. The Python job installs frozen `dev,local` dependencies on Python 3.12, runs Ruff/ty/plain pytest, isolated Alembic upgrade/drift, CLI help and doctor. It has no separate `uv lock --check` step. The frontend job uses `web/package.json`'s pnpm/managed Node contract and runs frozen install, formatting/lint/types/unit tests, declaration drift, SSR build, generated-asset scan and SSR smoke. The Docker job builds both images and runs offline doctor in the backend image.  
+Playwright, real Telegram/provider checks and public Compose acceptance remain separate. Keep live credentials out of CI so plain pytest stays offline. A hosted result qualifies its exact published snapshot, record it again after release-affecting changes.

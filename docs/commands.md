@@ -1,7 +1,8 @@
 # Commands
 
-This page is the command reference for Telegram admins, configured bot admins and local operators. Commands use the current chat or forum topic unless a `scope=` argument is accepted.
-The supported slash handlers below remain usable by typing the command, including `/command@bot_username` in groups with several bots. Polling, webhook and connected-development startup clear the default-language/default-scope list this application previously published through `deleteMyCommands`, they never republish the large menu. The Main Mini App/menu button and owner-managed custom language/chat command scopes are left unchanged. Menu visibility is not permission, existing admin and scope checks still apply. The Mini App covers routine administration but is not declared a complete replacement for every local import, range-summary, template or power-user command.  
+Commands use the current chat or forum topic unless they accept `scope=`. See [Concepts](concepts.md) for scope inheritance, roles and profiles, and [Setup](setup.md) before running the bot.
+Type commands directly, including `/command@bot_username` in groups with several bots. Startup clears the default slash-command menu, the Main Mini App/menu button and custom language/chat menus remain available. The web interface covers routine administration, local imports and some advanced commands use the CLI or Telegram.  
+Ordinary participants can use `/start`, `/help`, `/ask`, `/memory_search`, `/learn_status` and argument-free `/stats`, admin-only AI overrides still require admin authority. Memory management, learning changes, exports, summaries and settings require chat-scoped administration or bot ownership. Global defaults, cross-chat profile grants, custom template writes and embedding-index management require a bot owner. CLI commands trust local operator access rather than Telegram identity.  
 
 ## Conversation And Retrieval
 
@@ -22,7 +23,7 @@ The supported slash handlers below remain usable by typing the command, includin
 
 ## Memory Management
 
-- `/memory_status [scope=...]`: show scoped message, learned, skipped, knowledge, embedding, audit, pending-review and AI usage counts for a chat/topic or all scopes when run by a configured bot admin.
+- `/memory_status [scope=...]`: show scoped message, learned, skipped, knowledge, embedding, audit, pending-review and AI usage counts for a chat/topic or all scopes when run by a bot owner.
 - `/memory_scopes [scope=this_chat|all|<chat_id>:<thread_id>]`: list known chat/topic scopes, labels, learning status and message/knowledge counts so admins can discover topic allowlists.
 - `/memory_debug [scope=...] [message_id=N] [limit=N]`: explain why recent skipped messages were not learned without returning the skipped message text.
 - `/memory_export [md|jsonl] [scope=...]`: stream a memory export with readable scope/source metadata where available. Large exports are sent incrementally as deterministic numbered document parts below the 45 MiB safety threshold and Telegram's 50 MiB upload limit. Unknown formats, scopes, unauthorized foreign chat scopes or extra tokens are rejected with a usage/error message.
@@ -45,23 +46,23 @@ The supported slash handlers below remain usable by typing the command, includin
 - `/memory_approve <review_id>`: approve a pending proposal and insert it as durable memory after authorizing against the review's persisted owning scope.
 - `/memory_reject <review_id>`: reject a pending proposal after authorizing against the review's persisted owning scope.
 - `/memory_profiles`: list named cross-chat memory profiles.
-- `/memory_profile_set <name> sources=<scope,scope>`: create or replace a profile source scopes. This global cross-scope operation is restricted to configured bot admins.
-- `/memory_profile_allow <name> [scope=...] [enabled=on|off]`: allow or revoke a destination scope's permission to query a profile's source scopes. This global cross-scope operation is restricted to configured bot admins. Cross-chat retrieval also requires each source scope's own learning policy to be enabled. `learn=` and other unsupported keys are rejected without changing permission state.
+- `/memory_profile_set <name> sources=<scope,scope>`: create or replace a profile source scopes. This global cross-scope operation is restricted to bot owners.
+- `/memory_profile_allow <name> [scope=...] [enabled=on|off]`: allow or revoke a destination scope's permission to query a profile's source scopes. This global cross-scope operation is restricted to bot owners. Cross-chat retrieval also requires each source scope's own learning policy to be enabled. `learn=` and other unsupported keys are rejected without changing permission state.
 - `/memory_templates`: list built-in and custom summary templates.
-- `/memory_template_set <name> <prompt>`: create or update a reusable custom summary template. Custom template writes are restricted to configured bot admins.
+- `/memory_template_set <name> <prompt>`: create or update a reusable custom summary template. Custom template writes are restricted to bot owners.
 - `/system_prompts`: list built-in and custom answer system prompt templates.
-- `/system_prompt_set <name> <prompt>`: create or update a reusable answer system prompt template. Custom prompt writes are restricted to configured bot admins.
+- `/system_prompt_set <name> <prompt>`: create or update a reusable answer system prompt template. Custom prompt writes are restricted to bot owners.
 
 ## Settings And Admin Review
 
-- `/memory_settings [scope=this_topic|this_chat|all|<chat_id>:<thread_id>] [top_k=N] [summary_batch_size=N] [summary_model=name] [provider=name] [chat_model=name] [embedding_model=name] [reasoning=low|medium|high] [system_prompt=name] [raw_retention_days=N|off] [knowledge_retention_days=N|off] [review_before_compact=on|off]`: view or directly edit scoped memory, provider, prompt and model settings.
-- `/settings [scope=this_topic|this_chat|all|<chat_id>:<thread_id>] [top_k=N] [summary_batch_size=N] [summary_model=name] [provider=name] [chat_model=name] [embedding_model=name] [reasoning=low|medium|high] [system_prompt=name] [raw_retention_days=N|off] [knowledge_retention_days=N|off] [review_before_compact=on|off]`: preview scoped setting changes and return a confirmation token. Re-run `/settings [scope=<same-scope>] confirm=<token>` before expiry to apply and audit the change.
-- `/audit_events limit=N event_type=name scope=this_topic|this_chat|all`: review audit events. `scope=all` is restricted to configured bot admins.
-- `/runtime_settings [reload=on] [retrieval_candidate_limit=N] [key=value ...]`: view, edit or force a safe runtime-settings refresh from Telegram. Runtime-setting reads and writes are restricted to configured bot admins because they affect global defaults.
+- `/memory_settings [scope=this_topic|this_chat|all|<chat_id>:<thread_id>] [top_k=N] [summary_batch_size=N] [summary_model=name] [provider=name] [chat_provider=name] [summary_provider=name] [embedding_provider=name] [chat_model=name] [embedding_model=name] [reasoning=low|medium|high] [system_prompt=name] [raw_retention_days=N|off] [knowledge_retention_days=N|off] [review_before_compact=on|off]`: view or directly edit scoped memory, provider, prompt and model settings.
+- `/settings [scope=...] [key=value ...]`: preview the same scoped settings and return a confirmation token. Re-run `/settings [scope=<same-scope>] confirm=<token>` before expiry to apply and audit the change.
+- `/audit_events limit=N event_type=name scope=this_topic|this_chat|all`: review audit events. `scope=all` is restricted to bot owners.
+- `/runtime_settings [reload=on] [retrieval_candidate_limit=N] [key=value ...]`: view, edit or force a safe runtime-settings refresh from Telegram. Runtime-setting reads and writes are restricted to bot owners because they affect global defaults.
 - `/stats`: show global message, knowledge, embedding and event counts. `/stats scope=...` shows the richer scoped status view and requires admin access.
 - `/help`: show command help inside Telegram.
 
-Configured `BOT_ADMINS` can administer every scope, including from a bot DM: `/runtime_settings` changes safe bot-wide defaults, `/settings scope=all ...` changes the global scope overlay, `/settings scope=<chat_id> ...` targets a chat and `/settings scope=<chat_id>:<thread_id> ...` targets a topic. Telegram chat admins can administer only the current chat they administer, commands that accept `scope=` reject foreign scopes instead of applying current-chat authorization to another target. Effective settings resolve from safe runtime defaults through global, chat and topic overlays. Global profile, runtime-setting, summary-template and system-prompt mutations remain bot-admin-only, clearing the visible command menu changes none of these rules.
+Bootstrap owners in `BOT_ADMINS` and database-managed bot owners can administer every scope, including from a bot DM: `/runtime_settings` changes safe bot-wide defaults, `/settings scope=all ...` changes the global scope overlay, `/settings scope=<chat_id> ...` targets a chat and `/settings scope=<chat_id>:<thread_id> ...` targets a topic. Telegram chat admins can administer only the current chat they administer, commands that accept `scope=` reject foreign scopes instead of applying current-chat authorization to another target. Effective settings resolve from safe runtime defaults through global, chat and topic overlays. Global profile, runtime-setting, summary-template and system-prompt mutations remain bot-admin-only, clearing the visible command menu changes none of these rules.
 
 ## Independent Route Settings
 
@@ -93,19 +94,19 @@ Local CLI equivalents use the same service, CLI status/preview/start default to 
 
 ## CLI Reference
 
-- `pzp-bot migrate`: creates or upgrades the configured database schema through Alembic. This mutates the database; back up operator data and follow the migration guidance in [operations.md](operations.md) before running it against persistent state.
+- `pzp-bot migrate`: creates or upgrades the configured database schema through Alembic. This mutates the database, back up operator data and follow the migration guidance in [operations.md](operations.md) before running it against persistent state.
 - `pzp-bot polling`: clears any configured webhook and starts the long-running Telegram polling runtime. Complete [setup.md](setup.md) first and use [deployment.md](deployment.md) for runtime guidance.
 - `pzp-bot webhook`: registers the configured webhook and starts the long-running FastAPI webhook runtime. Configure and validate the webhook URL and secret as documented in [deployment.md](deployment.md).
-- `pzp-bot control-plane-dev`: starts the dedicated loopback FastAPI control-plane development runtime for use with `web/pnpm dev`. It requires backend-only `CONTROL_PLANE_DEV_USER_ID`, accepts loopback HTTP without Telegram OIDC, performs no Telegram API calls while `WEBHOOK_URL` is empty and deliberately registers `setWebhook` only when a complete HTTPS webhook/token/secret configuration is present; see [setup.md](setup.md) before using connected mode.
-- `pzp-bot summarize-now [--scope all|<chat_id>|<chat_id>:<thread_id>]`: summarizes pending learned messages in each selected concrete scope and compacts canonical memory. This can invoke the configured AI provider and incur external cost or data transfer; review [privacy.md](privacy.md) before using an external provider.
+- `pzp-bot control-plane-dev`: starts the dedicated loopback FastAPI control-plane development runtime for use with `web/pnpm dev`. It requires backend-only `CONTROL_PLANE_DEV_USER_ID`, accepts loopback HTTP without Telegram OIDC, performs no Telegram API calls while `WEBHOOK_URL` is empty and deliberately registers `setWebhook` only when a complete HTTPS webhook/token/secret configuration is present, see [setup.md](setup.md) before using connected mode.
+- `pzp-bot summarize-now [--scope all|<chat_id>|<chat_id>:<thread_id>]`: summarizes pending learned messages in each selected concrete scope and compacts canonical memory. This can invoke the configured AI provider and incur external cost or data transfer, review [privacy.md](privacy.md) before using an external provider.
 - `pzp-bot export-memory [--scope all|<chat_id>|<chat_id>:<thread_id>] [--format md|jsonl] [--out path]`: streams primary-key-ordered export chunks to a file or standard output without constructing a second complete payload. Treat either form as potentially sensitive and protect it according to [privacy.md](privacy.md).
-- `pzp-bot import-jsonl --file path --chat-id <id> [--thread-id <id>]`: incrementally validates and writes durable knowledge items into the selected chat/topic scope in independent 100-row checkpoints. Imports reject files over 512 MiB or 100,000 rows; a later malformed row or provider failure leaves earlier audited batches committed, and retrying skips their exact kind/content/source tuple. Review the input, target scope, provider cost and consent implications in [privacy.md](privacy.md) before importing.
+- `pzp-bot import-jsonl --file path --chat-id <id> [--thread-id <id>]`: incrementally validates and writes durable knowledge items into the selected chat/topic scope in independent 100-row checkpoints. Imports reject files over 512 MiB or 100,000 rows, a later malformed row or provider failure leaves earlier audited batches committed, and retrying skips their exact kind/content/source tuple. Review the input, target scope, provider cost and consent implications in [privacy.md](privacy.md) before importing.
 - `pzp-bot doctor`: checks configured provider profiles, missing OpenAI-compatible keys, missing local optional dependencies, SQLite parent write access and memory directory write access without starting Telegram.
 - `pzp-bot show-config`: prints non-secret runtime settings including provider profiles, default system prompt, reasoning level, retrieval candidate limit and admin-cache TTL. Credential-bearing database URLs are redacted before display.
 - `pzp-bot secrets status`: validates the configured master-key ring and reports configured/active IDs, encrypted credential counts, per-key reference counts and missing referenced IDs without decrypting or printing provider secrets.
-- `pzp-bot secrets rewrap --to <master-key-id> [--yes]`: warns that a current database backup is required, decrypts and verifies every managed credential wrapping before any update, then atomically rewraps all DEKs under the selected configured key. Without `--yes` it asks for interactive confirmation; output contains counts and key IDs only.
+- `pzp-bot secrets rewrap --to <master-key-id> [--yes]`: warns that a current database backup is required, decrypts and verifies every managed credential wrapping before any update, then atomically rewraps all DEKs under the selected configured key. Without `--yes` it asks for interactive confirmation, output contains counts and key IDs only.
 - `pzp-bot memory-status --scope all|<chat_id>|<chat_id>:<thread_id>`: prints the same scoped message/memory/AI usage status available through `/memory_status`.
-- `pzp-bot import-telegram-json --file result.json --chat-id <id> [--thread-id <id>]`: streams Telegram Desktop message arrays or Bot API update-dump arrays with the lockfile-resolved `ijson` (currently 3.6.0), then embeds and commits learned raw-message memory in independent 100-row checkpoints. The same 512 MiB and 100,000-row limits apply; unsupported shapes are rejected before business writes, while a later parse/provider failure preserves earlier audited batches for idempotent retry.
+- `pzp-bot import-telegram-json --file result.json --chat-id <id> [--thread-id <id>]`: streams Telegram Desktop message arrays or Bot API update-dump arrays, then embeds and commits learned raw-message memory in independent 100-row checkpoints. The same 512 MiB and 100,000-row limits apply, unsupported shapes are rejected before business writes, while a later parse/provider failure preserves earlier audited batches for idempotent retry.
 - `pzp-bot import-telegram --file <export-directory|result.json|messages.html> --chat-id <id> [--thread-id <id>]`: auto-detect a reviewed Telegram export, preferring `result.json` when Both formats exist. HTML-only archives use a local streaming reader, no exported JavaScript executes and no linked resources are fetched
 - `pzp-bot import-telegram-html --file messages.html --chat-id <id> [--thread-id <id>]`: explicitly select HTML, including validated same-directory `messages2.html` pagination. Dates retain their timezone-qualified instant and are stored in UTC, unavailable numeric Telegram user IDs remain unknown, JSON/HTML retries share logical-message duplicate detection
 
@@ -116,3 +117,31 @@ For a forum, use `--thread-id 1` for a General-topic export or the actual topic 
 - `pzp-bot db-integrity`: runs `PRAGMA integrity_check` and exits non-zero unless SQLite reports `ok`.
 - `pzp-bot db-vacuum`: runs SQLite `VACUUM`.
 - `pzp-bot db-backup --out path`: creates a SQLite online backup.
+
+## Common workflows
+
+In a forum topic, enable learning and store a manual fact:
+```text
+/allow_topic
+/remember tags=project priority=5 Project Juniper planning is Tuesday at 10:30 UTC
+/memory_search Project Juniper planning
+/ask When is Project Juniper planning?
+```
+Preview a setting change, then use the returned token in the same scope:
+```text
+/settings top_k=4
+/settings confirm=<returned-token>
+```
+For cross-chat retrieval, a bot owner defines source scopes and grants one destination:
+```text
+/memory_profile_set team sources=-1001111111111,-1002222222222
+/memory_profile_allow team scope=-1003333333333 enabled=on
+```
+With learning enabled on those sources, participants in destination `-1003333333333` can use `/ask profile=team <question>`. This does not copy source memory into the destination or grant provider-admin rights.  
+To forget one topic, request a challenge and repeat the same target with the returned token:
+```text
+/forget scope=this_topic
+/forget scope=this_topic confirm=<returned-token>
+```
+Forgetting removes application memory, Telegram history, backups and prior exports have separate lifecycles.  
+Get the exact local CLI options with `uv run pzp-bot --help`, `uv run pzp-bot <command> --help` or `uv run pzp-bot embedding-index --help`. See [Operations](operations.md) before imports, retention, upgrades or backups, several CLI commands automatically upgrade the configured schema before working.

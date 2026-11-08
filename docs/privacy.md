@@ -1,71 +1,77 @@
-# Privacy And Data Handling
+# Privacy and data handling
 
-PZP AI is built around explicit learning consent, scoped retrieval and reviewable operational metadata. The defaults are conservative: the bot does not learn ordinary messages until learning is enabled for the relevant chat or topic.
+The instance operator controls the SQLite database, Markdown memory, backups, provider configuration and bot membership. Tell group members what you store and which providers receive it before enabling learning or importing history. Telegram also retains conversation data under its own service rules.
 
-## Learning And Retention
+## What the bot stores
 
-- Learning is disabled by default unless `LEARNING_DEFAULT_ENABLED=true`.
-- Use `/allow_chat` and `/allow_topic` explicitly in the places where learning is desired.
-- SQLite is authoritative for raw messages and committed durable knowledge. Markdown daily and canonical files are rebuildable projections of committed knowledge items, not independent content stores or full chat dumps.
-- Sensitive scopes can enable review-before-compact. Pending and rejected proposals remain SQLite-only; only approval creates a durable knowledge item that may appear in Markdown.
-- Durable mutations rebuild the daily projection after commit, and startup reconciles stale generated files without contacting an AI provider. Rejection, note or item deletion, knowledge retention and forget therefore remove affected projected content.
-- `/forget` deletes raw messages, durable knowledge and embeddings for the selected scope after confirmation and reconciles both daily and canonical Markdown. `bot_events` audit rows remain so destructive operations can still be reviewed.
-- When the control plane is enabled, only an `active` managed chat can ingest or enter idle summarization. `paused` and `detached` preserve existing memory and audit history but accept no new learned messages; detach and Telegram leave are intentionally non-destructive, while the separate control-plane forget action uses the same committed deletion/Markdown reconciliation boundary as `/forget`.
-- A summary provider exception or empty response leaves every source message pending for retry. The bot never substitutes raw chat as a durable summary and creates no knowledge item, review proposal or Markdown content for the failed attempt.
-- Summary claims contain only a random ownership token and claim timestamp alongside the already stored source rows. A failed provider call releases its claim; an abandoned claim can be recovered after 900 seconds, and neither path turns source chat into durable knowledge. Stale-recovery and stale-result audit events are content-free.
+| Data | Storage and use |
+| --- | --- |
+| Delivered messages | SQLite can retain original/normalized text, author/chat/topic IDs, timestamps, reply/source metadata, learned status and skip reason |
+| Embeddings | SQLite vectors for eligible messages and durable knowledge, used for retrieval |
+| Durable knowledge | Approved summaries and manual notes in SQLite, including source IDs, tags/priority/source metadata where applicable |
+| Markdown | Daily files and canonical `MEMORY.md`, rebuildable projections of committed knowledge |
+| Review proposals | SQLite-only until approval, rejected/pending proposals do not enter durable Markdown |
+| Policy and settings | Learning rules, scoped/runtime overrides, previous values, actors, timestamps and versions |
+| Identity and access | Telegram identity fields, managed chats, owner/delegated grants, server-side session and authentication metadata |
+| Operational records | Audit events, provider usage/timing/model metadata, import/index job checkpoints and sanitized health/alert state |
 
-## Scope Boundaries
+Learning is disabled by default, but a skipped delivered message can still leave its text in local SQLite. The learning flag prevents its embedding, summary and retrieval use, it is not a no-storage guarantee. When managed-chat enforcement is active, inactive or unenrolled group scopes are rejected before message persistence. Handled slash commands do not pass through the general ingestion handler, the service also excludes command content from learning.
 
-- Cross-chat memory is disabled by default.
-- Named profiles do not share memory unless the destination scope is explicitly allowed to query each source scope, and source scopes must still have learning enabled.
-- Review approval and rejection authorize the review's persisted owning scope: Telegram chat admins can decide reviews only for their current chat, while configured bot admins retain cross-scope access.
-- `/memory_debug` explains skip reasons by message id and policy reason only; it does not return the skipped message body.
-- `/ask` may append compact source references such as `<scope>#<message_id>` when the generated answer does not already cite sources. These are identifiers for auditability, not raw message dumps.
+The database and Markdown files are not encrypted conversation storage. Provider-credential encryption protects managed API keys, it does not encrypt message/knowledge tables. Use host/disk encryption and restrict filesystem access where required. Redaction before AI does not rewrite or anonymize local records.
 
-## Telegram Rich Replies And Streaming
-Rich formatting is presentation, not a new retrieval permission. The same destination scope and explicit cross-chat profile grants are resolved before any generated text is streamed. Private drafts are sent to the owning private chat, group/topic partial answers are visible to their existing audience and marked Generating until finalized, do not treat unfinished output as a verified answer. Native Stop matches the exact private chat/thread/draft and cannot cancel another user's scope.  
-Only visible answer-content deltas are forwarded, provider reasoning fields and hidden reasoning are never rendered or logged. Raw model HTML and image/media rules are disabled before native rich HTML delivery, linked files are not fetched by this renderer. Structured non-AI values stay literal, Telegram delivery logs use controlled exception types and safe identifiers rather than raw rejected content or API exception messages. Cancellation usage records contain no partial prose, outbound previews are not added as learned knowledge.  
+## Learning, retrieval and sharing
 
-## Imports And Exports
+Use `/allow_chat` or `/allow_topic` to enable learning and check `/learn_status` in the actual destination topic. Topic policy overrides chat policy. User deny rules win over allow rules, an active allowlist limits eligible authors. [Concepts](concepts.md) explains policy inheritance and admin exceptions.
 
-- Manual notes can include tags, priority and source metadata; exports include that metadata alongside source message IDs and links when available.
-- Telegram and CLI exports are streamed in bounded chunks rather than duplicated as one in-memory payload. Streaming lowers local memory pressure but does not make the output less sensitive; every document part and redirected standard-output file must receive the same access controls as a complete export.
-- `pzp-bot import-jsonl`, `import-telegram`, `import-telegram-json` and `import-telegram-html` read local files incrementally, cap input at 512 MiB and 100,000 rows, and send at most 100 texts per embedding-provider request. The HTML byte limit covers its validated pagination chain. This is an operator-controlled local import path, not Telegram API historical backfill, and an external embeddings profile still transfers each accepted batch to that provider and may incur cost.
-- Bulk imports commit each successful 100-row batch and record content-free checkpoint counts. A later parse, validation, database or provider failure leaves prior checkpoints committed; retrying the same input skips exact JSONL kind/content/source tuples and logical Telegram message IDs instead of duplicating them.
-- Review import files before importing because they may contain old group content outside the bot's live-learning consent moment.
-- Telegram JSON/HTML import preserves message text plus selected metadata such as links, document file names and attachment labels. It does not import binary media files into bot storage, HTML scripts/styles are ignored and linked resources are never fetched. Missing numeric HTML author IDs stay unknown, topic ownership is never guessed from replies. Without an explicit target topic the archive remains aggregate memory, the operator must review this broader scope before importing
-- The control-plane memory list and detail APIs expose committed durable knowledge, not raw learned-message bodies. Raw sources require a separate authorized POST, return at most 100 exact source messages and create a content-free audit event identifying the actor, owning scope, knowledge item and returned count.
-- Browser Markdown/JSONL exports are streamed without full-payload materialization and carry private/no-store, no-cache and download headers, but the downloaded file is still plaintext sensitive memory outside application control. HTTP cancellation closes the underlying exporter; it does not revoke or erase bytes already received by the browser.
+An ordinary query stays in its current chat/topic. Whole-chat scope includes all topics, an individual topic excludes siblings. Cross-chat retrieval requires a memory profile, a bot-admin destination grant and enabled source learning policy. A provider profile only selects AI infrastructure, it grants no memory access.
 
-## AI Provider Safety
+Turning learning off does not delete existing data or prevent same-scope retrieval of old memory. Pausing/detaching a managed chat stops new ingestion and idle summaries and removes scoped-admin visibility, it preserves memory for bot-owner operations. Leave also removes the bot from Telegram, forget is a separate destructive action.
 
-- `REDACT_BEFORE_AI=true` masks secret-like key/value pairs, bearer/common token forms, emails, phone numbers and configured custom regex patterns before text is sent to an OpenAI-compatible provider.
-- `AI_PROVIDER_PROFILES` can define multiple non-secret provider profiles. Provider secrets stay in environment variables or deployment secrets; missing credentials fail closed instead of silently sending data to the wrong provider.
-- AI usage records provider/profile/model/reasoning/prompt metadata and embedding dimensions/counts for cost and audit visibility. It does not store provider API keys.
-- Managed OpenAI-compatible chat and embedding calls use the same bounded sticky credential pool. Health changes derive only from SDK exception class, numeric status, bounded `Retry-After` and a small allowlist of provider codes; invalid requests and unknown errors do not degrade or rotate credentials.
-- Pool telemetry, bot-admin APIs and Telegram alert DMs may expose the managed profile revision, safe key label/keyed fingerprint, attempt/rotation counts and allowlisted failure class. They exclude database credential IDs where unnecessary, plaintext keys, prompts, raw provider errors and response bodies.
-- The fake provider is deterministic and local. The local embedding provider avoids cloud embeddings but still requires downloading a sentence-transformers model.
+The control-plane memory list/detail pages expose durable knowledge. Viewing raw source text requires a separate authorized request, returns at most 100 exact source messages and records an audit event with actor, scope, item and count. `/memory_debug` returns message IDs and policy reasons without skipped message bodies.
 
-## Operational Metadata
+## What AI providers receive
 
-- Nuxt SSR never authenticates or fetches privileged control-plane data on the server. Protected documents contain only a neutral access gate, Caddy removes cookie, authorization and CSRF headers before frontend requests, and browser session/user/provider state is loaded only after hydration from FastAPI so it cannot enter a shared HTML cache or Nuxt payload.
-- Browser OIDC and Mini App authentication normalize Telegram identity into `control_plane_users`, including the Telegram user ID and profile fields Telegram returns. Server-side sessions record that user reference, client kind, authentication/last-seen/expiry/step-up timestamps and revocation reason; they never persist the raw session cookie or CSRF token.
-- One-time OIDC transactions retain a state hash, encrypted PKCE verifier, nonce, fixed callback, safe relative return target, action and expiry/consumption timestamps. Authentication audit events contain only method, outcome and bounded reason codes; they exclude `initData`, authorization codes, tokens, PKCE values and provider response bodies.
-- Managed bot-admin and chat-admin grants plus managed-chat lifecycle rows are authoritative authorization metadata. The API re-resolves them for each session request, so removing a grant or pausing a managed chat stops exposing that capability without waiting for the browser UI to refresh its own assumptions.
-- Managed bot-owner and delegated chat-admin mutations audit only actor/target IDs, scope, lifecycle state and version. Removing a managed bot owner also revokes that user's live sessions. Bootstrap owners remain environment-managed recovery inputs and cannot be removed through the control plane.
-- Revision `0016_managed_chat_enrollment_requests` stores a random short-lived request ID, requester Telegram ID, delivery kind, prepared-button ID, status, selected chat ID, bounded error code and timestamps. It stores no message content, bot token or Telegram `initData`; a selection is accepted only from the requester's private bot chat and is revalidated against current Telegram membership before activation.
-- Managed provider credentials are stored as AES-GCM ciphertext plus nonces, a separately wrapped random DEK, master-key ID, keyed fingerprint, last four characters and lifecycle/health metadata. The deployment master keys remain outside SQLite. Profile and credential mutations audit only resource names/IDs, versions, actions and counts; secret values, ciphertext and provider response bodies are excluded.
-- Revision `0015_admin_alert_outbox` stores sanitized health-transition intents and per-recipient delivery state. Intents are deduplicated by safe event/profile/fingerprint/health epoch, delivery expands against the current effective bot-admin set, and retries retain only an allowlisted delivery classification rather than Telegram or provider response content.
-- Secret creation, replacement, deletion and reveal require fresh Telegram verification bound to that exact action. Replacement preserves the credential identity but atomically rotates ciphertext, fingerprint, last-four metadata and optimistic version while resetting prior health/cooldown/error counters; audit output contains no secret. A reveal is returned only from an audited private/no-store `POST`; the Nuxt client keeps it in a component-local value for at most 30 seconds and clears it earlier on lifecycle boundaries. Copying is never automatic and moves the value to the operating-system clipboard only after an explicit admin click.
-- Telegram Bot API send failures and retry-after responses are logged with chat/thread/message/method metadata and without export payload text or provider secrets.
-- Runtime settings that are safe to edit are stored in SQLite with the current value, previous value, updater, timestamp and version. Secrets are not accepted as runtime settings.
-- Forget confirmations are persisted as hashed one-time challenges with expiry and consumption timestamps. Plain confirmation tokens are only shown to the admin who requested the destructive operation.
-- `/audit_events` and `pzp-bot audit-events` expose admin, settings and destructive-operation event metadata from `bot_events` for review. They do not include provider API keys or Telegram bot tokens.
-- A failed post-commit Markdown rebuild records `markdown_projection_failed` with only the exception type. The committed SQLite knowledge remains authoritative, and no memory content is copied into the event.
-- A failed summary records scoped `summary_failed` metadata and an AI-usage error using only the exception type, provider/model selection and source message IDs. Provider exception text, prompts and raw message bodies are excluded.
-- Bulk-import checkpoint, completion and failure events contain counts, batch numbers, the local file name and exception type but no imported text or raw provider exception message.
-- Control-plane audit pages recursively redact payload keys associated with secrets, tokens, prompts, text or content and bound nested output. AI-usage pages deliberately exclude the metadata JSON that can contain internal source identifiers; query responses expose only selected profile/model/reasoning fields, bounded durable snippets and source IDs, never prompts or hidden reasoning.
-- Routine control-plane stats and health load only SQL aggregates, bounded filesystem metadata and in-process state. Paid provider calls and local-model load/download attempts occur only after an explicit bot-admin operations-check POST, and the resulting audit record contains no provider response or diagnostic input content.
-- Admin cache entries contain Telegram user IDs for chat administrators and expire according to `ADMIN_CACHE_TTL_SECONDS`. They are process-local and are not written to SQLite or Markdown memory.
-- Answer, summary and embedding routes can send different content to different providers, review all three selected profiles before enabling learning. Embedded inference and explicitly local servers never fall back to cloud services, no-auth local servers never inherit the default remote key. Explicit model downloads are network activity even when subsequent inference is local, Hub credentials belong to deployment secrets rather than runtime profile JSON
-- Embedding manifests and migration jobs contain safe semantic configuration fingerprints, source identifiers/hashes, scope, actor/version/progress and lease metadata, not copied raw text or prompts. Reindexing deliberately sends authoritative source text to the selected embedding provider, requires explicit start and may incur cost, ordinary status/preview reads do not call providers. Deleted/forgotten sources are excluded from every space and rechecked before in-flight job writes
+| Operation | Content sent to the selected provider |
+| --- | --- |
+| Message/note embedding | Eligible message or note text |
+| Query embedding | Search/ask question text |
+| Summarization | Selected learned source messages and summary instructions |
+| Canonical compaction | Durable memory selected for compaction and its instructions |
+| Answer generation | The question, answer instructions and retrieved context |
+| Reindex/import | Authoritative source text in bounded embedding batches |
+
+Answers, summaries and embeddings can use different providers, review all three routes. Remote inference may incur charges. No-auth local servers never inherit the default remote API key, embedded/local routes do not fall back to a cloud provider. Explicit model preparation may download artifacts even if later inference stays local.
+
+`REDACT_BEFORE_AI=true` masks common secret-like key/value pairs, bearer/token forms, email addresses, phone numbers and configured regex matches at the OpenAI-compatible boundary. Pattern matching can miss sensitive information, review the content and provider policy rather than treating it as anonymization. Embedded inference does not use this outbound-redaction boundary.
+
+Provider usage records include provider/profile/model, requested/effective reasoning, token counts when available, timing, operation and source/prompt-template metadata. They exclude provider API keys. Managed pool health derives from exception classes, numeric status, bounded retry information and allowlisted provider codes. Safe health APIs and owner DMs exclude prompts, raw errors and response bodies.
+
+## Imports and exports
+
+Imports are operator-controlled local file reads, they do not establish consent for older conversations. Review the archive, target chat/topic, retention and AI provider before importing. A forum import without `--thread-id` creates aggregate chat memory, it does not infer topic membership from replies. Use explicit topic 1 for General.
+
+Telegram JSON/HTML imports retain text and selected link, document-name and attachment-label metadata. They do not ingest binary attachments, execute exported scripts or fetch linked resources. HTML authors without numeric IDs remain unknown. JSON/HTML retry detection uses logical Telegram message IDs.
+
+Imports are limited to 512 MiB and 100,000 rows, with independent 100-row checkpoints and embedding batches of at most 100 texts. A later failure leaves earlier batches committed, retrying skips existing logical messages or exact JSONL kind/content/source tuples. Checkpoints audit counts, local file name and safe error type without imported text.
+
+Markdown/JSONL exports contain plaintext memory and provenance. Telegram sends large exports as bounded document parts, browser downloads use private/no-store headers and CLI output streams to a file or stdout. All parts, redirects and backups need the same access controls as the database. Cancelling a download stops future delivery, it cannot revoke bytes already received.
+
+## Deletion and retention
+
+Raw-message and durable-knowledge retention are independent and disabled by default. Retention removes eligible old records and their embeddings, durable changes reconcile Markdown. A source removed by raw retention may no longer be available for re-summarization even if a derived summary remains.
+
+`/forget` requires a one-time challenge and deletes raw messages, durable knowledge and embeddings in its confirmed scope. The control-plane equivalent requires fresh action verification and exact-text confirmation. Both preserve audit and AI-usage records. Deleting one knowledge item or note removes its vectors and projected content, it does not delete separate raw source messages.
+
+None of these operations deletes Telegram chat history, another provider's records, downloaded exports or operator backups. Apply your backup expiration policy separately. A failed Markdown rebuild records only an error type, committed SQLite remains authoritative and startup reconciles projections without AI calls.
+
+## Authentication, credentials and diagnostics
+
+Browser OIDC and signed Mini App launches create revocable server-side sessions. SQLite stores session/state/CSRF hashes, authentication/expiry/step-up metadata and encrypted one-time PKCE verifiers. It does not store raw session cookies, CSRF tokens, launch proofs, authorization codes or identity tokens. The frontend keeps the accepted Mini App proof in page memory for bounded step-up use and clears it with the session.
+
+Nuxt SSR serves a neutral gate without privileged session data. The browser loads authorized data after hydration from FastAPI, Caddy strips cookie/authorization/CSRF headers before frontend requests. Protected API responses use private/no-store rules. Identity, grants and managed-chat state are rechecked for control-plane requests.
+
+Managed provider credentials use AES-GCM envelope encryption, SQLite holds ciphertext, wrapped data keys, key IDs, keyed fingerprints, last-four values and lifecycle/health metadata. Master keys remain deployment secrets outside SQLite. An explicit audited reveal can place plaintext in the owning UI component for at most 30 seconds, copying to the OS clipboard requires a separate click. See [Secrets](secrets.md) for rotation and recovery.
+
+Audit and health surfaces use identifiers, counts, actions, versions and bounded reason codes. They still reveal chat/user identifiers and operational activity. Ordinary stats/health loads do not call AI providers, load models or download artifacts. Explicit provider tests and operations checks can run inference and incur charges. Review logs and exports before sharing them.
+
+Private streamed drafts go to the owning private chat, group/topic progress is visible to that conversation's existing audience. Native Stop is bound to the owning draft/chat/thread, hidden provider reasoning is not rendered. Partial generation is unfinished output, it is not committed knowledge. Cancellation usage records exclude partial answer prose.

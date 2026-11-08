@@ -175,17 +175,6 @@ SAFE_CREDENTIAL_PROPERTIES = {
     "active",
 }
 
-FORBIDDEN_CREDENTIAL_PROPERTIES = {
-    "api_key",
-    "ciphertext",
-    "encrypted_secret",
-    "nonce",
-    "secret",
-    "value",
-    "wrapped_dek",
-    "wrap_nonce",
-}
-
 
 def _openapi(context: AppContext) -> dict[str, Any]:
     if context.control_plane is None:
@@ -311,7 +300,6 @@ def test_provider_credentials_are_masked_except_for_the_isolated_reveal_response
     reveal = _schema(openapi, "ProviderCredentialRevealResponse")
 
     assert set(credential["properties"]) == SAFE_CREDENTIAL_PROPERTIES
-    assert not FORBIDDEN_CREDENTIAL_PROPERTIES.intersection(credential["properties"])
     assert set(reveal["required"]) == {"credential_id", "value", "expires_at"}
     assert set(reveal["properties"]) == {"credential_id", "value", "expires_at"}
     assert "example" not in reveal["properties"]["value"]

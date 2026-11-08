@@ -1,77 +1,92 @@
 # Deployment
 
-PZP AI can run directly in polling mode for local or bot-only operation, or as a three-service Docker Compose deployment where Caddy terminates public HTTPS, Nuxt renders the control plane and the bot runs its FastAPI webhook application. The production containers are separate so frontend, backend and ingress changes can be built and replaced independently.
+Choose polling for bot-only operation or the Caddy/Nuxt/FastAPI stack for the browser and Mini App control plane. Complete [setup](setup.md), select providers in [configuration](configuration.md) and prepare [backups and secrets](operations.md#backup-upgrade-and-restore) before using persistent group data.
 
 ## Polling
-
-Polling is the simplest runtime and works well for local development, private deployments and first production trials.
 
 ```powershell
 uv run pzp-bot polling
 ```
 
-Polling clears any configured Telegram webhook first because Telegram update modes are mutually exclusive.
+Polling needs a valid `TELEGRAM_BOT_TOKEN`. Startup deletes the current webhook with `drop_pending_updates=False`, clears the default command menu and starts one poller. It exposes no HTTP server or browser control plane. Supervise its process and the background-task events described in [operations](operations.md#health-and-logs).  
+Run one Telegram update consumer per bot token. To switch a webhook deployment to polling, stop the webhook process first, start the poller, then stop it before restoring the webhook deployment. Verify the registered URL, allowed update types, pending deliveries and health afterward. Starting polling while the webhook service remains live can make the two runtimes replace each other's delivery mode.
 
 ## Webhook
 
-Set the webhook runtime variables:
+For a bot-only webhook process, configure:
 
 ```env
+TELEGRAM_BOT_TOKEN=<bot-token>
 RUNTIME_MODE=webhook
-WEBHOOK_URL=https://example.com/telegram/webhook
-WEBHOOK_SECRET=<random-secret>
+WEBHOOK_URL=https://bot.example.com/telegram/webhook
+WEBHOOK_SECRET=<deployment-specific-random-secret>
+WEBAPP_HOST=127.0.0.1
+WEBAPP_PORT=8080
 ```
-
-Then run:
 
 ```powershell
 uv run pzp-bot webhook
 ```
 
-The FastAPI endpoint rejects requests whose `X-Telegram-Bot-Api-Secret-Token` header does not match `WEBHOOK_SECRET`. Webhook startup also rejects blank secrets and common placeholders such as `change-me`, `changeme`, `placeholder`, `default` and `secret`; generate a deployment-specific random value before enabling webhook mode.
+Terminate public HTTPS at a trusted proxy and route `/telegram/webhook` to this process. Startup registers the URL and dispatcher update types without dropping pending updates. The endpoint rejects missing/wrong `X-Telegram-Bot-Api-Secret-Token`, startup rejects blank secrets and `change-me`, `changeme`, `placeholder`, `default` or `secret`. Use a random value accepted by Telegram, see [secrets](secrets.md).  
+Probe `/health` on the backend, 200 means the summary/settings loops are running and 503 means one has stopped. Monitor repeated iteration failures even while liveness stays healthy. `/ask` text/caption commands receive acknowledgement before bounded process-local generation so Stop can arrive, a restart can interrupt an acknowledged answer and will not replay it into another paid generation.
 
-Webhook deployments should probe `GET /health`. It returns HTTP 200 with `pzp-idle-summarizer` and `pzp-runtime-settings-refresher` set to `true` only while both critical background task handles are running; it returns HTTP 503 with the failed task set to `false` when either loop has stopped. Ordinary iteration failures are retried with bounded exponential backoff and do not make health fail unless the task itself terminates.
+## Public control-plane deployment
 
-When `CONTROL_PLANE_ENABLED=true`, the webhook FastAPI application also installs Telegram OIDC, Mini App exchange, session, provider, bot-settings and managed-chat endpoints plus the `chat_shared` enrollment handler. The public origin must be the exact HTTPS origin used by the browser and registered with BotFather. Caddy routes `/api/control` and `/auth` (including descendants), plus exact `/telegram/webhook` and `/health`, directly to FastAPI, and sends every other route to Nuxt SSR. Reserved backend paths never fall through to frontend HTML.
+Production uses one external HTTPS origin and three containers. FastAPI owns identity/business endpoints, Nuxt serves presentation and Caddy routes both under the same origin. Only Caddy publishes host ports.
 
-## Combined Loopback Development
+| Service | Internal listener | Persistent state |
+| --- | --- | --- |
+| `bot` | FastAPI `8080` | `./data` mounted at `/app/data` for SQLite and Markdown |
+| `frontend` | Nuxt `3000` | None |
+| `proxy` | Caddy `80/443` | Named `caddy_data` and `caddy_config` volumes |
 
-From `web/`, `pnpm dev` coordinates a dedicated loopback FastAPI development runtime and the Nuxt development server. This is not the production webhook topology: mock authentication exists only in the dedicated `pzp-bot control-plane-dev` command, HTTP is accepted only for an exact loopback browser origin, and the normal webhook application retains its exact HTTPS/OIDC/master-key bootstrap checks.
+Install Docker Engine with the Compose plugin (or Docker Desktop), create DNS for your public hostname and allow inbound HTTP/HTTPS to Caddy. Run Compose commands from the repository root. Keep a stable origin such as `https://bot.example.com`, then register the same bot in BotFather:
 
-With `CONTROL_PLANE_DEV_USER_ID` set and `WEBHOOK_URL` empty, the combined runtime performs no Telegram API operation even when `TELEGRAM_BOT_TOKEN` is present. It does not create a Telegram bot object, register a webhook route or start admin-alert delivery, while the database, critical background tasks, `/health`, bot settings, existing managed-chat state and scoped settings remain available. Group enrollment, delegated-admin target verification and leave therefore return a controlled unavailable response until connected mode is enabled. Configure a complete HTTPS `WEBHOOK_URL`, non-placeholder `WEBHOOK_SECRET` and bot token only when real connected development is intentional; startup then registers commands, calls `setWebhook`, receives webhook and `chat_shared` enrollment updates, enables membership checks/leave and starts admin-alert DMs. This changes Telegram's delivery mode and requires a publicly reachable HTTPS webhook.
+1. Open the BotFather Mini App, select your bot and open Login Widget. Add both the origin `https://bot.example.com` and the exact OIDC redirect URL `https://bot.example.com/auth/telegram/callback` to Allowed URLs, then copy its client ID and client secret into the backend configuration. PZP uses OIDC rather than an embedded login widget, see [Telegram Login setup](https://core.telegram.org/bots/telegram-login#registering-your-allowed-urls).
+2. Under `/mybots` > your bot > Bot Settings > Configure Mini App, enable the Main Mini App and set its URL to `https://bot.example.com/`. This creates the bot-profile launch button, see [Main Mini App setup](https://core.telegram.org/bots/webapps#launching-the-main-mini-app).
+3. To expose the same app from the bot DM menu, use `/setmenubutton` (or Bot Settings > Menu Button), choose the bot, enter a label such as Open control plane and use `https://bot.example.com/` as the URL. [Telegram's menu-button configuration](https://core.telegram.org/bots/webapps#launching-mini-apps-from-the-menu-button) is separate from the slash-command list.
+4. Start the bot DM as each owner who needs browser enrollment buttons or health alerts. Put at least one real numeric owner ID in `BOT_ADMINS`. Keep Telegram group privacy/member access configured as described in [Setup](setup.md#start-polling-and-verify-a-group).
 
-`pnpm dev:web` runs Nuxt alone, while `pnpm build` followed by `pnpm start` runs only the production Nuxt output. Neither production command starts Python or enables mock authentication. The production deployment remains the Caddy/Nuxt/FastAPI Compose topology below.
+The required backend configuration includes:
 
-## Docker
-
-The bot image uses a multi-stage `python:3.12-slim` build, installs the latest uv through Astral's standalone installer, installs the exact production dependency set from `uv.lock` through frozen syncs, installs the project non-editably so the copied runtime environment is self-contained, runs as the non-root `pzp` user and includes a `pzp-bot doctor` image healthcheck. The dependency layer copies `pyproject.toml`, `uv.lock` and `README.md` before application source so ordinary source edits reuse the locked dependency layer. The installer version intentionally floats, application dependency resolution does not.
-
-The frontend image uses dependency, build and runtime stages based on `node:26-bookworm-slim`, installs pnpm 11.28.11 through its standalone installer (without relying on the removed bundled Corepack), installs the frozen production dependency graph with a persistent BuildKit pnpm store and bounded install/build memory, runs `pnpm build`, copies only Nuxt's `.output` directory and runs `.output/server/index.mjs` as the non-root `node` user. Caddy uses the deliberately mutable major tag `caddy:2-alpine`, only that service publishes host ports 80 and 443, while Nuxt port 3000 and FastAPI port 8080 remain internal. Record the actual uv, Node, pnpm and Caddy versions/image digests when qualifying a deployment, a floating tool/base-image policy is not a promise of byte-identical future builds.
-
-```powershell
-docker build --tag pzp-ai:local .
-docker run --rm -e AI_PROVIDER=fake -e DB_URL=sqlite+aiosqlite:////tmp/pzp/bot.db -e MEMORY_DIR=/tmp/pzp/memory pzp-ai:local pzp-bot doctor
-docker run --rm -e AI_PROVIDER=fake -e DB_URL=sqlite+aiosqlite:////tmp/pzp/bot.db -e MEMORY_DIR=/tmp/pzp/memory pzp-ai:local pzp-bot migrate
+```env
+TELEGRAM_BOT_TOKEN=<bot-token>
+BOT_ADMINS=<numeric-owner-id>
+WEBHOOK_URL=https://bot.example.com/telegram/webhook
+WEBHOOK_SECRET=<deployment-specific-random-secret>
+CONTROL_PLANE_ENABLED=true
+CONTROL_PLANE_PUBLIC_ORIGIN=https://bot.example.com
+TELEGRAM_OIDC_CLIENT_ID=<botfather-client-id>
+TELEGRAM_OIDC_CLIENT_SECRET=<botfather-client-secret>
+CONTROL_PLANE_ACTIVE_MASTER_KEY_ID=primary
+CONTROL_PLANE_MASTER_KEYS={"primary":"<base64-encoded-32-byte-key>"}
 ```
 
-Compose keeps `.env` optional so configuration inspection and one-off offline image commands can run before local secrets exist:
+Generate the vault key as described in [Secrets](secrets.md#vault-keys-and-encrypted-credentials) and a webhook secret with `[Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))`. Add the chosen AI provider configuration. Supply real generated secrets, examples above are placeholders. Keep the exact external origin consistent across browser, Mini App and OIDC settings. Compose loads `.env` only into the bot service, custom API-key environment references work there through `env_file`. The frontend receives only listener/Node settings, Caddy receives its site address.  
+Compose fixes `DB_URL=sqlite+aiosqlite:///data/bot.db`, `MEMORY_DIR=data/memory`, `RUNTIME_MODE=webhook`, host `0.0.0.0` and port `8080` inside the bot. A different container database location requires a matching Compose override/mount. Ensure the non-root user can create SQLite sidecars under the mounted directory. The stock backend image omits the heavy `local` extra, embedded inference needs a deliberately built image with those dependencies and persistent model artifacts, or use an allowlisted local HTTP server profile.  
+`CADDY_SITE_ADDRESS` defaults to `CONTROL_PLANE_PUBLIC_ORIGIN`. Caddy handles TLS for a normal public hostname. For an external TLS terminator such as cloudflared, set `CADDY_SITE_ADDRESS=:80` only with a trusted private/local Caddy listener, retain the exact external HTTPS origin in application configuration. `PZP_HTTP_PORT` and `PZP_HTTPS_PORT` change published port numbers, they do not restrict bind addresses or change internal ports. Use a Compose override to bind the ingress to loopback when a local tunnel owns public access. An ephemeral tunnel hostname needs matching Telegram/OIDC registration and is not a stable production address.
 
 ```powershell
-docker compose config
+docker compose config --quiet
+docker compose build
 docker compose run --rm bot pzp-bot doctor
+docker compose run --rm bot pzp-bot migrate
+docker compose up -d --wait
+docker compose ps
+docker compose logs --tail 100 bot
 ```
 
-The main Compose topology is a production webhook stack, not a polling stack. Before starting it, create `.env` and configure at least `TELEGRAM_BOT_TOKEN`, `BOT_ADMINS`, `WEBHOOK_URL=<CONTROL_PLANE_PUBLIC_ORIGIN>/telegram/webhook`, a non-default `WEBHOOK_SECRET`, `CONTROL_PLANE_ENABLED=true`, the exact HTTPS `CONTROL_PLANE_PUBLIC_ORIGIN`, Telegram OIDC credentials, the control-plane master-key map and provider settings. Optional `PZP_HTTP_PORT` and `PZP_HTTPS_PORT` values change the published host ports without changing the internal contract. `CADDY_SITE_ADDRESS` defaults to the public control-plane origin; set it separately to `:80` only when a trusted external ingress such as cloudflared terminates public TLS and forwards to the otherwise private/local Caddy listener, while `CONTROL_PLANE_PUBLIC_ORIGIN` remains the exact external HTTPS origin used for browser, Mini App and OIDC validation.
+Inspect the resolved configuration locally if needed, plain `docker compose config` expands environment values and can disclose secrets in terminal/log output. The `.env` file is optional for offline image inspection, starting this production stack still requires complete live settings. Startup also applies migrations, take the pre-upgrade backup before any new-image application command. `doctor` checks local configuration/path/dependency state and does not verify live authentication.  
+Open the public origin in a browser and sign in with the Telegram identity listed in `BOT_ADMINS`, then open the bot's Main Mini App and confirm it reaches the same owner pages. In Chats, enroll a group you administer with the requester-bound selection, the bot must already be a member. Activate the chat, enable learning for its intended scope and repeat the known-fact search/answer from [Setup](setup.md#start-polling-and-verify-a-group). Enrollment and learning are separate requirements.  
+The Python image uses multi-stage `python:3.12-slim`, frozen non-editable installation and non-root `pzp`. The Nuxt image builds frozen dependencies on Node major 26, copies `.output` into a non-root Node runtime and probes `/login`. Caddy uses `caddy:2-alpine`. Standalone installers and base-image tags can change, record resolved versions and image digests for release/recovery. Application dependency locks remain frozen.  
+The bot image's generic healthcheck runs `doctor`, Compose replaces it with HTTP `/health`. Caddy's check validates its config, frontend probes `/login`. Healthy container status alone does not verify external TLS, routes, identity or Telegram delivery.
 
-Build and start all three services with:
+## Routing and deployment verification
 
-```powershell
-docker compose up --build
-```
-
-The compose file mounts `./data` at `/app/data` so SQLite and Markdown memory survive restarts, and named `caddy_data` and `caddy_config` volumes preserve ingress state. The bot healthcheck probes its own `/health`, the frontend image probes `/login`, and Caddy validates its mounted configuration.
-
-Build or replace one application image without rebuilding the other:
+Caddy forwards exact `/api/control` and `/auth` plus descendants, exact `/telegram/webhook` and exact `/health` to FastAPI. Other requests reach Nuxt, including its internal icon API. Verify that reserved backend paths produce backend responses instead of frontend HTML. Before forwarding to Nuxt, Caddy removes `Cookie`, `Authorization` and `X-CSRF-Token`. Do not add backend credentials to the frontend image, environment or build arguments.  
+Check public `/`, `/login`, `/health`, anonymous session denial, webhook-secret rejection, absent development-auth routes, HTTPS redirect, HSTS/CSP and private/no-store documents. Complete browser and Mini App authentication with the registered callback. Verify real message delivery, stable sessions, management permissions and independent frontend replacement using the [release checklist](release.md).  
+Build and replace one application service without rebuilding the other:
 
 ```powershell
 docker compose build frontend
@@ -80,20 +95,9 @@ docker compose build bot
 docker compose up -d --no-deps bot
 ```
 
-`uv run pzp-bot polling` remains the supported local and manual polling command. Polling does not expose FastAPI or the browser control plane, so a control-plane deployment uses the Compose webhook topology.
-Never run polling against a token with an active webhook writer. A coordinated handoff stops the webhook service first, deletes the webhook without dropping pending updates, runs exactly one poller, stops it and restores the original webhook/allowed update types before verifying health and pending delivery. The isolated [2026-11-08 acceptance](release-closure-acceptance-2026-11-08.md#exclusive-polling) exercised that sequence within the owner's five-minute outage limit while preserving the same tunnel and session store.  
-Webhook Ask work is process-owned and bounded rather than a durable queue, immediate acknowledgement allows Telegram to deliver native Stop while generation runs. A restart can interrupt an acknowledged answer, shutdown drains/cancels active work and the bot does not automatically replay paid generations after process loss. Backups and normal durable ingestion/summary/index-job recovery have separate contracts, do not describe transient answer tasks as persisted jobs.  
-The manually dispatched GitHub Actions workflow installs the latest uv and uses `uv sync --frozen --extra dev,local`, the owner deliberately removed its separate `uv lock --check` step. The pnpm setup action reads `web/package.json` through its explicit `working-directory: web` input. Frozen installs do not rewrite either lockfile, dependency upgrades must deliberately regenerate/review their lock changes and local acceptance can explicitly check lock consistency. Keep tool versions floating as requested while recording their actual versions in acceptance evidence.
+Run frontend build/asset/SSR gates before replacement, back up before backend migration and preserve exact rollback images. After replacement verify public routes, service health, current browser/Mini App session behavior and Telegram updates. `docker compose down` stops the stack, keep persistent volumes/data unless intentionally retiring the deployment.
 
-## Runtime Checklist
+## Loopback development
 
-The [2026-11-07 live acceptance ledger](live-acceptance-2026-11-07.md) records the earlier exact test images, persistent Quick Tunnel, isolated mounts, runtime/privacy/recovery results, owner-confirmed authentication/session checks and remaining operator gates. The new mixed-provider/0019 source has not replaced those images, consult its [verification boundary](mixed-provider-acceptance-2026-11-07.md) before deployment. The test ingress is loopback-only behind cloudflared, its ephemeral hostname is not a production DNS/availability commitment. The pnpm Docker cache stays separate from the standalone installation tree so BuildKit cannot hide the installed CLI, the standalone installer is intentionally unpinned by owner policy while application installation remains frozen.  
-
-- Run `pzp-bot migrate` before starting a new database.
-- Run `pzp-bot doctor` after changing secrets, provider profiles, database paths or memory paths.
-- For webhook mode, configure the orchestrator's runtime readiness/liveness probe against `GET /health` and investigate any HTTP 503 before routing Telegram traffic.
-- For polling mode, monitor process state plus `background_task_iteration_failed` and `background_task_stopped_unexpectedly` structured events because polling does not expose an HTTP health route.
-- Verify Caddy routes `/api/control`, `/auth`, `/telegram/webhook` and `/health` to FastAPI and strips `Cookie`, `Authorization` and `X-CSRF-Token` before frontend requests; the Nuxt service must never receive backend credentials.
-- Run `pnpm build`, `pnpm scan:generated` and `pnpm smoke:ssr` before replacing the frontend image.
-- Keep `.env`, SQLite files and generated memory out of git.
-- Use [operations.md](operations.md) for audit, backup, integrity and maintenance commands.
+From `web/`, `pnpm dev` coordinates the dedicated FastAPI development command and Nuxt. Set a positive `CONTROL_PLANE_DEV_USER_ID`, exact loopback origin and disposable paths using [setup](setup.md). `pnpm dev:web` runs Nuxt alone, `pnpm build` then `pnpm start` runs only production Nuxt output.  
+With an empty `WEBHOOK_URL`, combined development makes no Telegram API calls even if a token is present. Database/settings/health stay available, enrollment, membership verification and leave fail as unavailable. Connected development requires a complete public HTTPS webhook URL, safe secret and token, it changes Telegram delivery mode and enables real membership/leave/DM operations. Use a separate disposable bot when possible and coordinate its sole update consumer. Mock login exists only in the dedicated command, production webhook startup still requires its HTTPS/OIDC/master-key configuration.

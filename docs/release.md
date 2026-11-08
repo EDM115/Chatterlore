@@ -1,53 +1,104 @@
-# Release Checklist
+# Release checklist
 
-Use this checklist before tagging or publishing a new PZP AI release. It is designed to keep migrations, docs, tests, Docker artifacts and live Telegram validation in sync.
+Use this checklist to qualify a specific source snapshot, its images and its target deployment before tagging or publishing. Record the snapshot, resolved tool versions, schema revision, image digests, commands/results, live client/provider environment and any accepted limitations. Re-run affected checks after changes, earlier test counts or another deployment's success do not qualify a new artifact.
 
-## Versioning
+## Source and documentation
 
-- The pyproject minor version tracks the current implementation pass and patch versions track bugfix passes inside the pass.
-- `PLAN.md` has its own roadmap version and should be updated only when the roadmap state changes.
-- Keep README badges, Docker examples and release notes aligned with the published artifact names.
+- [ ] Review the final diff and package/artifact version metadata, follow the intended release's versioning policy
+- [ ] Confirm [setup](setup.md), [configuration](configuration.md), [commands](commands.md), [concepts](concepts.md), [privacy](privacy.md), [deployment](deployment.md), [operations](operations.md) and [secrets](secrets.md) describe the shipped behavior
+- [ ] Check examples, local links and environment references, keep real credentials/data out of tracked files and release attachments
+- [ ] Record the Alembic head and any upgrade, reindex, availability or operator action required
 
-## Pre-Release Checks
+## Local quality gates
 
-- Confirm Alembic head and note the migration ID included in the release.
-- Run `uv sync --extra dev --extra local`, `uv run ruff format --check .`, `uv run ruff check .`, `uv run ty check`, `uv run pytest`, `uv run alembic upgrade head`, `uv run pzp-bot --help` and `uv run pzp-bot doctor`.
-- From `web/`, run `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm openapi:check`, `pnpm build`, `pnpm scan:generated`, `pnpm smoke:ssr` and `pnpm test:e2e`.
-- Run Docker smoke checks: `docker compose config`, `docker build --tag pzp-ai:0.11.0 .`, `docker build --tag pzp-ai-web:0.11.0 ./web`, container `pzp-bot doctor`, container `pzp-bot migrate` and `docker compose run --rm bot pzp-bot doctor`.
-- With disposable webhook/OIDC credentials, run the three-service Compose stack and verify Caddy TLS, reserved-path routing, credential-header stripping, service health, Telegram webhook delivery, independent frontend replacement and restart recovery.
-- Review config changes in `docs/setup.md`, `docs/deployment.md`, `docs/secrets.md` and `docs/operations.md`.
-- Run a manual Telegram smoke test for default command-menu cleanup and manually typed `/help`, `/learn_status`, `/runtime_settings`, `/audit_events`, `/ask`, `/memory_export`, `/settings` preview/confirm and `/forget` confirmation before inviting a real group. Validate rich headings/tables/code on the actual supported clients, private drafts/final persistence/native Stop, group/topic in-place progress, rate-limit/fallback behavior and no stale Generating state after cancellation. In the control plane, also validate browser and Mini App login, bot-owner add/remove and session revocation, prepared/DM group enrollment, delegated-admin boundaries, pause/resume/detach/leave/forget differences and chat/topic inherited settings against disposable accounts/chats.
-- Manually dispatch the GitHub Actions workflow after pushing the final branch and record its result for that exact snapshot (push/PR events no longer trigger it automatically).
-- The Plan 021 delegated-admin policy is resolved to bot-admin-only grant management, current owner enrollment/lifecycle and exclusive polling passed. Complete broader real-client/account/permission/logout/revocation, deferred two-key/admin-DM/DeepSeek, production sizing and owner-dispatched hosted CI holds in the [current closure report](release-closure-acceptance-2026-11-08.md) before release
+Run from the repository root:
 
-## Release Notes Template
+```powershell
+uv sync --frozen --extra dev --extra local
+uv run ruff format --check .
+uv run ruff check .
+uv run ty check
+uv run pytest -m "not telegram_live"
+uv run pzp-bot --help
+uv run pzp-bot doctor
+```
 
-Include:
-- Package version and migration state.
-- New environment variables or runtime setting keys.
-- Admin command changes and privacy/audit changes.
-- Docker smoke result and GitHub Actions result.
-- Manual Telegram smoke-test result.
-- Any known limitations or operator action required before upgrade.
+- [ ] Complete Python 3.12 production-baseline checks, inspect skips/warnings and exercise optional local packages when supported
+- [ ] Check a fresh disposable schema and a disposable prior-release backup with `alembic upgrade head` and `alembic check`, preserve data/settings/permissions
+- [ ] Run local `uv lock --check` if validating dependency metadata freshness, CI itself uses frozen sync without that separate command
+- [ ] From `web/`, run frozen installation, runtime/format/lint/type/unit/API checks, production build, generated-asset scan, SSR smoke and Playwright as listed in [testing](testing.md)
+- [ ] Verify generated OpenAPI/client declarations match the backend and keep private data out of SSR HTML, hydration and built assets
 
-## Current Release Notes
+Use fake providers and disposable paths for offline command checks. `doctor` does not prove real authentication or inference, actual provider acceptance is separate.
 
-The [2026-11-08 closure report](release-closure-acceptance-2026-11-08.md) is the current qualification source. Route-family extraction and original-evidence legacy adoption are implemented, rich Telegram behavior is isolated-deployed and real owner Desktop/browser/Mini App, disposable lifecycle, exclusive polling, native image/recovery and bounded pretrained embedded/local-server/SSE checks passed. Existing source/image hashes, exact runtime-specific test counts, transient Telegram/OIDC failures and the final caption-command qualification boundary are recorded there. The actual legacy vectors remain unverified and preserved, no automatic adoption or production release occurred.  
-The package remains `0.11.0`, roadmap version is independent. Two-key/admin-DM and DeepSeek remain owner-deferred, broader real clients/accounts/permissions/logout/revocation, production sizing and owner-controlled Git/hosted CI/tagging remain release gates. Historical counts, revoked-key results and Docker unavailability below describe their named snapshots, not the current stack.  
-### Historical qualification snapshots
+## Images, ingress and recovery
 
-- The [rich Telegram presentation source](superpowers/plans/2026-11-07-telegram-rich-replies.md) passes the final 648-test Python 3.14 suite with one live skip and three known upstream warnings, 71 final rich/SSE/managed-key-pool regressions and repository Ruff/ty/lock/API checks. Both Important review findings were reproduced and fixed, logical long-message chunking and explicit interruption notices are covered. This later uncommitted source is not deployed or real-client accepted, private draft/Stop animation, group/topic edits, rich rendering and default-menu cleanup remain deployment smoke checks
-- Package version is `0.11.0`.
-- The newest [mixed-provider implementation checkpoint](mixed-provider-acceptance-2026-11-07.md) adds independent answer/summary/embedding routes, both embedded and server-based local text inference, explicit local preparation and resumable exact-space index migrations. Its complete Python suite passes 571 tests/one live skip, real tiny local CPU fixtures and four isolated live OpenAI calls passed. This source snapshot is not deployed or live-group-accepted, DeepSeek, installed local servers, pretrained-model sizing/quality, two-key failover/DM and owner-dispatched CI remain separately qualified gates
-- The [later 2026-11-07 execution](live-acceptance-2026-11-07.md) supersedes the earlier maintenance/runtime boundary below: 449 Python passes plus one live skip, 64 Vitest and 44 no-retry browser cases, current split images/TLS/header/privacy/recovery/elapsed-retention-on-copies and owner-confirmed real login/session persistence passed. Bot-admin-only delegated-grant management is enforced. The existing OpenAI environment key returns 401 and was confirmed revoked by the owner, who deferred the disposable-key/provider/DM gate until later. The test stack/tunnel remain running, this is not a production release or hosted CI pass
-- The [2026-11-07 current offline checkpoint](project-review-2026-11-07.md#final-maintenance-verification-2026-11-07) passes 438 Python tests plus 1 live skip on both 3.12 and 3.14, 63 Vitest and 44 no-retry browser cases, current static/schema/migration/SSR/asset gates and isolated combined development. This closes maintenance qualification, not the remaining release/policy gates.
-- Migration head is `0019_embedding_spaces` (0018 adds operation profile settings). Legacy vectors are preserved but unverified, explicitly rebuild from authoritative stored text before relying on their retrieval. Back up the persistent database and plan the initial migration cost/availability window, see [operations](operations.md#embedding-index-migrations)
-- The Python and Nuxt Dockerfiles remain multi-stage and non-root, use standalone uv/pnpm installers, select latest uv and Node major 26 as requested, and keep application dependencies frozen. Caddy uses the floating major `2-alpine` tag, Compose publishes only the ingress and the frontend/backend build independently. Historical image builds and partial live progress do not qualify the November toolchain, fresh image/proxy/TLS/health/replacement/restart acceptance remains required and the local Docker daemon was unavailable during this review.
-- `.github/workflows/ci.yml` runs format, lint, type check, plain tests (without coverage instrumentation), migration, CLI and bot Docker smoke gates, builds the independent frontend image and runs the Nuxt SSR build/secret-scan/production-smoke gates only when manually dispatched, hosted results must be confirmed again after these workflow changes are pushed.
-- The historical 2026-08-09 Plan 021 checkpoint closed deterministic contracts, authentication/authorization, provider/vault/alerts, desktop/mobile browser and synthetic encrypted recovery gates through revision `0017`, with zero remaining xfails. Later notes record partial real Mini App/admin-revocation/delegated-access and image acceptance. These are dated observations, not a current full-client or deployed-runtime pass, live two-key failover/admin-DM, elapsed retention and final production recovery remain open.
-- The 2026-11-07 maintenance pass reviews all numbered plans and all changed direct dependencies, removes coverage tooling, fixes target SQLAlchemy/typing contracts, stabilizes Python-dependent OpenAPI response descriptions and aligns Nuxt roots/imports/aliases. See the [project review](project-review-2026-11-07.md) and both linked dependency audits for source and verification boundaries, do not reuse the older checkpoint counts below as current evidence.
-- The 2026-08-01 non-Docker SSR transition checkpoint passed Oxfmt, type-aware Oxlint/tsgolint, raw Nuxt typecheck, 11 unit/component tests, OpenAPI drift, a 2.75 MB production server build, a 17-text-asset secret scan, nonce-aware SSR smoke and 10 desktop/mobile Playwright checks. Whole-project Ruff format/lint, `ty` and the fresh offline suite also passed with 272 tests, 1 skipped live Telegram test and 4 strict expected failures.
-- The 2026-08-01 Phase 5 provider-pool checkpoint passed immutable lock, Ruff format/lint, `ty`, a fresh complete offline suite with 303 passed/1 skipped/4 strict expected failures, empty-database upgrade/check through revision 0015, CLI help and fake-provider doctor. Nuxt passed format/lint/raw typecheck, 12 unit/component tests, OpenAPI drift, a 2.8 MB SSR build, 20-asset secret scan, direct providers-route SSR smoke and 14 desktop/mobile Playwright checks. Final-audit environment-credential immutability and active-pointer cleanup regressions passed 36 focused tests, then a second fresh full suite passed with the same 303/1/4 outcome and no warnings; ten non-fatal aiosqlite teardown warnings from the preceding checkpoint remain a recurrence watch item. Live multi-key/provider-DM, OIDC/Mini App and split Compose acceptance remain required before production deployment.
-- The 2026-08-01 Phase 6 checkpoint adds reloadless managed bot owners and delegated chat admins, requester-bound prepared/DM group enrollment, active/paused/detached lifecycle enforcement across ingestion and idle summarization, separate leave/forget semantics, safe runtime and inherited scoped settings, synchronized OpenAPI contracts and SSR Bot Settings/Chats screens. Immutable lock, Ruff format/lint, `ty`, CLI help, fake-provider doctor, fresh upgrade/drift through revision 0016 and the warning-free full suite passed with 355 tests, 1 live skip and 4 strict expected failures; Nuxt passed format/lint/typecheck, 30 unit/component tests, OpenAPI drift, a 2.89 MB production SSR build, 236-asset secret scan, direct SSR smoke and all 22 desktop/mobile browser checks. Real prepared-button Telegram selection and split Compose/OIDC acceptance remain release-environment gates.
-- Run `pzp-bot import-telegram-json --file result.json --chat-id <id> [--thread-id <id>]` only on reviewed Telegram Desktop exports or Bot API update dumps and verify the target with `pzp-bot memory-status --scope <scope>` after import.
-- Manual Telegram smoke should include `/memory_status`, `/memory_scopes`, `/memory_debug`, `/memory_items`, `/memory_item_refresh`, `/memory_item_delete` on a disposable item, `/settings top_k=N` followed by `/settings confirm=<token>`, and `/forget` confirmation in a disposable scope.
+- [ ] Build both images from the reviewed source, record image digests and resolved installer/base-image versions
+- [ ] Run offline backend image `doctor` and migration with disposable paths
+- [ ] Run `docker compose config --quiet`, confirm only ingress ports are public and secrets go only to the backend
+- [ ] Back up the current database before any new-image application command, preserve matching secrets/keys and rollback images
+- [ ] Start the configured disposable HTTPS/OIDC/webhook stack and check all services plus public `/`, `/login` and `/health`
+- [ ] Check reserved backend paths never return frontend HTML, missing/wrong webhook secret fails, production development-auth routes are absent and HTTP redirects to HTTPS
+- [ ] Check private/no-store documents, HSTS/CSP/nonces and frontend credential-header stripping through the actual proxy
+- [ ] Replace the frontend independently, restart the backend and verify browser/Mini App session continuity, grants and webhook delivery
+- [ ] Rehearse key-injected database restore on isolated native deployment storage, verify integrity, schema, synthetic encrypted credentials and fail-closed behavior with a missing/wrong key
+- [ ] Check non-root bind-mount permissions and SQLite sidecar creation, a Windows-mounted rehearsal can differ from native Linux storage
+- [ ] Coordinate any polling handoff with an exclusive update consumer, preserve queued updates and restore the webhook URL/update subscription afterward
+
+Do not label acknowledged Ask tasks as durable, process loss can interrupt them without automatic paid replay. Check [operations](operations.md#backup-upgrade-and-restore) before restore or rollback.
+
+## Telegram and identity acceptance
+
+Use disposable groups/topics, synthetic markers and prepared test accounts. Record the actual client, account/role and observed result for each scenario.
+
+- [ ] Default command menu is empty, Main Mini App remains reachable and manually typed `/help` works
+- [ ] Real Desktop, Telegram Web and supported mobile clients render headings/tables/code/Unicode and preserve long final content/source references
+- [ ] Private Ask shows progress, persists its final reply, native Stop cancels generation and leaves no stale draft/Generating state
+- [ ] Group and forum-topic progress finalizes the same message, rate limits and ambiguous transport failures avoid duplicate replies
+- [ ] General uses topic 1, sibling-topic questions cannot retrieve a private marker, explicit whole-chat scope includes permitted aggregate/topic memory
+- [ ] Enable/disable learning, inspect `/learn_status`, `/memory_status` and skip diagnostics, distinguish learning denial from stored raw-message retention
+- [ ] Exercise review approval/rejection, note/item maintenance, export parts and confirmed settings/forget on disposable content
+- [ ] Validate browser OIDC and signed Mini App login, session persistence, account switch, expiry, browser logout and owner/session revocation
+- [ ] Check bot-admin, native/delegated chat-admin and foreign/removed actors across read/write/settings/provider/audit/export paths, only bot admins manage delegated grants
+- [ ] Exercise requester-bound prepared Mini App and browser-DM group selection, expired/foreign selection must fail
+- [ ] Check pause/resume/detach/reenroll/leave/confirmed forget differences, exact action verification and stale-version conflicts
+- [ ] Verify two-tab settings conflicts, reset-to-inherited behavior and restored test settings
+- [ ] Confirm forgetting/review rejection/retention leave no removed content in daily/canonical Markdown, retain only the intended audit and backup material
+- [ ] Rehearse elapsed raw-message and knowledge retention on isolated data with actual aged records, verify vectors/projections and audit retention separately
+
+The credential-gated `telegram_live` pytest checks bot identity only. Browser emulation, mocked identity exchanges and one owner's Desktop session do not cover this complete matrix.
+
+## Providers, indexes and capacity
+
+- [ ] Test each supported remote vendor/dialect with explicitly authorized disposable credentials, including DeepSeek when that integration is part of the release
+- [ ] Use two disposable keys to verify sticky selection, classified failover, recovery and exhaustion, receive sanitized admin DMs and check unreachable-recipient/retry behavior
+- [ ] Verify create/replace/reveal/delete step-up, masking/lifecycle clearing, environment-key non-revealability and master-key rotation/recovery
+- [ ] Test independent chat/summary/embedding routes and provider-specific payload/reasoning behavior, no key may cross endpoints or reach a no-auth local server
+- [ ] Prepare approved pinned local artifacts within the deployment byte cap, distinguish cached readiness, successful embedded inference and local HTTP/SSE operation
+- [ ] Measure representative model quality, sustained/concurrent load, memory/disk needs, latency and CPU/GPU suitability on the target host
+- [ ] Rebuild legacy-unverified vectors or adopt only with retained original provenance, verify exact-space/current-source coverage before activation
+- [ ] Exercise resumable job failure/cancellation/restart, current-version activation and coverage-checked rollback, preserve source text and old vectors
+
+A tiny-model functional check does not establish larger-model quality, GPU behavior or production capacity. Equal vector dimensions and model names do not establish historical provenance.
+
+## Outstanding qualification
+
+The project still requires release-owner decisions and evidence for the following areas. Keep a gate open until you run it for the intended artifact or explicitly narrow the published support claim.
+
+| Open gate | Required evidence |
+| --- | --- |
+| Two-key failover and admin DMs | Real disposable-key failover/recovery/exhaustion and sanitized delivery |
+| DeepSeek | Credential-dependent real request acceptance |
+| Clients, accounts and permissions | Real Web/mobile, account switching, foreign/delegated actors, current-source logout and revocation with prepared accounts/sessions |
+| Production sizing | Sustained load and deployment-specific model quality, CPU/GPU/RAM/disk measurements |
+| Publication and hosted CI | Owner-reviewed/published snapshot, manually dispatched CI result for it, release tagging and production rollout decision |
+
+Legacy data without original embedding provenance remains unverified until rebuilt, existing vectors are preserved. Mark each gate against the intended release artifact, a passing isolated check does not qualify another client, provider or deployment.
+
+## Publication and release notes
+
+- [ ] After the owner publishes the reviewed snapshot, manually dispatch `.github/workflows/ci.yml` and record its exact result, push/PR events do not trigger it
+- [ ] Resolve failures and rerun affected gates before tagging, preserve the owner's control of Git/release actions
+- [ ] Publish notes with package/schema versions, configuration/command/privacy changes, upgrade/reindex actions, image digests and validated deployment/client/provider scope
+- [ ] List limitations and explicit waivers with their impact, identify rollback/recovery requirements and the matching backup/key policy
+- [ ] Tag and deploy only after the release owner accepts the evidence and remaining limitations

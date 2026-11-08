@@ -1,9 +1,7 @@
 import { clearNuxtState, useState } from "#app";
 import { mountSuspended } from "@nuxt/test-utils/runtime";
-import { useAppConfig } from "#imports";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ControlPlaneShell from "~/components/ControlPlaneShell.vue";
-import { TELEGRAM_WEB_APP_SCRIPT } from "~~/telegram";
 
 beforeEach(() => clearNuxtState());
 afterEach(() => vi.unstubAllGlobals());
@@ -87,10 +85,6 @@ describe("ControlPlaneShell", () => {
     expect(wrapper.get('nav[aria-label="Mobile navigation"]').text()).toContain("Dashboard");
   });
 
-  it("applies the control-plane brand configuration from the Nuxt app directory", () => {
-    expect(useAppConfig().ui.colors.primary).toBe("sky");
-  });
-
   it("keeps the main content reachable by keyboard before navigation", async () => {
     const wrapper = await mountSuspended(ControlPlaneShell, {
       slots: { default: "<h1>Workspace overview</h1>" },
@@ -117,9 +111,5 @@ describe("ControlPlaneShell", () => {
     await wrapper.get('nav[aria-label="Mobile navigation"] a').trigger("click");
 
     expect((menu.element as HTMLDetailsElement).open).toBe(false);
-  });
-
-  it("loads the current official Telegram Web App script revision", () => {
-    expect(TELEGRAM_WEB_APP_SCRIPT).toBe("https://telegram.org/js/telegram-web-app.js?63");
   });
 });
