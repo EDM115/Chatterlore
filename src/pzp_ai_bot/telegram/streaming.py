@@ -19,6 +19,7 @@ from pzp_ai_bot.telegram.presentation import (
     PLAIN_TEXT_UNITS,
     AnswerChunk,
     answer_chunks,
+    markdown_has_text,
     rich_payload,
     split_text,
 )
@@ -74,8 +75,10 @@ class AnswerDelivery:
         now = self.clock()
         if now < max(self._next_update, self._retry_at):
             return
-        self._next_update = now + (1.0 if self.private else 3.0)
         preview = next(split_text(text, limit=3000, utf16=True))
+        if not markdown_has_text(preview):
+            return
+        self._next_update = now + (1.0 if self.private else 3.0)
         try:
             if await self._attempt(preview):
                 self._last_text = text

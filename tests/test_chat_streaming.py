@@ -21,6 +21,40 @@ from pzp_ai_bot.db.session import session_scope
 from pzp_ai_bot.memory.scope import Scope
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_empty_chat_response_is_not_a_completed_answer_and_preserves_token_usage(
+    context: AppContext, monkeypatch: pytest.MonkeyPatch, streaming: bool
+) -> None:
+    scope = Scope(-10012345, None)
+    await context.memory.remember(scope, "Copper marker is Copper 1234")
+
+    async def generate(*args: Any, **kwargs: Any) -> ChatResult:
+        return ChatResult(" \n", "fake-chat", 13, 700)
+
+    async def progress(text: str) -> None:
+        return None
+
+    monkeypatch.setattr(context.memory.chat_provider, "generate", generate)
+    if streaming:
+        monkeypatch.setattr(
+            context.memory.chat_provider, "generate_stream", generate, raising=False
+        )
+    answer = await context.memory.ask(
+        scope, "Copper marker", on_text=progress if streaming else None
+    )
+    assert "returned no answer text" in answer
+    assert "Copper 1234" in answer
+    async with session_scope(context.session_factory) as session:
+        [usage] = list(
+            (await session.scalars(select(AIUsage).where(AIUsage.operation == "ask"))).all()
+        )
+        assert usage.error is not None and "EmptyChatResponse" in usage.error
+        assert usage.prompt_tokens == 13 and usage.completion_tokens == 700
+        assert usage.metadata_json is not None
+        assert usage.metadata_json["response_empty"] is True
+
+
 def chunk(
     content: str | None = None,
     *,

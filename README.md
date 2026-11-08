@@ -71,7 +71,7 @@ docker build --tag pzp-ai-web:local ./web
 docker compose run --rm bot pzp-bot doctor
 ```
 
-The production Compose topology runs the bot in webhook mode behind a dedicated Caddy HTTPS ingress and a separate Nuxt SSR image; only Caddy publishes host ports, and the frontend/backend images can be replaced independently. For required webhook/OIDC secrets, persistent data, health checks, local polling and the deferred live proxy acceptance, see [docs/deployment.md](docs/deployment.md).
+The production Compose topology runs the bot in webhook mode behind a dedicated Caddy HTTPS ingress and a separate Nuxt SSR image, only Caddy publishes host ports and the frontend/backend images can be replaced independently. For required webhook/OIDC secrets, persistent data, health checks and exclusive local polling, see [docs/deployment.md](docs/deployment.md). Snapshot-specific deployment evidence and remaining release holds are recorded in [the acceptance report](docs/release-closure-acceptance-2026-11-08.md).
 
 ## Documentation
 

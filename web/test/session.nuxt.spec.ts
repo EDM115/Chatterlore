@@ -43,6 +43,38 @@ afterEach(() => {
 });
 
 describe("useControlSession", () => {
+  it("reuses only the exact unexpired server action after a browser verification return", async () => {
+    const request = vi.fn();
+    vi.stubGlobal("$fetch", request);
+    const wrapper = await mountSuspended(Harness);
+    wrapper.vm.session = {
+      ...sessionPayload,
+      step_up_action: "embedding:adopt",
+      step_up_expires_at: new Date(Date.now() + 60_000).toISOString(),
+    };
+    request.mockClear();
+    expect(await wrapper.vm.ensureStepUp("embedding:adopt", "/embedding-indexes")).toBe(true);
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it.each(["expired", "other-action"])("does not reuse %s browser proof", async (kind) => {
+    const request = vi.fn().mockResolvedValue({ step_up: false });
+    vi.stubGlobal("$fetch", request);
+    const wrapper = await mountSuspended(Harness);
+    wrapper.vm.session = {
+      ...sessionPayload,
+      step_up_action: kind === "other-action" ? "credential:reveal" : "embedding:adopt",
+      step_up_expires_at: new Date(
+        Date.now() + (kind === "expired" ? -60_000 : 60_000),
+      ).toISOString(),
+    };
+    expect(await wrapper.vm.ensureStepUp("embedding:adopt", "/embedding-indexes")).toBe(false);
+    expect(request).toHaveBeenCalledWith(
+      "/api/control/v1/auth/dev/step-up",
+      expect.objectContaining({ body: { action: "embedding:adopt" } }),
+    );
+  });
+
   it.each([
     ["Authenticated user", [], {}],
     ["Scoped administrator", [], { "-1004148019329": ["chat.admin"] }],

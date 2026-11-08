@@ -1177,8 +1177,9 @@ async def test_ingestion_update_edges_match_scope_and_skip_rules(context: AppCon
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("matching", [True, False])
 async def test_chat_shared_update_completes_the_matching_control_plane_enrollment(
-    test_settings,
+    test_settings, matching: bool
 ) -> None:
     settings = test_settings.model_copy(
         update={
@@ -1207,7 +1208,7 @@ async def test_chat_shared_update_completes_the_matching_control_plane_enrollmen
     payload = message_update(update_id=901, message_id=901, chat_id=111, user_id=111)
     payload["message"]["chat"] = {"id": 111, "type": "private", "first_name": "Owner"}
     payload["message"]["chat_shared"] = {
-        "request_id": 77,
+        "request_id": 77 if matching else 78,
         "chat_id": -1006,
         "title": "Shared Engineering",
         "username": "shared_eng",
@@ -1215,11 +1216,24 @@ async def test_chat_shared_update_completes_the_matching_control_plane_enrollmen
 
     await feed(dispatcher, bot, payload)
 
-    chats = await context.control_plane.management.list_managed_chats()
-    assert [(chat.chat_id, chat.status, chat.title) for chat in chats] == [
-        (-1006, "active", "Shared Engineering")
-    ]
-    assert any("enrolled" in text.lower() for text in session.sent_texts())
+    try:
+        chats = await context.control_plane.management.list_managed_chats()
+        if matching:
+            assert [(chat.chat_id, chat.status, chat.title) for chat in chats] == [
+                (-1006, "active", "Shared Engineering")
+            ]
+            assert any("enrolled" in text.lower() for text in session.sent_texts())
+        else:
+            assert chats == []
+            [event] = await context.memory.audit_events(
+                scope=Scope(-1006, None), event_type="control_plane.chat_enrollment.rejected"
+            )
+            assert event.payload == {"request_id": 78, "reason": "chat_enrollment_request_mismatch"}
+            assert "Shared Engineering" not in str(event.payload)
+    finally:
+        await context.control_plane.oidc.aclose()
+        await context.session_factory.kw["bind"].dispose()
+        await bot.session.close()
 
 
 @pytest.mark.asyncio

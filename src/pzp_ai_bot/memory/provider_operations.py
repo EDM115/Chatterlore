@@ -74,6 +74,7 @@ class ProviderOperations:
                 logger.warning("chat_progress_failed", error_type=type(error).__name__)
 
         cancelled = False
+        response_empty = False
         stream = getattr(selection.chat_provider, "generate_stream", None)
         streaming = on_text is not None and callable(stream)
         try:
@@ -96,12 +97,22 @@ class ProviderOperations:
             result = None
             failure = ProviderOperationError.from_exception(error)
         else:
-            failure = None
+            response_empty = not result.content.strip()
+            failure = (
+                ProviderOperationError(
+                    error_type="EmptyChatResponse",
+                    safe_summary="EmptyChatResponse: provider returned no answer text",
+                )
+                if response_empty
+                else None
+            )
         attempt_metadata = _consume_attempt_metadata(selection.chat_provider)
         usage_metadata = dict(metadata)
         usage_metadata["requested_reasoning_level"] = reasoning_effort
         usage_metadata["effective_reasoning_level"] = effective_reasoning
         usage_metadata["streaming"] = streaming
+        if response_empty:
+            usage_metadata["response_empty"] = True
         stream_interrupted = streaming and emitted_text and failure is not None
         usage_metadata["stream_interrupted"] = stream_interrupted
         if attempt_metadata is not None:
@@ -125,7 +136,7 @@ class ProviderOperations:
                     logger.warning("cancelled_chat_usage_failed", error_type=type(error).__name__)
             raise asyncio.CancelledError
         return ChatProviderExecution(
-            result=result,
+            result=None if failure is not None else result,
             failure=failure,
             telemetry=telemetry,
             stream_interrupted=stream_interrupted,

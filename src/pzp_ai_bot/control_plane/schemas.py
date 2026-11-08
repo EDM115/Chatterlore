@@ -53,6 +53,8 @@ class ControlPlaneSessionResponse(BaseModel):
     client_kind: str
     authenticated_at: datetime
     step_up_at: datetime | None
+    step_up_action: str | None = None
+    step_up_expires_at: datetime | None = None
     expires_at: datetime
     csrf_token: str
     capabilities: list[str]

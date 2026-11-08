@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from pzp_ai_bot.ai.protocols import ChatMessage
 from pzp_ai_bot.db.repos.events import EventRepository
 from pzp_ai_bot.db.session import session_scope
+from pzp_ai_bot.embedding_adoption import LegacyAdoptionManifest
 from pzp_ai_bot.memory.embedding_control_errors import CONTROL_ERROR_STATUS, control_error_code
 from pzp_ai_bot.memory.local_preparation import prepare_local_model
 from pzp_ai_bot.memory.scope import Scope, parse_scope
@@ -89,6 +90,35 @@ class EmbeddingJobActivateRequest(EmbeddingJobVersionRequest):
     confirmation: str = Field(min_length=1, max_length=128)
 
 
+class LegacyAdoptionPreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    manifest: LegacyAdoptionManifest
+
+
+class LegacyAdoptionCommitRequest(LegacyAdoptionPreviewRequest):
+    preview_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    confirmation: str = Field(min_length=1, max_length=128)
+    provenance_attested: bool = Field(strict=True)
+
+
+class LegacyAdoptionPreviewView(BaseModel):
+    preview_hash: str
+    count: int
+    scope: str
+    provider_profile: str
+    model: str
+    dimension: int
+    space_key: str
+    configuration_fingerprint: str
+    route_epoch: int
+
+
+class LegacyAdoptionCommitView(BaseModel):
+    adopted: int
+    preview_hash: str
+    space: EmbeddingSpaceView
+
+
 class LocalModelPrepareRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     mode: Literal["chat", "embedding"]
@@ -123,7 +153,7 @@ def _scope(raw: str) -> Scope:
 
 
 def _raise_control_error(exc: Exception) -> Never:
-    from .app import ControlPlaneAPIError
+    from .api.common import ControlPlaneAPIError
 
     code = control_error_code(exc)
     status = CONTROL_ERROR_STATUS[code]
@@ -146,7 +176,7 @@ async def _result(operation: Awaitable[dict[str, Any]]) -> dict[str, Any]:
 
 
 def build_embedding_router() -> APIRouter:
-    from .app import _check_rate_limit, _require_bot_admin, _require_step_up
+    from .api.common import _check_rate_limit, _require_bot_admin, _require_step_up
 
     router = APIRouter(prefix="/api/control/v1", tags=["embedding-indexes"])
     errors: dict[int | str, dict[str, Any]] = {
@@ -161,6 +191,49 @@ def build_embedding_router() -> APIRouter:
             request,
             bucket=f"embedding_{action}",
             limit=context.settings.control_plane_provider_test_rate_limit,
+        )
+
+    @router.post(
+        "/embedding-indexes/legacy/preview",
+        response_model=LegacyAdoptionPreviewView,
+        responses=errors,
+        openapi_extra=owner,
+    )
+    async def preview_legacy(
+        request: Request, payload: LegacyAdoptionPreviewRequest
+    ) -> dict[str, Any]:
+        context, _, authenticated, _ = await _require_bot_admin(request)
+        limit(request, context, "legacy_preview")
+        return await _result(
+            context.memory.embedding_indexes.preview_legacy_adoption(
+                payload.manifest.model_dump(mode="json"),
+                actor_user_id=authenticated.identity.telegram_user_id,
+            )
+        )
+
+    @router.post(
+        "/embedding-indexes/legacy/adopt",
+        response_model=LegacyAdoptionCommitView,
+        responses=errors,
+        openapi_extra={
+            "x-pzp-capability": "bot_admin_step_up",
+            "x-pzp-step-up-action": "embedding:adopt",
+        },
+    )
+    async def adopt_legacy(
+        request: Request, payload: LegacyAdoptionCommitRequest
+    ) -> dict[str, Any]:
+        context, _, authenticated, _ = await _require_bot_admin(request)
+        _require_step_up(authenticated, action="embedding:adopt", context=context)
+        limit(request, context, "legacy_adopt")
+        return await _result(
+            context.memory.embedding_indexes.adopt_legacy(
+                payload.manifest.model_dump(mode="json"),
+                preview_hash=payload.preview_hash,
+                confirmation=payload.confirmation,
+                provenance_attested=payload.provenance_attested,
+                actor_user_id=authenticated.identity.telegram_user_id,
+            )
         )
 
     @router.get(

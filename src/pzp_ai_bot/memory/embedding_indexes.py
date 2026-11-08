@@ -32,6 +32,33 @@ class EmbeddingIndexService:
     batch_size = 32
     lease_seconds = 300
 
+    async def preview_legacy_adoption(
+        self, manifest: Any, *, actor_user_id: int | None = None
+    ) -> dict[str, Any]:
+        from .legacy_adoption import preview_legacy_adoption
+
+        return await preview_legacy_adoption(self, manifest, actor_user_id=actor_user_id)
+
+    async def adopt_legacy(
+        self,
+        manifest: Any,
+        *,
+        preview_hash: str,
+        confirmation: str,
+        provenance_attested: bool,
+        actor_user_id: int | None = None,
+    ) -> dict[str, Any]:
+        from .legacy_adoption import adopt_legacy
+
+        return await adopt_legacy(
+            self,
+            manifest,
+            preview_hash=preview_hash,
+            confirmation=confirmation,
+            provenance_attested=provenance_attested,
+            actor_user_id=actor_user_id,
+        )
+
     def __init__(
         self,
         settings: Settings,

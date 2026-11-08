@@ -50,6 +50,8 @@ interface IndexPreview {
 }
 
 type ProviderProfile = components["schemas"]["ProviderProfileResponse"];
+type LegacyManifest = components["schemas"]["LegacyAdoptionManifest"];
+type LegacyPreview = components["schemas"]["LegacyAdoptionPreviewView"];
 const api = useControlApi();
 const controlSession = useControlSession();
 const isOwner = computed(() => controlSession.hasCapability("bot.admin"));
@@ -63,6 +65,19 @@ const confirmations = ref<Record<number, string>>({});
 const activeOperation = ref<string | null>(null);
 const error = ref<string | null>(null);
 const notice = ref<string | null>(null);
+const adoptionManifestText = ref("");
+const adoptionManifest = ref<LegacyManifest | null>(null);
+const adoptionPreview = ref<LegacyPreview | null>(null);
+const adoptionPreviewSource = ref("");
+const adoptionConfirmation = ref("");
+const provenanceAttested = ref(false);
+const canAdopt = computed(
+  () =>
+    adoptionPreview.value !== null &&
+    adoptionPreviewSource.value === adoptionManifestText.value &&
+    provenanceAttested.value &&
+    adoptionConfirmation.value === `ADOPT ${adoptionPreview.value.preview_hash}`,
+);
 const embeddingProfiles = computed(() =>
   profiles.value.filter((profile) => profile.enabled && profile.embedding_capable),
 );
@@ -106,6 +121,95 @@ watch(scope, () => {
   overview.value = null;
   confirmations.value = {};
 });
+watch(adoptionManifestText, () => {
+  adoptionPreview.value = null;
+  adoptionManifest.value = null;
+  adoptionPreviewSource.value = "";
+  adoptionConfirmation.value = "";
+  provenanceAttested.value = false;
+});
+
+async function previewLegacyAdoption() {
+  if (!isOwner.value || activeOperation.value !== null) return;
+  const source = adoptionManifestText.value;
+  let manifest: LegacyManifest;
+  try {
+    if (new TextEncoder().encode(source).byteLength > 65_536) throw new Error();
+    const parsed: unknown = JSON.parse(source);
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error();
+    manifest = parsed as LegacyManifest;
+  } catch {
+    error.value = "Paste a valid JSON provenance manifest (maximum 64 KiB, at most 100 mappings).";
+    return;
+  }
+  activeOperation.value = "legacy-preview";
+  error.value = notice.value = null;
+  adoptionPreview.value = null;
+  provenanceAttested.value = false;
+  adoptionConfirmation.value = "";
+  try {
+    const result = await api.request<LegacyPreview>("/embedding-indexes/legacy/preview", {
+      method: "POST",
+      body: { manifest },
+    });
+    if (source === adoptionManifestText.value) {
+      adoptionPreview.value = result;
+      adoptionManifest.value = manifest;
+      adoptionPreviewSource.value = source;
+    }
+  } catch (caught) {
+    error.value = indexError(
+      caught,
+      "Original provenance could not be validated. Reindex if original records are unavailable.",
+    );
+  } finally {
+    activeOperation.value = null;
+  }
+}
+
+async function commitLegacyAdoption() {
+  if (
+    !isOwner.value ||
+    !canAdopt.value ||
+    !adoptionPreview.value ||
+    !adoptionManifest.value ||
+    activeOperation.value !== null
+  )
+    return;
+  const preview = adoptionPreview.value;
+  const manifest = adoptionManifest.value;
+  activeOperation.value = "legacy-adopt";
+  error.value = notice.value = null;
+  try {
+    if (!(await controlSession.ensureStepUp("embedding:adopt", "/embedding-indexes"))) {
+      error.value = "Fresh Telegram verification is required before adopting legacy vectors.";
+      return;
+    }
+    if (!isOwner.value || !canAdopt.value || adoptionPreview.value !== preview) return;
+    const result = await api.request<components["schemas"]["LegacyAdoptionCommitView"]>(
+      "/embedding-indexes/legacy/adopt",
+      {
+        method: "POST",
+        body: {
+          manifest,
+          preview_hash: preview.preview_hash,
+          confirmation: adoptionConfirmation.value,
+          provenance_attested: true,
+        },
+      },
+    );
+    adoptionManifestText.value = "";
+    notice.value = `Adopted ${result.adopted} legacy vector${result.adopted === 1 ? "" : "s"}. Vector bytes and route settings were preserved.`;
+    await refreshOverview();
+  } catch (caught) {
+    error.value = indexError(
+      caught,
+      "Legacy adoption failed safely. Refresh the original manifest and preview before retrying.",
+    );
+  } finally {
+    activeOperation.value = null;
+  }
+}
 
 async function refreshOverview() {
   if (!isOwner.value || !scope.value.trim()) return;
@@ -289,7 +393,7 @@ function indexError(caught: unknown, fallback: string): string {
           </p>
           <p v-else class="empty-panel">
             No verified active index. Legacy vectors remain preserved, but need an explicit
-            compatible re-index before retrieval can use them.
+            compatible re-index or evidenced adoption before retrieval can use them.
           </p>
           <div class="management-list">
             <article v-for="space in overview.spaces" :key="space.id" class="management-card">
@@ -466,6 +570,110 @@ function indexError(caught: unknown, fallback: string): string {
           </article>
         </div>
       </section>
+      <section class="management-panel" aria-labelledby="legacy-adoption-title">
+        <h2 id="legacy-adoption-title">Adopt legacy vectors with original provenance</h2>
+        <p>
+          Browser verification navigates away. Keep your original manifest, then paste it again,
+          preview and confirm after returning. Confirmation and attestation are never saved.
+        </p>
+        <p>
+          Use reindexing unless you have original records proving the exact embedding configuration,
+          source text fingerprints and vector-byte fingerprints. Matching model names or dimensions
+          is not evidence. This operation preserves bytes and does not switch routes.
+        </p>
+        <form class="profile-form" @submit.prevent="previewLegacyAdoption">
+          <label for="legacy-adoption-manifest">Reviewed provenance manifest (JSON)</label>
+          <textarea
+            id="legacy-adoption-manifest"
+            v-model="adoptionManifestText"
+            data-testid="legacy-adoption-manifest"
+            rows="8"
+            maxlength="65536"
+            spellcheck="false"
+            autocomplete="off"
+            :disabled="activeOperation !== null"
+          />
+          <p>
+            Provide scope, provider_profile, model, dimension, original_config_hash and 1–100
+            entries containing embedding_id, source_sha256 and vector_sha256. Do not include raw
+            text, vectors or credentials.
+          </p>
+          <UButton
+            type="submit"
+            data-testid="preview-legacy-adoption"
+            :disabled="!adoptionManifestText.trim() || activeOperation !== null"
+            :loading="activeOperation === 'legacy-preview'"
+            @click.prevent="previewLegacyAdoption"
+            >Preview legacy adoption</UButton
+          >
+        </form>
+        <div
+          v-if="adoptionPreview"
+          class="confirmation-panel legacy-adoption-panel"
+          aria-live="polite"
+        >
+          <strong
+            >{{ adoptionPreview.count }} legacy vector{{
+              adoptionPreview.count === 1 ? "" : "s"
+            }}
+            validated for {{ adoptionPreview.scope }}</strong
+          >
+          <p>
+            {{ adoptionPreview.provider_profile }} / {{ adoptionPreview.model }} ·
+            {{ adoptionPreview.dimension }} dimensions
+          </p>
+          <p>
+            Configuration fingerprint: <code>{{ adoptionPreview.configuration_fingerprint }}</code>
+          </p>
+          <label class="legacy-provenance-label"
+            ><input
+              v-model="provenanceAttested"
+              data-testid="legacy-provenance-attested"
+              type="checkbox"
+              :disabled="activeOperation !== null"
+            />I attest that these fingerprints come from original provenance records, not guesses
+            based on current settings.</label
+          >
+          <label for="legacy-adoption-confirmation"
+            >Type ADOPT {{ adoptionPreview.preview_hash }}</label
+          >
+          <input
+            id="legacy-adoption-confirmation"
+            v-model="adoptionConfirmation"
+            data-testid="legacy-adoption-confirmation"
+            autocomplete="off"
+            :disabled="activeOperation !== null"
+          />
+          <UButton
+            data-testid="commit-legacy-adoption"
+            :disabled="!canAdopt || activeOperation !== null"
+            :loading="activeOperation === 'legacy-adopt'"
+            @click="commitLegacyAdoption"
+            >Verify and adopt legacy vectors</UButton
+          >
+        </div>
+      </section>
     </template>
   </ProtectedPageGate>
 </template>
+
+<style scoped>
+.legacy-adoption-panel {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.legacy-adoption-panel input:not([type="checkbox"]) {
+  min-width: 0;
+  width: 100%;
+}
+.legacy-provenance-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+.legacy-provenance-label input {
+  flex-shrink: 0;
+  width: 1rem;
+  height: 1rem;
+}
+</style>

@@ -82,6 +82,8 @@ Local CLI equivalents use the same service, CLI status/preview/start default to 
 
 - `pzp-bot embedding-index status [--scope all] [--job-id N]`
 - `pzp-bot embedding-index preview --profile NAME [--scope all] [--model MODEL]`
+- `pzp-bot embedding-index adopt-preview --manifest PATH`: validate a reviewed original-provenance manifest for at most 100 explicit legacy vectors, without inference or mutation
+- `pzp-bot embedding-index adopt --manifest PATH --preview-hash HASH --confirmation "ADOPT HASH" --attest-provenance`: atomically adopt only the exact previewed and attested mappings, does not switch routes or overwrite verified vectors
 - `pzp-bot embedding-index start --profile NAME [--scope all] [--model MODEL]`
 - `pzp-bot embedding-index run JOB_ID [--max-batches 1]`
 - `pzp-bot embedding-index resume JOB_ID --version N`

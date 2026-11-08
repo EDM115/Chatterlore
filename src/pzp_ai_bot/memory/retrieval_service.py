@@ -205,6 +205,11 @@ class MemoryRetrievalService:
             content = (
                 "Generation was interrupted. No completed answer was produced. Please try again."
             )
+        elif execution.failure is not None and execution.failure.error_type == "EmptyChatResponse":
+            content = (
+                "The model returned no answer text. "
+                "Try a shorter request or lower reasoning effort.\n\n" + fallback_answer(results)
+            )
         async with session_scope(self.session_factory) as session:
             await self.provider_operations.add_usage(session, execution.telemetry)
         return AskExecutionResult(
