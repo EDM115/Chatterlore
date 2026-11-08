@@ -2,7 +2,7 @@
 import type { components } from "~/types/openapi";
 
 definePageMeta({ middleware: "auth" });
-useSeoMeta({ title: "Embedding indexes · PZP AI Control Plane" });
+useSeoMeta({ title: "Embedding indexes · Chatterlore Control Plane" });
 
 interface SpaceView {
   id: number;

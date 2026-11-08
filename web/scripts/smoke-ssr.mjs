@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const webRoot = resolve(scriptDirectory, "..");
 const entrypoint = resolve(webRoot, ".output", "server", "index.mjs");
-const port = process.env.PZP_SSR_SMOKE_PORT ?? "43173";
+const port = process.env.CHATTERLORE_SSR_SMOKE_PORT ?? "43173";
 const origin = `http://127.0.0.1:${port}`;
 const sentinels = [
   "phase-ssr-db-secret.example",
@@ -71,7 +71,7 @@ async function main() {
     cwd: webRoot,
     env: {
       ...process.env,
-      DB_URL: `postgresql://${sentinels[0]}/pzp`,
+      DB_URL: `postgresql://${sentinels[0]}/chatterlore`,
       NITRO_HOST: "127.0.0.1",
       NITRO_PORT: port,
       NODE_ENV: "production",

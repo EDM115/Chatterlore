@@ -48,7 +48,7 @@ const overview = {
     schema_revision: "0017",
     scheduler: [
       {
-        name: "pzp-idle-summarizer",
+        name: "chatterlore-idle-summarizer",
         state: "running",
         healthy: true,
         last_success_at: "2026-08-02T11:59:00Z",
@@ -106,7 +106,7 @@ describe("Phase 8 observability and operations", () => {
     });
     vi.stubGlobal("$fetch", request);
     const wrapper = await mountSuspended(StatsPage);
-    await vi.waitFor(() => expect(wrapper.text()).toContain("pzp-idle-summarizer"));
+    await vi.waitFor(() => expect(wrapper.text()).toContain("chatterlore-idle-summarizer"));
 
     expect(wrapper.text()).toContain("180");
     expect(wrapper.text()).toContain("2026-08-01");

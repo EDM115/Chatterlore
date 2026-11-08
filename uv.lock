@@ -1891,7 +1891,7 @@ wheels = [
 ]
 
 [[package]]
-name = "pzp-ai"
+name = "chatterlore"
 version = "0.11.0"
 source = { editable = "." }
 dependencies = [

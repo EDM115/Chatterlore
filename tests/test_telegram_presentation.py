@@ -17,8 +17,8 @@ from aiogram.exceptions import (
 from aiogram.methods import TelegramMethod
 from aiogram.types import Chat, InlineKeyboardButton, InlineKeyboardMarkup, Message, ReplyParameters
 
-from pzp_ai_bot.telegram import safe_api
-from pzp_ai_bot.telegram.safe_api import safe_answer
+from chatterlore.telegram import safe_api
+from chatterlore.telegram.safe_api import safe_answer
 
 
 class RichContentProbe(HTMLParser):
@@ -270,7 +270,7 @@ async def test_long_literal_delivery_prefers_complete_sentences_without_losing_w
 async def test_long_fenced_code_stays_code_in_every_chunk_including_group_finalization(
     group_finalization: bool,
 ) -> None:
-    from pzp_ai_bot.telegram.streaming import AnswerDelivery
+    from chatterlore.telegram.streaming import AnswerDelivery
 
     session = PresentationSession()
     bot = Bot("123456:TEST_TOKEN", session=session)

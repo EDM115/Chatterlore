@@ -1,19 +1,19 @@
 # Setup
 
-Use this guide to install PZP AI, connect an AI provider and verify the bot in a Telegram group. The web control plane is optional for a polling bot. Read [Concepts](concepts.md) for scopes, learning policy, roles and the difference between memory and provider profiles.
+Use this guide to install Chatterlore, connect an AI provider and verify the bot in a Telegram group. The web control plane is optional for a polling bot. Read [Concepts](concepts.md) for scopes, learning policy, roles and the difference between memory and provider profiles.
 
 ## Install the tools and project
 
 Install Git and [uv](https://docs.astral.sh/uv/getting-started/installation/). Use PowerShell 7 for the examples below, the combined frontend/backend development launcher also requires it on Windows. You do not need a separate virtual-environment activation, `uv run` uses the project environment.
 
 ```powershell
-git clone https://github.com/SpamVerse/PZP-AI.git
-Set-Location PZP-AI
+git clone https://github.com/EDM115/Chatterlore.git
+Set-Location Chatterlore
 uv python install 3.12
 uv sync --frozen --python 3.12 --extra dev
 Copy-Item .env.example .env
-uv run pzp-bot migrate
-uv run pzp-bot doctor
+uv run chatterlore migrate
+uv run chatterlore doctor
 ```
 
 Copy `.env.example` only for a new installation, keep an existing `.env` when updating. Run backend commands from the repository root so relative database paths and `.env` resolve there. Defaults create `data/bot.db` and `data/memory/`. Keep these paths on persistent writable storage.
@@ -32,7 +32,7 @@ If you do not know your numeric ID, retrieve only sender and chat identifiers fr
 ```powershell
 @'
 import httpx
-from pzp_ai_bot.config import Settings
+from chatterlore.config import Settings
 
 settings = Settings()
 response = httpx.get(f"https://api.telegram.org/bot{settings.telegram_bot_token}/getUpdates", timeout=15)
@@ -71,8 +71,8 @@ Use [Configuration](configuration.md#provider-profiles) to route answers, summar
 After editing `.env`, run:
 
 ```powershell
-uv run pzp-bot doctor
-uv run pzp-bot show-config
+uv run chatterlore doctor
+uv run chatterlore show-config
 ```
 
 `show-config` excludes credentials. Custom `api_key_env` references must exist in the process environment for local runs, adding an unknown key name only to `.env` is insufficient. The built-in `OPENAI_API_KEY` setting does load from `.env`.
@@ -84,7 +84,7 @@ uv run pzp-bot show-config
 3. Start one bot process:
 
 ```powershell
-uv run pzp-bot polling
+uv run chatterlore polling
 ```
 
 4. In the group, send `/help`, then `/allow_chat` for the whole group. For one forum topic, send `/allow_topic` inside that topic instead. You must be a Telegram chat admin or configured bot owner.
@@ -124,7 +124,7 @@ pnpm dev
 
 Open `http://localhost:3000`. The launcher starts FastAPI on loopback port 8000 and Nuxt on port 3000. The development frontend obtains a server-side session for the backend-configured ID. No Telegram bot object, webhook registration or admin DM runs while `WEBHOOK_URL` is empty. Sensitive operations still use action-specific development verification. This mode supports existing data/settings workflows, group enrollment and membership changes require Telegram connectivity.
 
-`pnpm dev:web` starts Nuxt alone, `uv run pzp-bot control-plane-dev` from the repository root starts the backend alone. Nuxt proxies `/api/control`, `/auth`, `/telegram/webhook` and `/health` to `PZP_API_DEV_ORIGIN` (default `http://127.0.0.1:8000`). If you change the API port, set that variable to the matching origin in the frontend shell. Keep `CONTROL_PLANE_DEV_ORIGIN` equal to the exact browser origin, `localhost` and `127.0.0.1` are different origins.
+`pnpm dev:web` starts Nuxt alone, `uv run chatterlore control-plane-dev` from the repository root starts the backend alone. Nuxt proxies `/api/control`, `/auth`, `/telegram/webhook` and `/health` to `CHATTERLORE_API_DEV_ORIGIN` (default `http://127.0.0.1:8000`). If you change the API port, set that variable to the matching origin in the frontend shell. Keep `CONTROL_PLANE_DEV_ORIGIN` equal to the exact browser origin, `localhost` and `127.0.0.1` are different origins.
 
 To opt into Telegram-connected development, configure a valid bot token, complete public HTTPS `WEBHOOK_URL` ending in `/telegram/webhook` and non-placeholder `WEBHOOK_SECRET`. The backend registers a real webhook, clears the default command menu and enables owner-alert delivery. This changes the bot's update delivery, stop any competing writer first. An incomplete connected configuration fails before Telegram calls.
 

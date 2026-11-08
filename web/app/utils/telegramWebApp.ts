@@ -1,6 +1,6 @@
 import { TELEGRAM_WEB_APP_SCRIPT } from "~~/telegram";
 
-export const TELEGRAM_WEB_APP_READY_EVENT = "pzp:telegram-web-app-ready";
+export const TELEGRAM_WEB_APP_READY_EVENT = "chatterlore:telegram-web-app-ready";
 
 export const TELEGRAM_WEB_APP_SCRIPT_SELECTOR = `script[src="${TELEGRAM_WEB_APP_SCRIPT}"]`;
 const TELEGRAM_WEB_APP_READY_TIMEOUT_MS = 2_000;

@@ -216,7 +216,7 @@ describe("useControlSession", () => {
         expand: vi.fn(),
       },
     };
-    window.dispatchEvent(new Event("pzp:telegram-web-app-ready"));
+    window.dispatchEvent(new Event("chatterlore:telegram-web-app-ready"));
 
     expect(await bootstrapping).toBe(true);
     expect(request).toHaveBeenCalledTimes(1);

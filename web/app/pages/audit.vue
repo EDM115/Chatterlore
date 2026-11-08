@@ -2,7 +2,7 @@
 import type { components } from "~/types/openapi";
 
 definePageMeta({ middleware: "auth" });
-useSeoMeta({ title: "Audit · PZP AI Control Plane" });
+useSeoMeta({ title: "Audit · Chatterlore Control Plane" });
 
 type AuditEvent = components["schemas"]["AuditEventResponse"];
 type AuditEventPage = components["schemas"]["AuditEventPage"];

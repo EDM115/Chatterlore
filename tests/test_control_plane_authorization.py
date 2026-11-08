@@ -4,15 +4,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
-from pzp_ai_bot.config import Settings
-from pzp_ai_bot.control_plane.authorization import (
+from chatterlore.config import Settings
+from chatterlore.control_plane.authorization import (
     CAPABILITY_BOT_ADMIN,
     CAPABILITY_CHAT_ADMIN,
     ControlPlaneAuthorizationService,
 )
-from pzp_ai_bot.db.repos.control_plane import ControlPlaneAccessRepository
-from pzp_ai_bot.db.session import create_schema, create_session_factory, session_scope
-from pzp_ai_bot.telegram.admin import AdminService
+from chatterlore.db.repos.control_plane import ControlPlaneAccessRepository
+from chatterlore.db.session import create_schema, create_session_factory, session_scope
+from chatterlore.telegram.admin import AdminService
 
 NOW = datetime(2026, 7, 31, 12, 0, tzinfo=UTC)
 

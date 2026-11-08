@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from pzp_ai_bot.telegram.admin import AdminService
+from chatterlore.telegram.admin import AdminService
 
 
 class AdminBotDouble:

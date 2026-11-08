@@ -1,5 +1,5 @@
 [project]
-name = "pzp-ai"
+name = "chatterlore"
 version = "0.11.0"
 description = "Telegram group AI memory assistant"
 readme = "README.md"
@@ -43,14 +43,14 @@ dev = [
 ]
 
 [project.scripts]
-pzp-bot = "pzp_ai_bot.main:app"
+chatterlore = "chatterlore.main:app"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/pzp_ai_bot"]
+packages = ["src/chatterlore"]
 
 [tool.ruff]
 target-version = "py312"

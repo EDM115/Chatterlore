@@ -9,7 +9,7 @@ import {
 
 definePageMeta({ middleware: "auth" });
 
-useSeoMeta({ title: "Bot Settings · PZP AI Control Plane" });
+useSeoMeta({ title: "Bot Settings · Chatterlore Control Plane" });
 
 interface BotAdmin {
   telegram_user_id: number;

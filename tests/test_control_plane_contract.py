@@ -5,10 +5,10 @@ from typing import Any
 
 import pytest
 
-from pzp_ai_bot.app_context import AppContext
-from pzp_ai_bot.control_plane.app import create_control_plane_schema_app
-from pzp_ai_bot.control_plane.auth.sessions import SENSITIVE_ACTIONS
-from pzp_ai_bot.telegram.webhook import create_webhook_app
+from chatterlore.app_context import AppContext
+from chatterlore.control_plane.app import create_control_plane_schema_app
+from chatterlore.control_plane.auth.sessions import SENSITIVE_ACTIONS
+from chatterlore.telegram.webhook import create_webhook_app
 
 
 def test_openapi_validation_descriptions_do_not_depend_on_python_status_phrases(
@@ -219,7 +219,7 @@ def test_control_plane_openapi_declares_every_reviewed_route_and_capability(
     assert actual_operations == set(AUTHORIZATION_MATRIX)
     for (method, path), capability in AUTHORIZATION_MATRIX.items():
         operation = _operation(openapi, method, path)
-        assert operation["x-pzp-capability"] == capability
+        assert operation["x-chatterlore-capability"] == capability
 
 
 def test_control_plane_list_contract_uses_bounded_cursor_pagination(context: AppContext) -> None:
@@ -325,12 +325,12 @@ def test_embedding_job_contract_requires_versions_and_explicit_activation(
     activate = _operation(
         openapi, "post", "/api/control/v1/embedding-indexes/jobs/{job_id}/activate"
     )
-    assert activate["x-pzp-step-up-action"] == "embedding:activate"
+    assert activate["x-chatterlore-step-up-action"] == "embedding:activate"
     assert {"version", "confirmation"} <= set(
         _schema(openapi, "EmbeddingJobActivateRequest")["required"]
     )
     prepare = _operation(openapi, "post", "/api/control/v1/providers/{name}/prepare-local")
-    assert prepare["x-pzp-download-step-up-action"] == "local_model:download"
+    assert prepare["x-chatterlore-download-step-up-action"] == "local_model:download"
     assert (
         _schema(openapi, "LocalModelPrepareRequest")["properties"]["allow_download"]["default"]
         is False

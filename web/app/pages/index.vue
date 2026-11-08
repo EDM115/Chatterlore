@@ -3,7 +3,7 @@ import type { components } from "~/types/openapi";
 
 definePageMeta({ middleware: "auth" });
 
-useSeoMeta({ title: "Dashboard · PZP AI Control Plane" });
+useSeoMeta({ title: "Dashboard · Chatterlore Control Plane" });
 
 type StatsOverview = components["schemas"]["StatsOverviewResponse"];
 type StatsTimeseries = components["schemas"]["StatsTimeseriesResponse"];

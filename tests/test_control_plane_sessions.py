@@ -6,16 +6,16 @@ from pathlib import Path
 import pytest
 from sqlalchemy import select
 
-from pzp_ai_bot.config import Settings
-from pzp_ai_bot.control_plane.auth.identity import TelegramIdentity
-from pzp_ai_bot.control_plane.auth.sessions import (
+from chatterlore.config import Settings
+from chatterlore.control_plane.auth.identity import TelegramIdentity
+from chatterlore.control_plane.auth.sessions import (
     ControlPlaneSessionService,
     SessionAuthenticationError,
     has_fresh_step_up,
 )
-from pzp_ai_bot.control_plane.auth.transactions import OIDCTransactionError, OIDCTransactionService
-from pzp_ai_bot.db.models import ControlPlaneSession, OIDCAuthTransaction
-from pzp_ai_bot.db.session import create_schema, create_session_factory, session_scope
+from chatterlore.control_plane.auth.transactions import OIDCTransactionError, OIDCTransactionService
+from chatterlore.db.models import ControlPlaneSession, OIDCAuthTransaction
+from chatterlore.db.session import create_schema, create_session_factory, session_scope
 
 NOW = datetime(2026, 7, 31, 12, 0, tzinfo=UTC)
 

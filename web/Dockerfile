@@ -15,7 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
     curl -fsSL https://get.pnpm.io/install.sh -o /tmp/pnpm-install.sh && \
     ENV=/root/.bashrc SHELL=/bin/bash bash /tmp/pnpm-install.sh && \
     rm /tmp/pnpm-install.sh && rm -rf /var/lib/apt/lists/*
-RUN --mount=type=cache,id=pzp-ai-web-pnpm,target=/var/cache/pnpm pnpm install --frozen-lockfile --prod --store-dir /var/cache/pnpm
+RUN --mount=type=cache,id=chatterlore-web-pnpm,target=/var/cache/pnpm pnpm install --frozen-lockfile --prod --store-dir /var/cache/pnpm
 
 FROM dependencies AS build
 

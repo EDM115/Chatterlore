@@ -11,14 +11,14 @@ from openai import APIConnectionError
 from openai.types.chat import ChatCompletionChunk
 from sqlalchemy import select
 
-from pzp_ai_bot.ai import openai_compatible as provider_module
-from pzp_ai_bot.ai.openai_compatible import OpenAICompatibleProvider
-from pzp_ai_bot.ai.protocols import ChatMessage, ChatResult
-from pzp_ai_bot.ai.provider_call_policy import ProviderLeaseCallError
-from pzp_ai_bot.app_context import AppContext
-from pzp_ai_bot.db.models import AIUsage
-from pzp_ai_bot.db.session import session_scope
-from pzp_ai_bot.memory.scope import Scope
+from chatterlore.ai import openai_compatible as provider_module
+from chatterlore.ai.openai_compatible import OpenAICompatibleProvider
+from chatterlore.ai.protocols import ChatMessage, ChatResult
+from chatterlore.ai.provider_call_policy import ProviderLeaseCallError
+from chatterlore.app_context import AppContext
+from chatterlore.db.models import AIUsage
+from chatterlore.db.session import session_scope
+from chatterlore.memory.scope import Scope
 
 
 @pytest.mark.asyncio

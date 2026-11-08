@@ -8,7 +8,7 @@ import {
 } from "~/utils/routeSettings";
 definePageMeta({ middleware: "auth" });
 
-useSeoMeta({ title: "Chats · PZP AI Control Plane" });
+useSeoMeta({ title: "Chats · Chatterlore Control Plane" });
 
 interface ManagedChat {
   chat_id: number;

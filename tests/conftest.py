@@ -5,9 +5,9 @@ from collections.abc import AsyncIterator, Iterator
 import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-import pzp_ai_bot.db.session as database_session
-from pzp_ai_bot.app_context import AppContext, build_context
-from pzp_ai_bot.config import Settings
+import chatterlore.db.session as database_session
+from chatterlore.app_context import AppContext, build_context
+from chatterlore.config import Settings
 
 
 @pytest.fixture(autouse=True)

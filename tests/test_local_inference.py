@@ -9,11 +9,11 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
-from pzp_ai_bot.ai.protocols import ChatMessage
+from chatterlore.ai.protocols import ChatMessage
 
 
 def test_local_options_are_frozen_and_reject_unsafe_or_unbounded_values() -> None:
-    from pzp_ai_bot.local_models import LocalModelOptions
+    from chatterlore.local_models import LocalModelOptions
 
     options = LocalModelOptions()
     assert options.local_files_only is True
@@ -104,8 +104,8 @@ def forbid_network(monkeypatch: pytest.MonkeyPatch) -> None:
 async def test_real_hf_generation_uses_template_decodes_only_new_tokens_and_tracks_usage(
     tiny_chat_model: Path, forbid_network
 ) -> None:
-    from pzp_ai_bot.ai.local import LocalTransformersChatProvider
-    from pzp_ai_bot.local_models import LocalModelOptions
+    from chatterlore.ai.local import LocalTransformersChatProvider
+    from chatterlore.local_models import LocalModelOptions
 
     provider = LocalTransformersChatProvider(
         str(tiny_chat_model),
@@ -131,8 +131,8 @@ async def test_real_hf_generation_uses_template_decodes_only_new_tokens_and_trac
 async def test_real_hf_generation_rejects_oversized_context_without_truncation(
     tiny_chat_model: Path,
 ) -> None:
-    from pzp_ai_bot.ai.local import LocalTransformersChatProvider
-    from pzp_ai_bot.local_models import LocalModelOptions
+    from chatterlore.ai.local import LocalTransformersChatProvider
+    from chatterlore.local_models import LocalModelOptions
 
     provider = LocalTransformersChatProvider(
         str(tiny_chat_model), options=LocalModelOptions(device="cpu", max_input_tokens=4)
@@ -145,7 +145,7 @@ async def test_real_hf_generation_rejects_oversized_context_without_truncation(
 
 
 async def test_real_hf_generation_rejects_missing_chat_template(tiny_chat_model: Path) -> None:
-    from pzp_ai_bot.ai.local import LocalTransformersChatProvider
+    from chatterlore.ai.local import LocalTransformersChatProvider
 
     transformers = pytest.importorskip("transformers")
     tokenizer = transformers.AutoTokenizer.from_pretrained(tiny_chat_model, local_files_only=True)
@@ -160,7 +160,7 @@ async def test_real_hf_generation_rejects_missing_chat_template(tiny_chat_model:
 
 
 async def test_local_chat_does_not_claim_reasoning_support(tiny_chat_model: Path) -> None:
-    from pzp_ai_bot.ai.local import LocalTransformersChatProvider
+    from chatterlore.ai.local import LocalTransformersChatProvider
 
     provider = LocalTransformersChatProvider(str(tiny_chat_model))
     with pytest.raises(ValueError, match="reasoning"):
@@ -212,8 +212,8 @@ class PurposeEncoder:
 async def test_embedding_purpose_and_generic_compatibility_are_distinct(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from pzp_ai_bot.ai.local import LocalSentenceTransformerEmbeddingProvider
-    from pzp_ai_bot.local_models import LocalModelOptions
+    from chatterlore.ai.local import LocalSentenceTransformerEmbeddingProvider
+    from chatterlore.local_models import LocalModelOptions
 
     loads = install_embedding_double(monkeypatch, PurposeEncoder())
     provider = LocalSentenceTransformerEmbeddingProvider(
@@ -233,7 +233,7 @@ async def test_embedding_purpose_and_generic_compatibility_are_distinct(
 async def test_generic_embedding_mode_keeps_legacy_query_document_behavior(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from pzp_ai_bot.ai.local import LocalSentenceTransformerEmbeddingProvider
+    from chatterlore.ai.local import LocalSentenceTransformerEmbeddingProvider
 
     install_embedding_double(monkeypatch, PurposeEncoder())
     provider = LocalSentenceTransformerEmbeddingProvider("fixture")
@@ -247,7 +247,7 @@ async def test_generic_embedding_mode_keeps_legacy_query_document_behavior(
     [[[float("nan"), 1.0]], [[1.0]], [], [[1.0, 2.0], [3.0, 4.0]], [[True, 0.0]], [["1.0", 0.0]]],
 )
 async def test_malformed_embeddings_fail_safely(monkeypatch: pytest.MonkeyPatch, vectors) -> None:
-    from pzp_ai_bot.ai.local import LocalSentenceTransformerEmbeddingProvider
+    from chatterlore.ai.local import LocalSentenceTransformerEmbeddingProvider
 
     encoder = PurposeEncoder()
     encoder.encode = lambda *args, **kwargs: vectors
@@ -261,8 +261,8 @@ async def test_malformed_embeddings_fail_safely(monkeypatch: pytest.MonkeyPatch,
 async def test_embedding_inference_never_downloads_without_explicit_preparation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from pzp_ai_bot.ai.local import LocalSentenceTransformerEmbeddingProvider
-    from pzp_ai_bot.local_models import LocalModelOptions
+    from chatterlore.ai.local import LocalSentenceTransformerEmbeddingProvider
+    from chatterlore.local_models import LocalModelOptions
 
     loads = install_embedding_double(monkeypatch, PurposeEncoder())
     options = LocalModelOptions(local_files_only=False)
@@ -284,8 +284,8 @@ async def test_embedding_inference_never_downloads_without_explicit_preparation(
 async def test_chat_prepares_verified_snapshots_without_changing_semantic_model(
     tiny_chat_model: Path, forbid_network
 ) -> None:
-    from pzp_ai_bot.ai.local import LocalTransformersChatProvider
-    from pzp_ai_bot.local_models import LocalModelOptions
+    from chatterlore.ai.local import LocalTransformersChatProvider
+    from chatterlore.local_models import LocalModelOptions
 
     provider = LocalTransformersChatProvider(
         "not-cached/configured-model",
@@ -303,11 +303,11 @@ async def test_chat_prepares_verified_snapshots_without_changing_semantic_model(
 async def test_embedding_prepares_verified_snapshot_and_does_not_download(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    from pzp_ai_bot.ai.local import LocalSentenceTransformerEmbeddingProvider
-    from pzp_ai_bot.ai.local_runtime import local_directory_revision
+    from chatterlore.ai.local import LocalSentenceTransformerEmbeddingProvider
+    from chatterlore.ai.local_runtime import local_directory_revision
 
     loads = install_embedding_double(monkeypatch, PurposeEncoder())
-    from pzp_ai_bot.local_models import LocalModelOptions
+    from chatterlore.local_models import LocalModelOptions
 
     (tmp_path / "model.safetensors").write_bytes(b"controlled fixture weights")
     provider = LocalSentenceTransformerEmbeddingProvider(
@@ -326,7 +326,7 @@ async def test_embedding_prepares_verified_snapshot_and_does_not_download(
 async def test_prepared_path_validation_runs_off_event_loop(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    import pzp_ai_bot.ai.local as local
+    import chatterlore.ai.local as local
 
     loop_thread = threading.get_ident()
     original = local.validate_prepared_paths
@@ -345,9 +345,9 @@ async def test_prepared_path_validation_runs_off_event_loop(
 async def test_prepared_chat_paths_do_not_receive_semantic_directory_revision(
     tiny_chat_model: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from pzp_ai_bot.ai.local import LocalTransformersChatProvider
-    from pzp_ai_bot.ai.local_runtime import local_directory_revision
-    from pzp_ai_bot.local_models import LocalModelOptions
+    from chatterlore.ai.local import LocalTransformersChatProvider
+    from chatterlore.ai.local_runtime import local_directory_revision
+    from chatterlore.local_models import LocalModelOptions
 
     transformers = pytest.importorskip("transformers")
     original = transformers.AutoModelForCausalLM.from_pretrained
@@ -372,8 +372,8 @@ async def test_prepared_chat_paths_do_not_receive_semantic_directory_revision(
 
 
 async def test_chat_cancellation_cooperatively_stops_real_generation(tiny_chat_model: Path) -> None:
-    from pzp_ai_bot.ai.local import LocalTransformersChatProvider
-    from pzp_ai_bot.local_models import LocalModelOptions
+    from chatterlore.ai.local import LocalTransformersChatProvider
+    from chatterlore.local_models import LocalModelOptions
 
     provider = LocalTransformersChatProvider(
         str(tiny_chat_model),
@@ -416,8 +416,8 @@ async def test_chat_cancellation_cooperatively_stops_real_generation(tiny_chat_m
 async def test_chat_overrides_saved_multi_sequence_generation_settings(
     tiny_chat_model: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from pzp_ai_bot.ai.local import LocalTransformersChatProvider
-    from pzp_ai_bot.local_models import LocalModelOptions
+    from chatterlore.ai.local import LocalTransformersChatProvider
+    from chatterlore.local_models import LocalModelOptions
 
     provider = LocalTransformersChatProvider(
         str(tiny_chat_model), options=LocalModelOptions(device="cpu", max_new_tokens=2)
@@ -450,7 +450,7 @@ async def test_chat_overrides_saved_multi_sequence_generation_settings(
 async def test_simultaneous_first_embedding_calls_load_once_off_event_loop(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from pzp_ai_bot.ai.local import LocalSentenceTransformerEmbeddingProvider
+    from chatterlore.ai.local import LocalSentenceTransformerEmbeddingProvider
 
     started = threading.Event()
     release = threading.Event()
@@ -479,8 +479,8 @@ async def test_simultaneous_first_embedding_calls_load_once_off_event_loop(
 async def test_cancelled_embedding_keeps_slot_until_worker_finishes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from pzp_ai_bot.ai.local import LocalSentenceTransformerEmbeddingProvider
-    from pzp_ai_bot.local_models import LocalModelOptions
+    from chatterlore.ai.local import LocalSentenceTransformerEmbeddingProvider
+    from chatterlore.local_models import LocalModelOptions
 
     started = threading.Event()
     release = threading.Event()
@@ -520,8 +520,8 @@ async def test_cancelled_embedding_keeps_slot_until_worker_finishes(
 async def test_real_sentence_transformer_roundtrip_is_offline_and_normalized(
     tmp_path: Path, forbid_network
 ) -> None:
-    from pzp_ai_bot.ai.local import LocalSentenceTransformerEmbeddingProvider
-    from pzp_ai_bot.local_models import LocalModelOptions
+    from chatterlore.ai.local import LocalSentenceTransformerEmbeddingProvider
+    from chatterlore.local_models import LocalModelOptions
 
     sentence_transformers = pytest.importorskip("sentence_transformers")
     modules = pytest.importorskip("sentence_transformers.sentence_transformer.modules")
@@ -544,8 +544,8 @@ async def test_real_sentence_transformer_roundtrip_is_offline_and_normalized(
 async def test_real_transformer_embedding_loader_uses_safe_local_weights(
     tiny_chat_model: Path, forbid_network
 ) -> None:
-    from pzp_ai_bot.ai.local import LocalSentenceTransformerEmbeddingProvider
-    from pzp_ai_bot.local_models import LocalModelOptions
+    from chatterlore.ai.local import LocalSentenceTransformerEmbeddingProvider
+    from chatterlore.local_models import LocalModelOptions
 
     pytest.importorskip("sentence_transformers")
     provider = LocalSentenceTransformerEmbeddingProvider(
@@ -561,8 +561,8 @@ async def test_real_transformer_embedding_loader_uses_safe_local_weights(
 async def test_embedding_timeout_does_not_allow_overlapping_workers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from pzp_ai_bot.ai.local import LocalSentenceTransformerEmbeddingProvider
-    from pzp_ai_bot.local_models import LocalModelOptions
+    from chatterlore.ai.local import LocalSentenceTransformerEmbeddingProvider
+    from chatterlore.local_models import LocalModelOptions
 
     release = threading.Event()
 

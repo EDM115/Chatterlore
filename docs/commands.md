@@ -81,42 +81,42 @@ All `/embedding_index` actions are bot-owner-only (not delegated/native chat-adm
 
 Local CLI equivalents use the same service, CLI status/preview/start default to scope `all` (supply a concrete `--scope` for a chat/topic). Back up SQLite before the first production migration and follow [operations.md](operations.md#embedding-index-migrations).  
 
-- `pzp-bot embedding-index status [--scope all] [--job-id N]`
-- `pzp-bot embedding-index preview --profile NAME [--scope all] [--model MODEL]`
-- `pzp-bot embedding-index adopt-preview --manifest PATH`: validate a reviewed original-provenance manifest for at most 100 explicit legacy vectors, without inference or mutation
-- `pzp-bot embedding-index adopt --manifest PATH --preview-hash HASH --confirmation "ADOPT HASH" --attest-provenance`: atomically adopt only the exact previewed and attested mappings, does not switch routes or overwrite verified vectors
-- `pzp-bot embedding-index start --profile NAME [--scope all] [--model MODEL]`
-- `pzp-bot embedding-index run JOB_ID [--max-batches 1]`
-- `pzp-bot embedding-index resume JOB_ID --version N`
-- `pzp-bot embedding-index cancel JOB_ID --version N`
-- `pzp-bot embedding-index activate JOB_ID --version N --confirmation "ACTIVATE JOB_ID"`
-- `pzp-bot local-model prepare --profile NAME --mode chat|embedding [--allow-download]`: explicitly prepare cached artifacts offline, downloads additionally require the profile to allow them and fit deployment limits
+- `chatterlore embedding-index status [--scope all] [--job-id N]`
+- `chatterlore embedding-index preview --profile NAME [--scope all] [--model MODEL]`
+- `chatterlore embedding-index adopt-preview --manifest PATH`: validate a reviewed original-provenance manifest for at most 100 explicit legacy vectors, without inference or mutation
+- `chatterlore embedding-index adopt --manifest PATH --preview-hash HASH --confirmation "ADOPT HASH" --attest-provenance`: atomically adopt only the exact previewed and attested mappings, does not switch routes or overwrite verified vectors
+- `chatterlore embedding-index start --profile NAME [--scope all] [--model MODEL]`
+- `chatterlore embedding-index run JOB_ID [--max-batches 1]`
+- `chatterlore embedding-index resume JOB_ID --version N`
+- `chatterlore embedding-index cancel JOB_ID --version N`
+- `chatterlore embedding-index activate JOB_ID --version N --confirmation "ACTIVATE JOB_ID"`
+- `chatterlore local-model prepare --profile NAME --mode chat|embedding [--allow-download]`: explicitly prepare cached artifacts offline, downloads additionally require the profile to allow them and fit deployment limits
 
 ## CLI Reference
 
-- `pzp-bot migrate`: creates or upgrades the configured database schema through Alembic. This mutates the database, back up operator data and follow the migration guidance in [operations.md](operations.md) before running it against persistent state.
-- `pzp-bot polling`: clears any configured webhook and starts the long-running Telegram polling runtime. Complete [setup.md](setup.md) first and use [deployment.md](deployment.md) for runtime guidance.
-- `pzp-bot webhook`: registers the configured webhook and starts the long-running FastAPI webhook runtime. Configure and validate the webhook URL and secret as documented in [deployment.md](deployment.md).
-- `pzp-bot control-plane-dev`: starts the dedicated loopback FastAPI control-plane development runtime for use with `web/pnpm dev`. It requires backend-only `CONTROL_PLANE_DEV_USER_ID`, accepts loopback HTTP without Telegram OIDC, performs no Telegram API calls while `WEBHOOK_URL` is empty and deliberately registers `setWebhook` only when a complete HTTPS webhook/token/secret configuration is present, see [setup.md](setup.md) before using connected mode.
-- `pzp-bot summarize-now [--scope all|<chat_id>|<chat_id>:<thread_id>]`: summarizes pending learned messages in each selected concrete scope and compacts canonical memory. This can invoke the configured AI provider and incur external cost or data transfer, review [privacy.md](privacy.md) before using an external provider.
-- `pzp-bot export-memory [--scope all|<chat_id>|<chat_id>:<thread_id>] [--format md|jsonl] [--out path]`: streams primary-key-ordered export chunks to a file or standard output without constructing a second complete payload. Treat either form as potentially sensitive and protect it according to [privacy.md](privacy.md).
-- `pzp-bot import-jsonl --file path --chat-id <id> [--thread-id <id>]`: incrementally validates and writes durable knowledge items into the selected chat/topic scope in independent 100-row checkpoints. Imports reject files over 512 MiB or 100,000 rows, a later malformed row or provider failure leaves earlier audited batches committed, and retrying skips their exact kind/content/source tuple. Review the input, target scope, provider cost and consent implications in [privacy.md](privacy.md) before importing.
-- `pzp-bot doctor`: checks configured provider profiles, missing OpenAI-compatible keys, missing local optional dependencies, SQLite parent write access and memory directory write access without starting Telegram.
-- `pzp-bot show-config`: prints non-secret runtime settings including provider profiles, default system prompt, reasoning level, retrieval candidate limit and admin-cache TTL. Credential-bearing database URLs are redacted before display.
-- `pzp-bot secrets status`: validates the configured master-key ring and reports configured/active IDs, encrypted credential counts, per-key reference counts and missing referenced IDs without decrypting or printing provider secrets.
-- `pzp-bot secrets rewrap --to <master-key-id> [--yes]`: warns that a current database backup is required, decrypts and verifies every managed credential wrapping before any update, then atomically rewraps all DEKs under the selected configured key. Without `--yes` it asks for interactive confirmation, output contains counts and key IDs only.
-- `pzp-bot memory-status --scope all|<chat_id>|<chat_id>:<thread_id>`: prints the same scoped message/memory/AI usage status available through `/memory_status`.
-- `pzp-bot import-telegram-json --file result.json --chat-id <id> [--thread-id <id>]`: streams Telegram Desktop message arrays or Bot API update-dump arrays, then embeds and commits learned raw-message memory in independent 100-row checkpoints. The same 512 MiB and 100,000-row limits apply, unsupported shapes are rejected before business writes, while a later parse/provider failure preserves earlier audited batches for idempotent retry.
-- `pzp-bot import-telegram --file <export-directory|result.json|messages.html> --chat-id <id> [--thread-id <id>]`: auto-detect a reviewed Telegram export, preferring `result.json` when Both formats exist. HTML-only archives use a local streaming reader, no exported JavaScript executes and no linked resources are fetched
-- `pzp-bot import-telegram-html --file messages.html --chat-id <id> [--thread-id <id>]`: explicitly select HTML, including validated same-directory `messages2.html` pagination. Dates retain their timezone-qualified instant and are stored in UTC, unavailable numeric Telegram user IDs remain unknown, JSON/HTML retries share logical-message duplicate detection
+- `chatterlore migrate`: creates or upgrades the configured database schema through Alembic. This mutates the database, back up operator data and follow the migration guidance in [operations.md](operations.md) before running it against persistent state.
+- `chatterlore polling`: clears any configured webhook and starts the long-running Telegram polling runtime. Complete [setup.md](setup.md) first and use [deployment.md](deployment.md) for runtime guidance.
+- `chatterlore webhook`: registers the configured webhook and starts the long-running FastAPI webhook runtime. Configure and validate the webhook URL and secret as documented in [deployment.md](deployment.md).
+- `chatterlore control-plane-dev`: starts the dedicated loopback FastAPI control-plane development runtime for use with `web/pnpm dev`. It requires backend-only `CONTROL_PLANE_DEV_USER_ID`, accepts loopback HTTP without Telegram OIDC, performs no Telegram API calls while `WEBHOOK_URL` is empty and deliberately registers `setWebhook` only when a complete HTTPS webhook/token/secret configuration is present, see [setup.md](setup.md) before using connected mode.
+- `chatterlore summarize-now [--scope all|<chat_id>|<chat_id>:<thread_id>]`: summarizes pending learned messages in each selected concrete scope and compacts canonical memory. This can invoke the configured AI provider and incur external cost or data transfer, review [privacy.md](privacy.md) before using an external provider.
+- `chatterlore export-memory [--scope all|<chat_id>|<chat_id>:<thread_id>] [--format md|jsonl] [--out path]`: streams primary-key-ordered export chunks to a file or standard output without constructing a second complete payload. Treat either form as potentially sensitive and protect it according to [privacy.md](privacy.md).
+- `chatterlore import-jsonl --file path --chat-id <id> [--thread-id <id>]`: incrementally validates and writes durable knowledge items into the selected chat/topic scope in independent 100-row checkpoints. Imports reject files over 512 MiB or 100,000 rows, a later malformed row or provider failure leaves earlier audited batches committed, and retrying skips their exact kind/content/source tuple. Review the input, target scope, provider cost and consent implications in [privacy.md](privacy.md) before importing.
+- `chatterlore doctor`: checks configured provider profiles, missing OpenAI-compatible keys, missing local optional dependencies, SQLite parent write access and memory directory write access without starting Telegram.
+- `chatterlore show-config`: prints non-secret runtime settings including provider profiles, default system prompt, reasoning level, retrieval candidate limit and admin-cache TTL. Credential-bearing database URLs are redacted before display.
+- `chatterlore secrets status`: validates the configured master-key ring and reports configured/active IDs, encrypted credential counts, per-key reference counts and missing referenced IDs without decrypting or printing provider secrets.
+- `chatterlore secrets rewrap --to <master-key-id> [--yes]`: warns that a current database backup is required, decrypts and verifies every managed credential wrapping before any update, then atomically rewraps all DEKs under the selected configured key. Without `--yes` it asks for interactive confirmation, output contains counts and key IDs only.
+- `chatterlore memory-status --scope all|<chat_id>|<chat_id>:<thread_id>`: prints the same scoped message/memory/AI usage status available through `/memory_status`.
+- `chatterlore import-telegram-json --file result.json --chat-id <id> [--thread-id <id>]`: streams Telegram Desktop message arrays or Bot API update-dump arrays, then embeds and commits learned raw-message memory in independent 100-row checkpoints. The same 512 MiB and 100,000-row limits apply, unsupported shapes are rejected before business writes, while a later parse/provider failure preserves earlier audited batches for idempotent retry.
+- `chatterlore import-telegram --file <export-directory|result.json|messages.html> --chat-id <id> [--thread-id <id>]`: auto-detect a reviewed Telegram export, preferring `result.json` when Both formats exist. HTML-only archives use a local streaming reader, no exported JavaScript executes and no linked resources are fetched
+- `chatterlore import-telegram-html --file messages.html --chat-id <id> [--thread-id <id>]`: explicitly select HTML, including validated same-directory `messages2.html` pagination. Dates retain their timezone-qualified instant and are stored in UTC, unavailable numeric Telegram user IDs remain unknown, JSON/HTML retries share logical-message duplicate detection
 
 For a forum, use `--thread-id 1` for a General-topic export or the actual topic ID for another individual-topic export. Without `--thread-id`, the entire archive is deliberately stored in aggregate chat memory, not distributed among topics. Telegram Desktop's observed JSON/HTML formats omit reliable per-message topic IDs, reply links and service-row order do not establish safe topic ownership. Explicit source-thread metadata that contradicts the requested topic is rejected before inference or message writes. Live `/ask`, `/memory_search` and ingestion in General use topic 1, Telegram's All view is a client aggregate (messages sent there are still General messages), use the control-plane Query chat scope for explicit whole-forum retrieval. Existing unclassified NULL-thread history is not automatically moved into General.  
-- `pzp-bot audit-events --limit N [--event-type name] [--scope scope] [--format text|jsonl] [--out path]`: reviews or exports `bot_events`.
-- `pzp-bot runtime-settings [--reload] [--set key=value]...`: views, reloads or edits safe database-backed runtime settings, including the positive `retrieval_candidate_limit` brute-force work cap.
-- `pzp-bot db-stats`: prints SQLite file size and table row counts.
-- `pzp-bot db-integrity`: runs `PRAGMA integrity_check` and exits non-zero unless SQLite reports `ok`.
-- `pzp-bot db-vacuum`: runs SQLite `VACUUM`.
-- `pzp-bot db-backup --out path`: creates a SQLite online backup.
+- `chatterlore audit-events --limit N [--event-type name] [--scope scope] [--format text|jsonl] [--out path]`: reviews or exports `bot_events`.
+- `chatterlore runtime-settings [--reload] [--set key=value]...`: views, reloads or edits safe database-backed runtime settings, including the positive `retrieval_candidate_limit` brute-force work cap.
+- `chatterlore db-stats`: prints SQLite file size and table row counts.
+- `chatterlore db-integrity`: runs `PRAGMA integrity_check` and exits non-zero unless SQLite reports `ok`.
+- `chatterlore db-vacuum`: runs SQLite `VACUUM`.
+- `chatterlore db-backup --out path`: creates a SQLite online backup.
 
 ## Common workflows
 
@@ -144,4 +144,4 @@ To forget one topic, request a challenge and repeat the same target with the ret
 /forget scope=this_topic confirm=<returned-token>
 ```
 Forgetting removes application memory, Telegram history, backups and prior exports have separate lifecycles.  
-Get the exact local CLI options with `uv run pzp-bot --help`, `uv run pzp-bot <command> --help` or `uv run pzp-bot embedding-index --help`. See [Operations](operations.md) before imports, retention, upgrades or backups, several CLI commands automatically upgrade the configured schema before working.
+Get the exact local CLI options with `uv run chatterlore --help`, `uv run chatterlore <command> --help` or `uv run chatterlore embedding-index --help`. See [Operations](operations.md) before imports, retention, upgrades or backups, several CLI commands automatically upgrade the configured schema before working.

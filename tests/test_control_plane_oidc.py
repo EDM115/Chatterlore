@@ -11,9 +11,9 @@ import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-from pzp_ai_bot.config import Settings
-from pzp_ai_bot.control_plane.auth.oidc import OIDCValidationError, TelegramOIDCClient
-from pzp_ai_bot.control_plane.auth.transactions import IssuedOIDCTransaction
+from chatterlore.config import Settings
+from chatterlore.control_plane.auth.oidc import OIDCValidationError, TelegramOIDCClient
+from chatterlore.control_plane.auth.transactions import IssuedOIDCTransaction
 
 NOW = datetime(2026, 7, 31, 12, 0, tzinfo=UTC)
 ISSUER = "https://oauth.telegram.org"

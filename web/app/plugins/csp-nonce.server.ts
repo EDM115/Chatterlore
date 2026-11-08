@@ -8,7 +8,7 @@ export default defineNuxtPlugin(() => {
   useHead({
     script: [
       {
-        id: "pzp-csp-nonce",
+        id: "chatterlore-csp-nonce",
         nonce: cspNonce,
         textContent: "{}",
         type: "application/json",

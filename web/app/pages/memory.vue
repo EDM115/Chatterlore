@@ -2,7 +2,7 @@
 import type { components } from "~/types/openapi";
 
 definePageMeta({ middleware: "auth" });
-useSeoMeta({ title: "Memory · PZP AI Control Plane" });
+useSeoMeta({ title: "Memory · Chatterlore Control Plane" });
 
 type MemoryItem = components["schemas"]["MemoryItemResponse"];
 type MemoryItemPage = components["schemas"]["MemoryItemPage"];

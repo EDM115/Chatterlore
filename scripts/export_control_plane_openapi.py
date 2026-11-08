@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from pzp_ai_bot.control_plane.app import create_control_plane_schema_app
+from chatterlore.control_plane.app import create_control_plane_schema_app
 
 
 def control_plane_openapi_json() -> str:

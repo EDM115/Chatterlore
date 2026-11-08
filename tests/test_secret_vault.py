@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from pzp_ai_bot.config import Settings
+from chatterlore.config import Settings
 
 
 def encoded_key(byte: int) -> str:
@@ -34,7 +34,7 @@ def enabled_settings(tmp_path: Path, **overrides: object) -> Settings:
 
 def vault_api():
     try:
-        module = importlib.import_module("pzp_ai_bot.control_plane.secrets.crypto")
+        module = importlib.import_module("chatterlore.control_plane.secrets.crypto")
     except ModuleNotFoundError:
         pytest.fail("provider secret vault is not implemented")
     return (

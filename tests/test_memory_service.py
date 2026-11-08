@@ -6,12 +6,12 @@ from pathlib import Path
 
 import pytest
 
-import pzp_ai_bot.memory.transfer as transfer_module
-from pzp_ai_bot.app_context import AppContext
-from pzp_ai_bot.db.models import KnowledgeItem
-from pzp_ai_bot.db.repositories import KnowledgeRepository
-from pzp_ai_bot.memory.markdown import MarkdownMemoryStore
-from pzp_ai_bot.memory.scope import Scope
+import chatterlore.memory.transfer as transfer_module
+from chatterlore.app_context import AppContext
+from chatterlore.db.models import KnowledgeItem
+from chatterlore.db.repositories import KnowledgeRepository
+from chatterlore.memory.markdown import MarkdownMemoryStore
+from chatterlore.memory.scope import Scope
 
 
 def daily_projection_text(memory_dir: Path) -> str:

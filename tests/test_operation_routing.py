@@ -6,16 +6,16 @@ from datetime import UTC, datetime
 import pytest
 from sqlalchemy import func, select
 
-from pzp_ai_bot.ai.factory import ProviderRegistry
-from pzp_ai_bot.ai.fake import FakeProvider
-from pzp_ai_bot.config import Settings
-from pzp_ai_bot.db.models import AIUsage, Embedding, KnowledgeItem
-from pzp_ai_bot.db.repos.embedding_indexes import EmbeddingIndexRepository
-from pzp_ai_bot.db.repos.knowledge import KnowledgeRepository
-from pzp_ai_bot.db.repos.settings import ScopeSettingsRepository
-from pzp_ai_bot.db.session import session_scope
-from pzp_ai_bot.memory.contracts import IncomingMessage
-from pzp_ai_bot.memory.scope import Scope
+from chatterlore.ai.factory import ProviderRegistry
+from chatterlore.ai.fake import FakeProvider
+from chatterlore.config import Settings
+from chatterlore.db.models import AIUsage, Embedding, KnowledgeItem
+from chatterlore.db.repos.embedding_indexes import EmbeddingIndexRepository
+from chatterlore.db.repos.knowledge import KnowledgeRepository
+from chatterlore.db.repos.settings import ScopeSettingsRepository
+from chatterlore.db.session import session_scope
+from chatterlore.memory.contracts import IncomingMessage
+from chatterlore.memory.scope import Scope
 
 
 async def test_operation_profiles_select_own_models_without_cross_vendor_inheritance(context):

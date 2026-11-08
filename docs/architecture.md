@@ -1,6 +1,6 @@
 # Architecture
 
-PZP AI learns scoped Telegram memory and answers questions from that memory. Python owns ingestion, authorization, persistence and AI calls. The Nuxt control plane presents the same services in a browser or Telegram Mini App.
+Chatterlore learns scoped Telegram memory and answers questions from that memory. Python owns ingestion, authorization, persistence and AI calls. The Nuxt control plane presents the same services in a browser or Telegram Mini App.
 
 ## Runtime boundaries
 
@@ -16,11 +16,11 @@ flowchart LR
 ```
 
 Polling runs the Python bot without an HTTP server. The webhook deployment runs three services: Caddy on public ports 80/443, FastAPI on internal port 8080 and Nuxt on internal port 3000. Caddy sends `/api/control`, `/api/control/*`, `/auth`, `/auth/*`, `/telegram/webhook` and `/health` to FastAPI, and other paths to Nuxt. It strips `Cookie`, `Authorization` and `X-CSRF-Token` from the Nuxt upstream. Nuxt has no database, provider credentials or application business API.  
-The combined development command starts loopback FastAPI and Nuxt under one browser origin. Its backend-selected mock identity exists only in `pzp-bot control-plane-dev`. Offline development creates no Telegram bot object or Telegram API traffic. See [setup](setup.md) and [deployment](deployment.md) for the runtime choices.
+The combined development command starts loopback FastAPI and Nuxt under one browser origin. Its backend-selected mock identity exists only in `chatterlore control-plane-dev`. Offline development creates no Telegram bot object or Telegram API traffic. See [setup](setup.md) and [deployment](deployment.md) for the runtime choices.
 
 ## Application composition and ownership
 
-`build_context(Settings)` in `src/pzp_ai_bot/app_context.py` configures logging, applies Alembic migrations, constructs the provider registry and async session factory, refreshes managed providers, creates `MemoryService`, ensures the Markdown store exists, reconciles daily projections, refreshes runtime settings and constructs `AdminService`. With the control plane enabled, it also loads managed authority and installs the active-chat access gate. Tests and tools that own schema setup can pass `ensure_schema=False`.
+`build_context(Settings)` in `src/chatterlore/app_context.py` configures logging, applies Alembic migrations, constructs the provider registry and async session factory, refreshes managed providers, creates `MemoryService`, ensures the Markdown store exists, reconciles daily projections, refreshes runtime settings and constructs `AdminService`. With the control plane enabled, it also loads managed authority and installs the active-chat access gate. Tests and tools that own schema setup can pass `ensure_schema=False`.
 
 | Module | Responsibility |
 | --- | --- |

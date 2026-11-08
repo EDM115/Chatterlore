@@ -12,11 +12,11 @@ from pathlib import Path
 import pytest
 from sqlalchemy import select
 
-import pzp_ai_bot.memory.transfer as transfer_module
-from pzp_ai_bot.app_context import AppContext
-from pzp_ai_bot.db.models import Message
-from pzp_ai_bot.db.session import session_scope
-from pzp_ai_bot.memory.scope import Scope
+import chatterlore.memory.transfer as transfer_module
+from chatterlore.app_context import AppContext
+from chatterlore.db.models import Message
+from chatterlore.db.session import session_scope
+from chatterlore.memory.scope import Scope
 
 
 def write_formats(

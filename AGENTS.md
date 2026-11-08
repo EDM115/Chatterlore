@@ -11,7 +11,7 @@
 
 ## Application boundaries
 
-- Build production wiring through `build_context(Settings)` in `src/pzp_ai_bot/app_context.py`, it owns logging, schema upgrades, providers, sessions, memory initialization, runtime settings and admins
+- Build production wiring through `build_context(Settings)` in `src/chatterlore/app_context.py`, it owns logging, schema upgrades, providers, sessions, memory initialization, runtime settings and admins
 - Use `build_context(settings, ensure_schema=False)` only when a test or tool owns schema setup, prefer the offline `context` fixture in `tests/conftest.py`
 - Services use `session_scope(...)` and repositories, let the session boundary commit or roll back
 - Schema changes need matching SQLAlchemy models, an Alembic revision and focused upgrade/runtime checks

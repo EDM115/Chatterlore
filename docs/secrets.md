@@ -18,7 +18,7 @@ Environment credentials synchronized into managed profiles remain immutable and 
 [Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
 ```
 
-Place the output in the deployment secret store and clear any shared terminal capture. `show-config` and `pzp-bot secrets status` report key IDs/counts without credential plaintext. Store master keys separately from database backups and retain the keys needed by those backups.  
+Place the output in the deployment secret store and clear any shared terminal capture. `show-config` and `chatterlore secrets status` report key IDs/counts without credential plaintext. Store master keys separately from database backups and retain the keys needed by those backups.  
 Each managed provider credential has a random data-encryption key. AES-GCM encrypts the secret and wraps its data key under a master-key-derived domain, authenticated data binds it to the profile, credential ID and safe metadata. SQLite holds ciphertext, nonces, wrapped key, key ID, keyed fingerprint and last four characters. Managed clients use opaque operation leases and revision-aware caches, mutations invalidate cached clients.  
 Create, replace, reveal and delete require fresh Telegram verification bound to the exact action. Reveal is a separate audited POST with private/no-store headers, the browser clears it within 30 seconds or earlier on navigation, identity/visibility change, failure or unmount. Replacement keeps the credential ID, rotates its encrypted material and resets health/cooldown/error/counters. Deletion erases secret-bearing columns, retained backups can still contain the old envelope.  
 The loopback development command can create the ignored stable `data/control-plane-dev-master-key` when no complete keyring exists. An unreadable/malformed existing key fails closed rather than being replaced. This colocated file supports development restart continuity, supply externally managed keys in production and do not copy the development key into a deployment.
@@ -26,7 +26,7 @@ The loopback development command can create the ignored stable `data/control-pla
 ## Sessions and identity material
 
 OIDC state and browser session bearers are random opaque credentials. SQLite stores state/session/CSRF hashes, PKCE verifiers use authenticated encryption derived from the OIDC secret and bound to the callback. CSRF values are stable per-session HMAC values keyed by the random bearer. Keep raw cookies, state, CSRF, PKCE and Mini App `initData` out of logs, audit exports and browser storage.  
-Bot-admin provider tests use fixed non-sensitive inputs and can incur charges. Diagnostics, usage and admin DMs expose safe model/dimension/classification/fingerprint metadata, raw exceptions or provider responses must not enter those channels. Review identifiers before sharing logs/audits even when credential values are masked. `uv run pzp-bot show-config` is the configuration troubleshooting surface, it does not validate provider authentication.  
+Bot-admin provider tests use fixed non-sensitive inputs and can incur charges. Diagnostics, usage and admin DMs expose safe model/dimension/classification/fingerprint metadata, raw exceptions or provider responses must not enter those channels. Review identifiers before sharing logs/audits even when credential values are masked. `uv run chatterlore show-config` is the configuration troubleshooting surface, it does not validate provider authentication.  
 Do not submit provider keys through Telegram messages or safe runtime settings. Telegram message deletion cannot guarantee removal from Telegram infrastructure or other update consumers. Use the provider UI/API vault flow or deployment injection.
 
 ## Rotation
@@ -43,7 +43,7 @@ To rotate a vault master key:
 
 1. Add a new random 32-byte key under a new ID and retain every referenced old ID
 2. Select the intended active ID, restart with the expanded keyring and create a verified database backup
-3. Run `uv run pzp-bot secrets status`, then `uv run pzp-bot secrets rewrap --to new-id --yes`
+3. Run `uv run chatterlore secrets status`, then `uv run chatterlore secrets rewrap --to new-id --yes`
 4. Recheck status and run an explicit provider smoke, rewrap validates replacement envelopes before committing the batch atomically
 5. Remove an old key from the active deployment only after its live reference count is zero, retain separate recovery material for backups that still reference it
 

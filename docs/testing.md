@@ -80,14 +80,14 @@ Expect `No new upgrade operations detected.` Check both a fresh schema and a dis
 ## Offline command and image smoke
 
 ```powershell
-uv run pzp-bot --help
-uv run pzp-bot doctor
+uv run chatterlore --help
+uv run chatterlore doctor
 docker version
 docker compose config --quiet
-docker build --tag pzp-ai:local .
-docker build --tag pzp-ai-web:local ./web
-docker run --rm -e AI_PROVIDER=fake -e DB_URL=sqlite+aiosqlite:////tmp/pzp/bot.db -e MEMORY_DIR=/tmp/pzp/memory pzp-ai:local pzp-bot doctor
-docker run --rm -e AI_PROVIDER=fake -e DB_URL=sqlite+aiosqlite:////tmp/pzp/bot.db -e MEMORY_DIR=/tmp/pzp/memory pzp-ai:local pzp-bot migrate
+docker build --tag chatterlore:local .
+docker build --tag chatterlore-web:local ./web
+docker run --rm -e AI_PROVIDER=fake -e DB_URL=sqlite+aiosqlite:////tmp/chatterlore/bot.db -e MEMORY_DIR=/tmp/chatterlore/memory chatterlore:local chatterlore doctor
+docker run --rm -e AI_PROVIDER=fake -e DB_URL=sqlite+aiosqlite:////tmp/chatterlore/bot.db -e MEMORY_DIR=/tmp/chatterlore/memory chatterlore:local chatterlore migrate
 ```
 
 These image commands neither start polling nor contact Telegram. Set the host command environment to fake/disposable paths when testing without a real `.env`, `doctor` inspects configured state. Plain `docker compose config` can print expanded secrets, use its quiet validation form for shared output.  

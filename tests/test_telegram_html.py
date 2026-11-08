@@ -35,7 +35,7 @@ def write_html(path: Path, body: str, *, pagination: str = "") -> Path:
 
 
 def read_rows(path: Path, **limits):
-    from pzp_ai_bot.memory.telegram_html import iter_telegram_html
+    from chatterlore.memory.telegram_html import iter_telegram_html
 
     return list(iter_telegram_html(path, **limits))
 
@@ -185,7 +185,7 @@ def test_html_reader_rejects_truncated_messages_and_unrelated_html(tmp_path: Pat
 
 
 def test_html_reader_does_not_yield_unbranded_message_blocks(tmp_path: Path) -> None:
-    from pzp_ai_bot.memory.telegram_html import iter_telegram_html
+    from chatterlore.memory.telegram_html import iter_telegram_html
 
     path = tmp_path / "not-an-export.html"
     path.write_text(

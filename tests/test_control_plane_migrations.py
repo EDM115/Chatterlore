@@ -8,10 +8,10 @@ from pathlib import Path
 
 import pytest
 
-from pzp_ai_bot.app_context import build_context
-from pzp_ai_bot.config import Settings
-from pzp_ai_bot.db.session import upgrade_schema
-from pzp_ai_bot.memory.scope import Scope
+from chatterlore.app_context import build_context
+from chatterlore.config import Settings
+from chatterlore.db.session import upgrade_schema
+from chatterlore.memory.scope import Scope
 
 NOW = datetime(2026, 8, 9, 12, 0, tzinfo=UTC)
 LEGACY_CHAT_ID = -100_414_801_9329

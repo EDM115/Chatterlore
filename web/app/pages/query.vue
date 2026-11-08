@@ -2,7 +2,7 @@
 import type { components } from "~/types/openapi";
 
 definePageMeta({ middleware: "auth" });
-useSeoMeta({ title: "Query · PZP AI Control Plane" });
+useSeoMeta({ title: "Query · Chatterlore Control Plane" });
 
 type QueryCatalog = components["schemas"]["QueryCatalogResponse"];
 type QueryProfile = components["schemas"]["ProviderCatalogProfile"];

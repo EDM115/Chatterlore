@@ -12,20 +12,20 @@ from aiogram.types import Chat, MessageGenerationStopped
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
-from pzp_ai_bot.ai.protocols import ChatResult
-from pzp_ai_bot.app_context import AppContext
-from pzp_ai_bot.db.models import AIUsage
-from pzp_ai_bot.db.session import session_scope
-from pzp_ai_bot.memory.scope import Scope
-from pzp_ai_bot.telegram.dispatcher import build_dispatcher
-from pzp_ai_bot.telegram.webhook import create_webhook_app
+from chatterlore.ai.protocols import ChatResult
+from chatterlore.app_context import AppContext
+from chatterlore.db.models import AIUsage
+from chatterlore.db.session import session_scope
+from chatterlore.memory.scope import Scope
+from chatterlore.telegram.dispatcher import build_dispatcher
+from chatterlore.telegram.webhook import create_webhook_app
 from test_telegram_integration import RecordingTelegramSession, feed, message_update
 from test_telegram_presentation import PresentationSession, incoming
 
 
 def streaming_api() -> Any:
     try:
-        return importlib.import_module("pzp_ai_bot.telegram.streaming")
+        return importlib.import_module("chatterlore.telegram.streaming")
     except ModuleNotFoundError:
         pytest.fail("request-owned Telegram streaming delivery is not implemented")
 
@@ -441,7 +441,7 @@ async def test_webhook_acknowledges_stream_before_next_stop_update(
 async def test_webhook_answer_queue_is_bounded_and_shutdown_closes_stream(
     context: AppContext, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import pzp_ai_bot.telegram.webhook as webhook_module
+    import chatterlore.telegram.webhook as webhook_module
 
     monkeypatch.setattr(webhook_module, "MAX_WEBHOOK_ANSWER_TASKS", 1, raising=False)
     await context.memory.remember(Scope(111, None), "Copper marker is Copper 1234")

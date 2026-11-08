@@ -14,24 +14,24 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from pzp_ai_bot.app_context import AppContext, build_context
-from pzp_ai_bot.config import Settings
-from pzp_ai_bot.control_plane.app import (
+from chatterlore.app_context import AppContext, build_context
+from chatterlore.config import Settings
+from chatterlore.control_plane.app import (
     CONTROL_PLANE_DEV_AUTH_PATH,
     CONTROL_PLANE_DEV_STEP_UP_PATH,
     DevelopmentAuthConfig,
     create_control_plane_app,
     create_control_plane_schema_app,
 )
-from pzp_ai_bot.control_plane.auth.identity import TelegramIdentity
-from pzp_ai_bot.control_plane.development import (
+from chatterlore.control_plane.auth.identity import TelegramIdentity
+from chatterlore.control_plane.development import (
     ControlPlaneDevelopmentConfig,
     build_control_plane_development_settings,
     create_control_plane_development_app,
     load_or_create_development_master_key,
 )
-from pzp_ai_bot.db.models import BotEvent, ControlPlaneSession
-from pzp_ai_bot.db.session import create_schema, session_scope
+from chatterlore.db.models import BotEvent, ControlPlaneSession
+from chatterlore.db.session import create_schema, session_scope
 
 
 def base_settings(tmp_path: Path, **overrides: object) -> Settings:
@@ -266,7 +266,7 @@ def test_development_login_issues_a_real_bot_admin_session_with_loopback_cookie(
             "telegram_user_id": user_id,
             "first_name": "Development administrator",
             "last_name": None,
-            "username": "pzp_control_plane_dev",
+            "username": "chatterlore_control_plane_dev",
             "language_code": "en",
             "photo_url": None,
             "is_premium": None,
@@ -275,7 +275,7 @@ def test_development_login_issues_a_real_bot_admin_session_with_loopback_cookie(
         assert login.json()["capabilities"] == ["bot.admin"]
         first_csrf = login.json()["csrf_token"]
         cookie = login.headers["set-cookie"]
-        assert "pzp_control_session=" in cookie
+        assert "chatterlore_control_session=" in cookie
         assert "HttpOnly" in cookie
         assert "SameSite=lax" in cookie
         assert "Secure" not in cookie
@@ -372,7 +372,7 @@ def test_development_step_up_requires_session_csrf_identity_and_exact_action(
 
     other_token, other_csrf = asyncio.run(issue_other_identity())
     with TestClient(app, base_url=origin) as client:
-        client.cookies.set("pzp_control_session", other_token)
+        client.cookies.set("chatterlore_control_session", other_token)
         mismatch = client.post(
             CONTROL_PLANE_DEV_STEP_UP_PATH,
             headers={"Origin": origin, "X-CSRF-Token": other_csrf},
@@ -453,12 +453,15 @@ def test_offline_development_runtime_performs_zero_telegram_calls_and_is_healthy
         health = client.get("/health")
         login = client.post(CONTROL_PLANE_DEV_AUTH_PATH, headers={"Origin": config.origin})
         assert "/telegram/webhook" not in app.openapi()["paths"]
-        assert "pzp-admin-alert-delivery" not in app.state.background_tasks
+        assert "chatterlore-admin-alert-delivery" not in app.state.background_tasks
 
     assert health.status_code == 200
     assert health.json() == {
         "ok": True,
-        "tasks": {"pzp-idle-summarizer": True, "pzp-runtime-settings-refresher": True},
+        "tasks": {
+            "chatterlore-idle-summarizer": True,
+            "chatterlore-runtime-settings-refresher": True,
+        },
     }
     assert login.status_code == 200
     assert login.json()["capabilities"] == ["bot.admin"]
@@ -526,7 +529,7 @@ def test_connected_development_registers_real_webhook_and_optional_alert_deliver
     )
 
     with TestClient(app, base_url=config.origin) as client:
-        assert "pzp-admin-alert-delivery" in app.state.background_tasks
+        assert "chatterlore-admin-alert-delivery" in app.state.background_tasks
         health = client.get("/health")
         rejected = client.post(
             "/telegram/webhook",
@@ -535,7 +538,7 @@ def test_connected_development_registers_real_webhook_and_optional_alert_deliver
         )
 
     assert health.status_code == 200
-    assert "pzp-admin-alert-delivery" not in health.json()["tasks"]
+    assert "chatterlore-admin-alert-delivery" not in health.json()["tasks"]
     assert rejected.status_code == 401
     assert [name for name, _ in bot.calls] == ["delete_my_commands", "set_webhook"]
     assert bot.calls[1] == (

@@ -48,7 +48,7 @@ function textSink() {
 
 describe("developmentProcessSpecs", () => {
   it("uses fixed PowerShell 7 wrappers as stable Windows process-tree roots", () => {
-    const repositoryRoot = resolve("C:/work/PZP-AI");
+    const repositoryRoot = resolve("C:/work/Chatterlore");
     const webRoot = resolve(repositoryRoot, "web");
 
     expect(
@@ -67,7 +67,7 @@ describe("developmentProcessSpecs", () => {
           "-NoProfile",
           "-NonInteractive",
           "-Command",
-          "uv run pzp-bot control-plane-dev",
+          "uv run chatterlore control-plane-dev",
         ],
         cwd: repositoryRoot,
       },
@@ -125,8 +125,8 @@ describe("coordinateDevelopmentProcesses", () => {
       spawnProcess: () => children[spawnIndex++],
       specs: developmentProcessSpecs({
         platform: "linux",
-        repositoryRoot: "/work/PZP-AI",
-        webRoot: "/work/PZP-AI/web",
+        repositoryRoot: "/work/Chatterlore",
+        webRoot: "/work/Chatterlore/web",
       }),
       signalSource: new EventEmitter(),
       stdout: output.sink,
@@ -151,8 +151,8 @@ describe("coordinateDevelopmentProcesses", () => {
       spawnProcess: () => children[spawnIndex++],
       specs: developmentProcessSpecs({
         platform: "linux",
-        repositoryRoot: "/work/PZP-AI",
-        webRoot: "/work/PZP-AI/web",
+        repositoryRoot: "/work/Chatterlore",
+        webRoot: "/work/Chatterlore/web",
       }),
       signalSource: new EventEmitter(),
       stdout: textSink().sink,
@@ -174,8 +174,8 @@ describe("coordinateDevelopmentProcesses", () => {
       spawnProcess: () => children[spawnIndex++],
       specs: developmentProcessSpecs({
         platform: "linux",
-        repositoryRoot: "/work/PZP-AI",
-        webRoot: "/work/PZP-AI/web",
+        repositoryRoot: "/work/Chatterlore",
+        webRoot: "/work/Chatterlore/web",
       }),
       signalSource: signals,
       stdout: textSink().sink,
@@ -198,8 +198,8 @@ describe("coordinateDevelopmentProcesses", () => {
       spawnProcess: () => children[spawnIndex++],
       specs: developmentProcessSpecs({
         platform: "linux",
-        repositoryRoot: "/work/PZP-AI",
-        webRoot: "/work/PZP-AI/web",
+        repositoryRoot: "/work/Chatterlore",
+        webRoot: "/work/Chatterlore/web",
       }),
       signalSource: new EventEmitter(),
       stdout: textSink().sink,

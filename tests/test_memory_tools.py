@@ -5,10 +5,10 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from pzp_ai_bot.ai.fake import FakeProvider
-from pzp_ai_bot.ai.protocols import ChatMessage, ChatResult
-from pzp_ai_bot.memory.scope import Scope
-from pzp_ai_bot.memory.service import IncomingMessage
+from chatterlore.ai.fake import FakeProvider
+from chatterlore.ai.protocols import ChatMessage, ChatResult
+from chatterlore.memory.scope import Scope
+from chatterlore.memory.service import IncomingMessage
 
 
 class RecordingFakeProvider(FakeProvider):

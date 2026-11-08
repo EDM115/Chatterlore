@@ -19,8 +19,8 @@ uv run ruff format --check .
 uv run ruff check .
 uv run ty check
 uv run pytest -m "not telegram_live"
-uv run pzp-bot --help
-uv run pzp-bot doctor
+uv run chatterlore --help
+uv run chatterlore doctor
 ```
 
 - [ ] Complete Python 3.12 production-baseline checks, inspect skips/warnings and exercise optional local packages when supported

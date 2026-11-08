@@ -5,8 +5,8 @@ import asyncio
 from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
-import pzp_ai_bot.main as main_module
-from pzp_ai_bot.main import app, provider_health_checks
+import chatterlore.main as main_module
+from chatterlore.main import app, provider_health_checks
 from test_control_plane_api import ORIGIN, build_test_app, signed_init_data
 
 runner = CliRunner()

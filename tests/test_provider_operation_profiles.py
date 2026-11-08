@@ -11,19 +11,19 @@ import httpx2 as httpx
 import pytest
 from openai import AsyncOpenAI
 
-from pzp_ai_bot.ai.credential_pool import CredentialLease, CredentialPoolService
-from pzp_ai_bot.ai.factory import ProviderRegistry, ProviderSelection
-from pzp_ai_bot.ai.openai_compatible import OpenAICompatibleProvider
-from pzp_ai_bot.ai.protocols import ChatMessage, ChatResult
-from pzp_ai_bot.ai.provider_call_policy import ProviderLeaseCallError
-from pzp_ai_bot.config import Settings
-from pzp_ai_bot.control_plane.schemas import ProviderProfileCreateRequest
-from pzp_ai_bot.control_plane.secrets.crypto import SecretVaultError
-from pzp_ai_bot.control_plane.secrets.service import ProviderSecretService
-from pzp_ai_bot.db.models import EmbeddingIndexJob, EmbeddingSpace
-from pzp_ai_bot.db.repos.embedding_indexes import EmbeddingIndexRepository
-from pzp_ai_bot.db.session import session_scope
-from pzp_ai_bot.memory.provider_operations import ProviderOperations
+from chatterlore.ai.credential_pool import CredentialLease, CredentialPoolService
+from chatterlore.ai.factory import ProviderRegistry, ProviderSelection
+from chatterlore.ai.openai_compatible import OpenAICompatibleProvider
+from chatterlore.ai.protocols import ChatMessage, ChatResult
+from chatterlore.ai.provider_call_policy import ProviderLeaseCallError
+from chatterlore.config import Settings
+from chatterlore.control_plane.schemas import ProviderProfileCreateRequest
+from chatterlore.control_plane.secrets.crypto import SecretVaultError
+from chatterlore.control_plane.secrets.service import ProviderSecretService
+from chatterlore.db.models import EmbeddingIndexJob, EmbeddingSpace
+from chatterlore.db.repos.embedding_indexes import EmbeddingIndexRepository
+from chatterlore.db.session import session_scope
+from chatterlore.memory.provider_operations import ProviderOperations
 
 
 def settings_with_profile(profile: dict, **kwargs) -> Settings:
@@ -463,7 +463,7 @@ async def test_empty_profile_embedding_edit_advances_epoch_but_chat_edit_does_no
 async def test_unprepared_embedded_embedding_route_fails_before_loading(
     monkeypatch, options
 ) -> None:
-    from pzp_ai_bot.ai import local
+    from chatterlore.ai import local
 
     class MustNotLoad:
         name = "local"
@@ -629,7 +629,7 @@ async def test_managed_endpoint_change_detaches_old_bootstrap_environment_creden
 async def test_local_registry_evicts_idle_models_and_restores_prepared_snapshot(
     monkeypatch, tmp_path
 ) -> None:
-    from pzp_ai_bot.ai import local
+    from chatterlore.ai import local
 
     class Backend:
         loaded = False
@@ -752,7 +752,7 @@ async def test_retiring_remote_provider_waits_for_inflight_request_before_close(
 async def test_local_no_auth_real_sdk_never_follows_redirect_or_leaks_bootstrap_key(
     monkeypatch,
 ) -> None:
-    from pzp_ai_bot.ai import openai_compatible
+    from chatterlore.ai import openai_compatible
 
     requests: list[httpx.Request] = []
 
@@ -805,7 +805,7 @@ async def test_local_no_auth_real_sdk_never_follows_redirect_or_leaks_bootstrap_
 
 
 async def test_real_sdk_does_not_multiply_policy_retry_budget(monkeypatch) -> None:
-    from pzp_ai_bot.ai import openai_compatible
+    from chatterlore.ai import openai_compatible
 
     attempts = 0
 

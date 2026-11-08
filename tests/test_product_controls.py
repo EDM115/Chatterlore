@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
-import pzp_ai_bot.memory.transfer as transfer_module
-from pzp_ai_bot.app_context import AppContext
-from pzp_ai_bot.memory.scope import Scope
-from pzp_ai_bot.memory.service import IncomingMessage
+import chatterlore.memory.transfer as transfer_module
+from chatterlore.app_context import AppContext
+from chatterlore.memory.scope import Scope
+from chatterlore.memory.service import IncomingMessage
 
 
 def incoming(

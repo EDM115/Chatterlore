@@ -8,19 +8,19 @@ from pathlib import Path
 import pytest
 from sqlalchemy import select
 
-from pzp_ai_bot.ai.factory import ProviderRegistry
-from pzp_ai_bot.config import Settings
-from pzp_ai_bot.control_plane.secrets.service import (
+from chatterlore.ai.factory import ProviderRegistry
+from chatterlore.config import Settings
+from chatterlore.control_plane.secrets.service import (
     ProviderSecretConflictError,
     ProviderSecretService,
 )
-from pzp_ai_bot.db.models import BotEvent
-from pzp_ai_bot.db.repos.provider_credentials import (
+from chatterlore.db.models import BotEvent
+from chatterlore.db.repos.provider_credentials import (
     ProviderCredentialRepository,
     ProviderPoolStateRepository,
     ProviderProfileRepository,
 )
-from pzp_ai_bot.db.session import create_schema, create_session_factory, session_scope
+from chatterlore.db.session import create_schema, create_session_factory, session_scope
 
 NOW = datetime(2026, 8, 1, 10, 0, tzinfo=UTC)
 
@@ -51,7 +51,7 @@ def service_settings(tmp_path: Path, **overrides: object) -> Settings:
 async def test_managed_profile_overlay_preserves_environment_fallback_without_caching_managed_key(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("PZP_MANAGED_TEST_API_KEY", "explicit-endpoint-secret")
+    monkeypatch.setenv("CHATTERLORE_MANAGED_TEST_API_KEY", "explicit-endpoint-secret")
     settings = service_settings(
         tmp_path,
         ai_provider_profiles=json.dumps(
@@ -59,7 +59,7 @@ async def test_managed_profile_overlay_preserves_environment_fallback_without_ca
                 "default": {
                     "provider": "openai_compatible",
                     "base_url": "https://managed.example.test/v1",
-                    "api_key_env": "PZP_MANAGED_TEST_API_KEY",
+                    "api_key_env": "CHATTERLORE_MANAGED_TEST_API_KEY",
                 }
             }
         ),
@@ -95,7 +95,7 @@ async def test_managed_profile_overlay_preserves_environment_fallback_without_ca
     managed_without_key = registry.select("default")
     assert managed_without_key.profile.chat_model == "gpt-5.6-terra"
     assert managed_without_key.profile.openai_api_key == "explicit-endpoint-secret"
-    assert managed_without_key.profile.openai_api_key_env == "PZP_MANAGED_TEST_API_KEY"
+    assert managed_without_key.profile.openai_api_key_env == "CHATTERLORE_MANAGED_TEST_API_KEY"
     assert managed_without_key is not environment
 
     credential = await service.create_credential(
