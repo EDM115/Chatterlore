@@ -1,39 +1,50 @@
-# Secrets Handling
+# Secrets
 
-PZP AI expects secrets to come from environment variables, untracked env files or platform secret stores. Secrets should never be committed, baked into images or passed through runtime settings.
+Keep Telegram, OIDC, provider and master-key secrets in environment variables, untracked environment files or a platform secret store. Restrict access to SQLite, backups, generated memory and exports, they can contain chat content and identity data. See [privacy](privacy.md) for data retention and [configuration](configuration.md) for environment names/defaults.
 
-## Storage
+## Configuration and storage
 
-- Keep `.env`, SQLite databases, generated memory files and provider keys out of git.
-- Store `TELEGRAM_BOT_TOKEN`, `WEBHOOK_SECRET`, `TELEGRAM_OIDC_CLIENT_SECRET`, control-plane master-key material, OpenAI-compatible API keys and local deployment secrets in environment variables or deployment secret stores. `WEBHOOK_SECRET` must be non-empty and must not use common placeholders such as `change-me`, `changeme`, `placeholder`, `default` or `secret`.
-- `AI_PROVIDER_PROFILES` should contain profile names, provider types and model names. Credentials stay in environment variables such as provider-specific API key variables.
-- Several bootstrap profiles may reference separate API-key environment variables, and database-managed profiles can override the same profile's non-secret provider/model configuration without a restart. The environment key is synchronized into that managed profile as immutable, non-revealable pool metadata and participates with database-managed keys in sticky bounded rotation. A profile can contain at most ten total environment/database credential sources.
-- The default remote key is inherited only by profiles at the same configured endpoint, foreign endpoints require their own explicit `api_key_env`/`openai_api_key_env` reference or managed credential. A no-auth local-server profile bypasses credential pools and never receives the remote key, Hub download credentials must remain deployment secrets rather than a reused OpenAI credential
-- Local/profile metadata management does not require a provider vault when no secret operation is involved, encrypted credential creation/reveal/rotation still requires the configured vault. Never put decrypted managed keys into runtime profile metadata to make a readiness check pass
-- Control-plane OIDC transaction state and session cookies are random opaque credentials. CSRF values are stable per-session HMAC-SHA-256 values keyed by the random session bearer with a versioned domain separator, not by the user's identity or a reusable public session ID. SQLite stores only SHA-256 state/session/CSRF hashes; PKCE verifiers are AES-GCM encrypted with an auth-specific key derived from the OIDC bootstrap secret and bound to the fixed callback. Raw cookie, state, CSRF and PKCE values must not be logged or placed in audit payloads.
-- `CONTROL_PLANE_MASTER_KEYS` is a deployment-supplied JSON object whose values are base64-encoded 32-byte master keys, and `CONTROL_PLANE_ACTIVE_MASTER_KEY_ID` selects the key used for new credentials. Enabled control-plane startup fails closed on malformed JSON, missing active IDs, invalid base64 or the wrong decoded length, while `show-config` and `pzp-bot secrets status` expose IDs and counts only.
-- Database-managed provider secrets use envelope encryption: every secret receives a random 256-bit data-encryption key, AES-GCM protects the secret and separately wraps that data key under an HKDF-derived master-key domain, and authenticated data binds the envelope to its profile, credential ID and safe fingerprint metadata. SQLite contains ciphertext, nonces, a wrapped data key, key ID, keyed fingerprint and last four characters—not plaintext.
-- Plaintext provider credentials are decrypted only while creating the concrete client for an opaque operation lease. The managed registry cache is keyed by profile and credential revisions, contains no separately retained raw-key field and is cleared after every profile/credential mutation.
-- Bot-admin profile/credential APIs never return a managed key except from the isolated `POST .../reveal` operation. Create, replace, reveal and delete require fresh Telegram verification bound to that exact action. Atomic replacement keeps the managed credential ID and authenticated-data identity, changes its encrypted material/fingerprint/last-four/version together and clears previous health/cooldown/error/counter state; reveal responses are private/no-store, are audited before return and remain in the Nuxt component only until the 30-second timer or an earlier navigation, identity, visibility, failure or unmount boundary.
-- Manual bot-admin credential tests use a fixed non-sensitive chat or embedding input, are independently rate-limited and can incur provider charges. Results expose only the model, dimensions where relevant and safe attempt metadata; raw provider errors and response bodies never enter API responses, audit rows or admin alerts.
-- The dedicated loopback development command reuses a complete configured `CONTROL_PLANE_MASTER_KEYS` keyring when present. Otherwise it creates `data/control-plane-dev-master-key`, an explicitly ignored stable base64-encoded 32-byte key, so managed credentials created locally remain decryptable across restarts. This colocated key is development convenience protection, not production secret isolation; malformed or unreadable existing material fails closed and is never replaced automatically.
+`.env`, data and keys stay out of Git and container images. The Compose bot service loads `.env`, the frontend receives no backend configuration and Caddy removes cookies, authorization and CSRF headers before forwarding frontend requests. Avoid plain `docker compose config` output in shared logs because it expands secret values, use `docker compose config --quiet` for validation.  
+Keep `TELEGRAM_BOT_TOKEN`, `WEBHOOK_SECRET`, `TELEGRAM_OIDC_CLIENT_SECRET`, provider keys and vault keys in deployment secret injection. Generate an independent webhook secret, startup rejects blank/common placeholders. Telegram permits letters, digits, underscores and hyphens for this value. A hexadecimal random value meets that constraint.  
+`Settings` loads declared fields such as `OPENAI_API_KEY` from the root `.env`. Custom `api_key_env`/`openai_api_key_env` names in `AI_PROVIDER_PROFILES` resolve through the process environment, arbitrary entries in `.env` are not enough for local CLI runs. Export them in the shell, load them through Compose `env_file` or inject them through the hosting platform. Prefer these references over embedded JSON credentials.  
+A profile inherits the default remote key only for the same configured endpoint, a foreign endpoint requires its own explicit environment reference or managed credential. A no-auth local HTTP profile bypasses credential pools and cannot receive the cloud key, Hub download credentials also stay separate. Non-secret local/profile metadata management needs no vault, encrypted credential operations do.  
+Environment credentials synchronized into managed profiles remain immutable and non-revealable. Managed profiles can override non-secret bootstrap configuration without restart, a profile supports at most ten total environment/database credential sources.
+
+## Vault keys and encrypted credentials
+
+`CONTROL_PLANE_MASTER_KEYS` is a JSON map of key IDs to base64-encoded 32-byte values. `CONTROL_PLANE_ACTIVE_MASTER_KEY_ID` chooses the key for new credentials. Enabled control-plane startup rejects malformed/incomplete key configuration. Generate a value in PowerShell 7:
+
+```powershell
+[Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+```
+
+Place the output in the deployment secret store and clear any shared terminal capture. `show-config` and `pzp-bot secrets status` report key IDs/counts without credential plaintext. Store master keys separately from database backups and retain the keys needed by those backups.  
+Each managed provider credential has a random data-encryption key. AES-GCM encrypts the secret and wraps its data key under a master-key-derived domain, authenticated data binds it to the profile, credential ID and safe metadata. SQLite holds ciphertext, nonces, wrapped key, key ID, keyed fingerprint and last four characters. Managed clients use opaque operation leases and revision-aware caches, mutations invalidate cached clients.  
+Create, replace, reveal and delete require fresh Telegram verification bound to the exact action. Reveal is a separate audited POST with private/no-store headers, the browser clears it within 30 seconds or earlier on navigation, identity/visibility change, failure or unmount. Replacement keeps the credential ID, rotates its encrypted material and resets health/cooldown/error/counters. Deletion erases secret-bearing columns, retained backups can still contain the old envelope.  
+The loopback development command can create the ignored stable `data/control-plane-dev-master-key` when no complete keyring exists. An unreadable/malformed existing key fails closed rather than being replaced. This colocated file supports development restart continuity, supply externally managed keys in production and do not copy the development key into a deployment.
+
+## Sessions and identity material
+
+OIDC state and browser session bearers are random opaque credentials. SQLite stores state/session/CSRF hashes, PKCE verifiers use authenticated encryption derived from the OIDC secret and bound to the callback. CSRF values are stable per-session HMAC values keyed by the random bearer. Keep raw cookies, state, CSRF, PKCE and Mini App `initData` out of logs, audit exports and browser storage.  
+Bot-admin provider tests use fixed non-sensitive inputs and can incur charges. Diagnostics, usage and admin DMs expose safe model/dimension/classification/fingerprint metadata, raw exceptions or provider responses must not enter those channels. Review identifiers before sharing logs/audits even when credential values are masked. `uv run pzp-bot show-config` is the configuration troubleshooting surface, it does not validate provider authentication.  
+Do not submit provider keys through Telegram messages or safe runtime settings. Telegram message deletion cannot guarantee removal from Telegram infrastructure or other update consumers. Use the provider UI/API vault flow or deployment injection.
 
 ## Rotation
 
-- Rotate `TELEGRAM_BOT_TOKEN` through BotFather, update the runtime secret, restart polling/webhook and verify `pzp-bot doctor` plus a manual Telegram smoke test.
-- Rotate `WEBHOOK_SECRET` by updating the environment, restarting webhook mode and re-registering the webhook on startup.
-- Rotate `TELEGRAM_OIDC_CLIENT_SECRET` by updating BotFather and the deployment secret together, restarting the control-plane runtime and completing both browser and Mini App authentication checks. Outstanding OIDC transactions encrypted from the old secret become intentionally unusable.
-- Rotate an environment-bootstrap provider key at the provider, update the deployment secret, restart the process and run `pzp-bot doctor`.
-- Rotate a database-managed provider key through the bot-admin provider API/UI without restarting. For maximum failover safety, add and test a new pool entry before disabling or deleting the old one; when the same logical slot must be preserved, use Replace with the current optimistic version and then run an explicit credential test. Deletion cryptographically erases encrypted columns and invalidates cached clients.
-- To rotate only the vault master key, add a newly generated base64 32-byte value under a new ID while retaining every old ID, back up SQLite, run `uv run pzp-bot secrets status`, then run `uv run pzp-bot secrets rewrap --to <new-id> --yes`. The command decrypts and verifies every existing wrapping before writing any row, commits all replacements atomically, and prints counts only. After a successful backup and status check show zero references to an old ID, remove that old key from the next deployment restart.
+| Secret | Procedure |
+| --- | --- |
+| Telegram token | Rotate in BotFather, update deployment secret, restart the sole polling/webhook runtime and verify real Telegram delivery |
+| Webhook secret | Update deployment secret and restart webhook mode, startup re-registers it, verify missing/wrong headers fail |
+| OIDC client secret | Update BotFather and deployment together, restart, complete browser/Mini App login, outstanding transactions encrypted under the old secret become unusable |
+| Environment provider key | Rotate at provider, update process secret and restart, run an explicit selected-profile check |
+| Managed provider key | Add/test a replacement before retiring the old entry, or use versioned Replace for the same slot, check inference and pool health without restarting |
 
-## Deployment Notes
+To rotate a vault master key:
 
-- For Compose or container platforms, prefer an untracked env file or platform secret injection over baking secrets into images.
-- Production must supply externally managed `CONTROL_PLANE_MASTER_KEYS` and `CONTROL_PLANE_ACTIVE_MASTER_KEY_ID`; never copy the colocated development key into a deployment. Mock development login takes the identity only from backend `CONTROL_PLANE_DEV_USER_ID`, accepts no UID request body and still requires exact-action step-up for sensitive operations. The development auth routes and setting-name markers are excluded from production OpenAPI and Nuxt output.
-- The Compose bot service is the only application container that receives `.env` and backend secrets. Caddy receives only `CONTROL_PLANE_PUBLIC_ORIGIN`, Nuxt receives only non-secret Node listener settings, and Caddy removes `Cookie`, `Authorization` and `X-CSRF-Token` before proxying frontend requests; never add bot, OIDC, vault, provider, database or webhook secrets to the frontend build arguments or environment.
-- Do not pass secrets through `/runtime_settings`; editable runtime settings intentionally reject secret-bearing keys.
-- Do not paste provider keys into Telegram groups or bot DMs. Bot conversations are not an encrypted application secret store, and deleting a command message would not guarantee removal from Telegram infrastructure or every update consumer.
-- Provider-health DMs contain only profile name, safe credential label/fingerprint, event type and allowlisted classification. Delivery rows and retries never contain a raw key, raw exception string or provider response body.
-- When sharing logs or audit exports, review them for chat/user identifiers even though provider keys and bot tokens are not logged intentionally.
-- Run `pzp-bot show-config` when troubleshooting configuration because it prints non-secret effective settings, control-plane configured-state metadata and redacted credential-bearing database URLs.
+1. Add a new random 32-byte key under a new ID and retain every referenced old ID
+2. Select the intended active ID, restart with the expanded keyring and create a verified database backup
+3. Run `uv run pzp-bot secrets status`, then `uv run pzp-bot secrets rewrap --to new-id --yes`
+4. Recheck status and run an explicit provider smoke, rewrap validates replacement envelopes before committing the batch atomically
+5. Remove an old key from the active deployment only after its live reference count is zero, retain separate recovery material for backups that still reference it
+
+An interrupted/invalid rewrap leaves prior wrappings authoritative. A missing referenced key makes those credentials unusable and fails closed, restoring the correct key recovers them. Follow [backup and restore](operations.md#backup-upgrade-and-restore) before changing keys or schema.

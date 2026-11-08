@@ -91,7 +91,6 @@ async def test_remember_emits_content_free_create_audit_event(context: AppContex
     assert len(events) == 1
     assert events[0].scope == scope
     assert events[0].payload == {"knowledge_item_id": item_id}
-    assert content not in json.dumps(events[0].payload)
 
 
 @pytest.mark.asyncio
@@ -116,11 +115,6 @@ async def test_edit_note_emits_content_free_audit_event(context: AppContext) -> 
     assert len(events) == 1
     assert events[0].scope == scope
     assert events[0].payload == {"knowledge_item_id": item_id}
-    serialized_payload = json.dumps(events[0].payload)
-    assert original_content not in serialized_payload
-    assert updated_content not in serialized_payload
-    assert "private-tag" not in serialized_payload
-    assert "private-value" not in serialized_payload
 
 
 @pytest.mark.asyncio
@@ -258,26 +252,10 @@ async def test_projection_failure_is_audited_without_memory_content(
     events = await context.memory.audit_events(event_type="markdown_projection_failed", limit=5)
     assert events
     assert events[0].payload == {"error_type": "OSError"}
-    assert "Sensitive committed memory" not in json.dumps(events[0].payload)
 
 
 @pytest.mark.asyncio
-async def test_import_export_jsonl_round_trip(context: AppContext, tmp_path) -> None:
-    scope = Scope(-200, None)
-    path = tmp_path / "import.jsonl"
-    path.write_text(
-        json.dumps({"content": "Imported note about backups.", "source_message_ids": [5]}) + "\n",
-        encoding="utf-8",
-    )
-    count = await context.memory.import_jsonl(path, scope)
-    assert count == 1
-    exported = await context.memory.export_memory(scope, fmt="jsonl")
-    assert "Imported note about backups" in exported
-    assert '"scope": "-200:main"' in exported
-
-
-@pytest.mark.asyncio
-async def test_jsonl_import_streams_one_thousand_rows_in_fixed_batches(
+async def test_jsonl_import_batches_and_exports_preserve_content_scope_and_sources(
     context: AppContext, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     scope = Scope(-201, None)
@@ -307,6 +285,11 @@ async def test_jsonl_import_streams_one_thousand_rows_in_fixed_batches(
     )
     assert len(checkpoints) == 10
     assert checkpoints[0].payload["checkpoint_imported"] == 1_000
+    exported = await context.memory.export_memory(scope, fmt="jsonl")
+    rows = [json.loads(line) for line in exported.splitlines()]
+    assert [(row["content"], row["scope"], row["source_message_ids"]) for row in rows] == [
+        (f"Bulk note {index}.", "-201:main", [index]) for index in range(1_000)
+    ]
 
 
 @pytest.mark.asyncio

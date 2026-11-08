@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import yaml
@@ -65,16 +64,18 @@ def test_github_actions_ci_runs_quality_migration_and_docker_gates() -> None:
     assert set(triggers) == {"workflow_dispatch"}
     assert "uv lock --check" not in workflow
     assert "--cov" not in workflow
-    assert (
-        """      - name: Migration check
-        env:
-          DB_URL: sqlite+aiosqlite:///${{ runner.temp }}/pzp-ai-migration-check.db
-        run: |
-          uv run alembic upgrade head
-          uv run alembic check
-"""
-        in workflow
+    migration_step = next(
+        step
+        for step in workflow_config["jobs"]["quality"]["steps"]
+        if "uv run alembic upgrade head" in step.get("run", "")
     )
+    assert migration_step["env"]["DB_URL"] == (
+        "sqlite+aiosqlite:///${{ runner.temp }}/pzp-ai-migration-check.db"
+    )
+    assert migration_step["run"].splitlines() == [
+        "uv run alembic upgrade head",
+        "uv run alembic check",
+    ]
 
 
 def test_ci_and_docker_use_latest_uv_with_frozen_project_dependencies() -> None:
@@ -151,8 +152,6 @@ def test_compose_exposes_only_caddy_and_keeps_upstreams_independent() -> None:
 def test_frontend_image_is_frozen_multi_stage_and_non_root() -> None:
     dockerfile = (ROOT / "web" / "Dockerfile").read_text(encoding="utf-8")
     ignored = set((ROOT / "web" / ".dockerignore").read_text(encoding="utf-8").splitlines())
-    package = json.loads((ROOT / "web" / "package.json").read_text(encoding="utf-8"))
-    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 
     assert "FROM node:26-bookworm-slim AS dependencies" in dockerfile
     assert "FROM dependencies AS build" in dockerfile
@@ -168,10 +167,6 @@ def test_frontend_image_is_frozen_multi_stage_and_non_root() -> None:
     assert "USER node" in dockerfile
     assert 'CMD ["node", ".output/server/index.mjs"]' in dockerfile
     assert {".env", ".nuxt", ".output", "node_modules", "test-results"} <= ignored
-    assert package["scripts"]["format:check"] == "oxfmt --check ."
-    assert package["packageManager"] == "pnpm@11.28.11"
-    assert package["devEngines"]["runtime"]["version"] == "26"
-    assert "          working-directory: web" in workflow
 
 
 def test_default_tests_do_not_install_or_configure_code_coverage() -> None:

@@ -1,142 +1,149 @@
 # Setup
 
-This guide gets a local PZP AI instance ready for development, offline verification and first Telegram testing.
+Use this guide to install PZP AI, connect an AI provider and verify the bot in a Telegram group. The web control plane is optional for a polling bot. Read [Concepts](concepts.md) for scopes, learning policy, roles and the difference between memory and provider profiles.
 
-## Requirements
+## Install the tools and project
 
-- Python 3.12 or newer (CI and the bot image use 3.12, the current offline suite is also verified on the existing 3.14 development environment)
-- [uv](https://docs.astral.sh/uv/) for dependency management and command execution
-- pnpm 11.28.11 for control-plane frontend development, `web/package.json` declares Node.js major 26 and pnpm provisions the lockfile-resolved runtime (currently 26.13.0)
-- A Telegram bot token from BotFather for live Telegram use
-- Docker Desktop if you want to run the container smoke checks
-
-## Local Development
+Install Git and [uv](https://docs.astral.sh/uv/getting-started/installation/). Use PowerShell 7 for the examples below, the combined frontend/backend development launcher also requires it on Windows. You do not need a separate virtual-environment activation, `uv run` uses the project environment.
 
 ```powershell
-uv sync --extra dev
+git clone https://github.com/SpamVerse/PZP-AI.git
+Set-Location PZP-AI
+uv python install 3.12
+uv sync --frozen --python 3.12 --extra dev
 Copy-Item .env.example .env
 uv run pzp-bot migrate
 uv run pzp-bot doctor
-uv run pytest
 ```
 
-The default `AI_PROVIDER=fake` is deterministic and does not call external AI services. Use it for local development, CI and documentation examples.
-Embedded inference is optional, install `uv sync --extra dev --extra local` only on hosts that need local Transformers/PyTorch/Sentence Transformers. Existing local HTTP model servers use the ordinary remote-compatible adapter and do not require those heavyweight packages.  
+Copy `.env.example` only for a new installation, keep an existing `.env` when updating. Run backend commands from the repository root so relative database paths and `.env` resolve there. Defaults create `data/bot.db` and `data/memory/`. Keep these paths on persistent writable storage.
 
-The control-plane frontend is deployed as its own Nuxt SSR Node service rather than being copied into the Python runtime. Install its frozen dependencies from `web/`:
+The default fake provider needs no AI key or model download. `doctor` should report the provider and writable storage as ready, with the control plane disabled. It checks local configuration, it does not prove Telegram connectivity or successful model inference. You can run the offline checks in [Testing](testing.md) without a Telegram token.
+
+## Create a Telegram bot and set its owners
+
+1. Open [@BotFather](https://t.me/BotFather) in Telegram, run `/newbot` and follow its name/username prompts.
+2. Put the returned token in `TELEGRAM_BOT_TOKEN` in `.env`. Keep the token private.
+3. Set `BOT_ADMINS` to your numeric Telegram user ID, or a comma-separated list of recovery owners. Usernames and the bot's own ID are not user IDs. Replace the example IDs.
+4. Start a private conversation with your new bot and send `/start`. This also permits later owner DMs from the bot.
+
+If you do not know your numeric ID, retrieve only sender and chat identifiers from your new bot's pending updates. Run this before starting any poller and only while the bot has no webhook configured:
 
 ```powershell
-Set-Location web
-pnpm install --frozen-lockfile
-pnpm runtime:check
+@'
+import httpx
+from pzp_ai_bot.config import Settings
+
+settings = Settings()
+response = httpx.get(f"https://api.telegram.org/bot{settings.telegram_bot_token}/getUpdates", timeout=15)
+payload = response.json()
+if not payload.get("ok"):
+    raise SystemExit("Telegram rejected getUpdates, check the token and that no webhook is active")
+for update in payload["result"]:
+    message = update.get("message", {})
+    sender = message.get("from", {})
+    chat = message.get("chat", {})
+    print({"username": sender.get("username"), "user_id": sender.get("id"), "chat_id": chat.get("id"), "chat_type": chat.get("type")})
+'@ | uv run python -
 ```
 
-The backend always loads settings from the repository-root `.env`; Nuxt receives neither backend credentials nor the development Telegram identity. Configure the dedicated loopback development command in that root file:
+Use the `user_id` from your own `/start` message as `BOT_ADMINS`. No output means there is no pending message, send another DM and retry. Do not share raw API responses or token-bearing URLs. An existing bot with a live writer needs a coordinated handoff, see [Deployment](deployment.md#polling).
+
+## Choose the AI provider before enabling learning
+
+Leave `AI_PROVIDER=fake` for deterministic exploration. To obtain useful summaries and generated answers, configure a real provider before teaching or importing memory. Fake embeddings and real embeddings are different spaces, switching after data exists requires an [index migration](operations.md#embedding-index-migrations).
+
+For one remote OpenAI-compatible endpoint, edit `.env`:
 
 ```dotenv
-CONTROL_PLANE_DEV_USER_ID=887758628
+AI_PROVIDER=openai_compatible
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_API_KEY=replace-with-your-provider-key
+CHAT_MODEL=replace-with-a-chat-model-id-your-account-can-use
+EMBEDDING_MODEL=text-embedding-3-small
+REASONING_LEVEL=medium
+```
+
+The chat model placeholder must be replaced. For another provider, use its base URL and supported model IDs, and ensure it provides embeddings or select a separate embedding profile. Model allowlists are optional deployment restrictions, empty `ALLOWED_CHAT_MODELS` and `ALLOWED_EMBEDDING_MODELS` impose no name restriction. A provider account still needs access and sufficient quota.
+
+Use [Configuration](configuration.md#provider-profiles) to route answers, summaries and embeddings to different profiles. That guide also covers existing local HTTP servers and optional embedded models. HTTP servers do not require the local Python extra. Embedded inference requires `uv sync --frozen --extra dev --extra local` plus explicit model preparation, it does not download models during status checks.
+
+After editing `.env`, run:
+
+```powershell
+uv run pzp-bot doctor
+uv run pzp-bot show-config
+```
+
+`show-config` excludes credentials. Custom `api_key_env` references must exist in the process environment for local runs, adding an unknown key name only to `.env` is insufficient. The built-in `OPENAI_API_KEY` setting does load from `.env`.
+
+## Start polling and verify a group
+
+1. Add the bot to a group or forum. In BotFather, use `/setprivacy` and choose Disable so it can receive ordinary group messages, or make it a group administrator. If you change privacy settings on an existing membership, re-add the bot if Telegram still withholds messages.
+2. Keep `CONTROL_PLANE_ENABLED=false` for this initial polling setup. `WEBHOOK_URL` can stay empty.
+3. Start one bot process:
+
+```powershell
+uv run pzp-bot polling
+```
+
+4. In the group, send `/help`, then `/allow_chat` for the whole group. For one forum topic, send `/allow_topic` inside that topic instead. You must be a Telegram chat admin or configured bot owner.
+5. Send `/learn_status` in the same place. Confirm `learning_enabled: True` and note the returned `scope` (chat ID and topic ID). A topic override can differ from its parent chat.
+6. Send an ordinary message such as `Project Juniper planning is Tuesday at 10:30 UTC. Mira coordinates the release.`
+7. Send `/memory_search When is Project Juniper planning?`, then `/ask When is Project Juniper planning?`. Search should include the stored fact, a real chat provider should answer Tuesday at 10:30 UTC with a source reference. The fake provider only establishes the wiring.
+8. Send `/summarize_now`, then `/memory_items` and `/memory_status` to inspect durable knowledge and usage. With review enabled, approve the proposal through `/memory_reviews` and `/memory_approve <id>` first.
+
+Ordinary learned text can be retrieved before automatic summarization. `/remember Project Juniper planning is Tuesday at 10:30 UTC` adds a durable manual note. Use `/memory_export md` to inspect an export, protect the downloaded file as conversation data. Type slash commands even if Telegram shows no command suggestions, startup clears the default command menu.
+
+Stop polling with Ctrl+C. Use [Operations](operations.md) for backups, retention, imports and maintenance. Local storage can contain the text of skipped delivered messages even when learning is off, see [Privacy](privacy.md).
+
+## Run the web interface locally
+
+Install [pnpm](https://pnpm.io/installation) using the release declared by `packageManager` in `web/package.json`. pnpm installs the project's declared Node 26 runtime during the frozen install. An existing Node installation is needed only if your chosen pnpm installation method requires it.
+
+For an offline development instance, stop polling and set these values in the root `.env`:
+
+```dotenv
+AI_PROVIDER=fake
+BOT_ADMINS=123456789
+CONTROL_PLANE_ENABLED=false
+CONTROL_PLANE_DEV_USER_ID=123456789
 CONTROL_PLANE_DEV_ORIGIN=http://localhost:3000
 CONTROL_PLANE_DEV_API_PORT=8000
 WEBHOOK_URL=
 ```
 
-`CONTROL_PLANE_DEV_USER_ID` is required only by `pzp-bot control-plane-dev` and must be a positive numeric Telegram user ID. The origin defaults to `http://localhost:3000` and must be an exact `http` or `https` loopback origin using `localhost`, `127.0.0.1` or `::1`; the API port defaults to `8000`. These values are loaded by `Settings` so the dedicated command receives them from the repository-root `.env`, but normal polling/webhook startup does not act on them and their presence does not relax production control-plane validation.
-
-Use one of the following local modes:
-
-- `pnpm dev` starts `uv run pzp-bot control-plane-dev` from the repository root and `pnpm dev:web` from `web/`, prefixes both process streams and shuts the sibling down if either exits. With empty `WEBHOOK_URL`, it is the recommended offline combined mode: it starts the database, critical background tasks, health and control-plane APIs, but creates no Telegram `Bot` or dispatcher, exposes no Telegram webhook route and sends no admin-alert DMs even when a bot token exists.
-- `pnpm dev:web` starts only Nuxt. It is useful for frontend work with a separately managed API or mocked requests; protected pages cannot obtain a real session unless a compatible backend is reachable.
-- `uv run pzp-bot control-plane-dev` starts only the loopback FastAPI development runtime when the frontend is managed separately.
-
-Nuxt development proxies `/api/control`, `/auth`, `/telegram/webhook` and `/health` to `PZP_API_DEV_ORIGIN`, which defaults to `http://127.0.0.1:8000`. Each target preserves its mounted prefix so FastAPI receives the original path, while Nuxt's own `/api/_nuxt_icon` endpoint remains local. If `CONTROL_PLANE_DEV_API_PORT` changes, set `PZP_API_DEV_ORIGIN` to the matching backend origin before starting Nuxt. On the first exact session `401`, the development frontend posts an empty request to the development login endpoint; the backend selects the configured UID, persists a normal browser session and grants only the capabilities resolved for that identity. Sensitive actions still require an exact-action development step-up before the underlying request. No UID is accepted from browser request data.
-
-To opt into real Telegram connectivity during combined development, configure a complete non-placeholder `TELEGRAM_BOT_TOKEN`, HTTPS `WEBHOOK_URL` and `WEBHOOK_SECRET`. Connected mode clears this application's old default command menu, calls `setWebhook` with the dispatcher's used update types (including private draft Stop updates), exposes `/telegram/webhook` and starts best-effort bot-admin DM alert delivery. The webhook must be publicly reachable over HTTPS even though the browser origin remains loopback HTTP, and enabling it changes this bot's Telegram update delivery mode. An incomplete connected configuration fails before any Telegram call.
-
-The protected SSR shell includes browser OIDC, signed Mini App exchange, server-side sessions, capability-driven navigation, bot-admin provider/credential APIs, controlled reveal, classified sticky key-pool failover, reloadless safe runtime settings, managed bot owners and managed-chat/delegated-admin/scoped-policy workflows. Dashboard, Providers, Bot Settings, Chats, Query, Memory, Stats, Audit and Operations are implemented, with bot-wide actions restricted to bot admins and scoped actions checked against current chat/topic authority. Real-client, deployed-runtime and two-key provider acceptance remain release gates, not missing pages.
-
-`BOT_ADMINS` remains the immutable recovery-owner set. A bootstrap owner can add reloadable database-managed bot owners in Bot Settings; removal requires exact-action Telegram step-up, revokes that user's live control-plane sessions and cannot remove a bootstrap owner or the last effective owner. The runtime form accepts only the existing safe setting allowlist and never accepts tokens, vault keys, provider secrets or OIDC configuration.
-
-Bot owners enroll a group from Chats. Current Telegram Mini Apps use a short-lived prepared `requestChat` selection; a normal browser or older client receives the same requester-bound selection button in the bot DM and the page polls for a bounded time. Telegram verifies that the requester administers the selected group and that the bot is still a member before the chat becomes active. This flow requires the production webhook runtime or explicitly connected development mode because offline `pnpm dev` intentionally creates no Telegram bot object and makes no Bot API call.
-
-An active managed chat accepts ingestion and idle summarization and is visible to its Telegram-native or delegated chat admins. Only bootstrap and managed bot admins can list, grant or revoke delegated chat-admin access, scoped admins retain chat/topic settings and content access but cannot inspect grants, delegate onward or revoke themselves. Paused and detached chats retain their SQLite/Markdown memory but stop new ingestion, idle summarization and scoped-admin visibility; a bot owner can resume them. Detach only stops management, leave also asks Telegram to remove the bot, and forget is a separate step-up plus exact-text destructive action that deletes the chat scope's messages, knowledge and embeddings and reconciles Markdown.
-
-For a production-style local build, run `pnpm build`, `pnpm scan:generated`, `pnpm smoke:ssr` and then `pnpm start` from `web/`. Production output contains neither development-auth route nor UID-setting markers, never auto-logs in and does not start Python. The production Compose stack keeps Nuxt and FastAPI private behind Caddy, strips credential headers before frontend requests and requires real webhook/OIDC configuration; see [deployment.md](deployment.md) before starting it.
-
-To configure the Phase 3 identity boundary, create a Telegram Login OIDC client in BotFather, allow the exact public origin and register the fixed callback `<CONTROL_PLANE_PUBLIC_ORIGIN>/auth/telegram/callback`. Use an HTTPS origin without a path, query or fragment:
-
-```dotenv
-CONTROL_PLANE_ENABLED=true
-CONTROL_PLANE_PUBLIC_ORIGIN=https://control.example.com
-TELEGRAM_OIDC_CLIENT_ID=
-TELEGRAM_OIDC_CLIENT_SECRET=
-CONTROL_PLANE_AUTH_MAX_AGE_SECONDS=300
-CONTROL_PLANE_STEP_UP_MAX_AGE_SECONDS=300
-CONTROL_PLANE_SESSION_IDLE_SECONDS=43200
-CONTROL_PLANE_SESSION_ABSOLUTE_SECONDS=604800
-```
-
-Generate each vault master key independently with `uv run python -c "import base64,secrets; print(base64.b64encode(secrets.token_bytes(32)).decode())"`, place the result in the deployment secret store as a JSON value under a non-secret key ID, and select that ID with `CONTROL_PLANE_ACTIVE_MASTER_KEY_ID`. Do not paste the generated material into source control, logs, Telegram or shell history shared with other users.
-
-Enabling the control plane fails closed when the HTTPS origin, Telegram bot token, OIDC client ID, OIDC client secret, valid master-key map or active key ID is absent. Every master-key value must be valid base64 that decodes to exactly 32 bytes. `pzp-bot show-config` reports only the origin, fixed callback, configured-state booleans, key IDs and TTL metadata; `pzp-bot secrets status` reports key-reference counts, and neither command prints OIDC, master-key or provider-secret material.
-
-`CONTROL_PLANE_MAX_CREDENTIALS_PER_PROFILE=10` bounds the total environment plus database-managed key sources for one managed profile. `CONTROL_PLANE_PROVIDER_TEST_RATE_LIMIT=5` limits explicit paid credential checks per client in the configured control-plane rate window, while `CONTROL_PLANE_ALERT_DELIVERY_INTERVAL_SECONDS=5` controls the best-effort Telegram admin-DM worker interval. Provider tests and local-model download checks never run automatically during page load.
-
-For an OpenAI-backed run, keep the key out of committed files and select the model plus reasoning effort explicitly:
-
-```dotenv
-AI_PROVIDER=openai_compatible
-OPENAI_API_KEY=
-OPENAI_BASE_URL=https://api.openai.com/v1
-CHAT_MODEL=gpt-5.6-terra
-REASONING_LEVEL=medium
-EMBEDDING_MODEL=text-embedding-3-small
-ALLOWED_CHAT_MODELS=gpt-5.4,gpt-5.4-mini,gpt-5.4-nano,gpt-5.5,gpt-5.6-luna,gpt-5.6-terra,gpt-5.6-sol
-ALLOWED_EMBEDDING_MODELS=text-embedding-3-small
-ALLOWED_REASONING_LEVELS=medium
-```
-
-`CHAT_MODEL` and `REASONING_LEVEL` provide environment defaults. Bot admins can replace them through the safe database-backed `chat_model` and `reasoning_level` runtime settings, per-scope `/settings`, or the documented one-shot `/ask` and `/summarize_now` options. The production allowlist above intentionally excludes Pro variants and restricts this deployment to the listed GPT-5 models at medium reasoning. For recognized OpenAI reasoning-model IDs, the OpenAI-compatible provider forwards the selected level as the Chat Completions `reasoning_effort` parameter; the prompt and usage metadata retain the same effective value.
-
-## Telegram Preparation
-
-1. Create a bot with BotFather and set `TELEGRAM_BOT_TOKEN` in `.env`.
-2. Add the bot to the target supergroup.
-3. In BotFather, run `/setprivacy`, choose the bot and select `Disable` if the bot must learn ordinary non-command group messages. Making the bot a group admin is the other practical way to receive those updates.
-4. Set `BOT_ADMINS` to the Telegram user IDs that should administer every scope.
-5. Start polling with `uv run pzp-bot polling` or use the Docker/Compose flow in [deployment.md](deployment.md).
-6. In Telegram, run `/allow_chat` for the whole chat or `/allow_topic` inside a forum topic before expecting live learning.
-
-Telegram does not expose arbitrary historical group backfill through the Bot API. PZP AI learns live updates after consent is enabled and can import reviewed Telegram Desktop JSON/HTML exports with `pzp-bot import-telegram`, or Bot API update dumps through the retained `import-telegram-json` command. A Both-format directory prefers JSON, HTML-only archives are parsed offline without executing scripts or fetching attachments. Supply `--thread-id` for an individual-topic archive (General is topic 1), omit it only for intentional aggregate chat memory, topic membership is never guessed from replies. See [the import command contract](commands.md) and [the privacy/cost runbook](operations.md#database-maintenance).
-
-## Independent AI Routes And Local Inference
-
-Configure named profiles through `AI_PROVIDER_PROFILES` or the bot-owner Providers page. `AI_CHAT_PROVIDER_PROFILE`, `AI_SUMMARY_PROVIDER_PROFILE` and `AI_EMBEDDING_PROVIDER_PROFILE` set independent environment defaults, runtime/scoped settings use the same names without `AI_`. Keep `provider_profile` as the fallback if no per-operation route is selected. Profile selection supplies its own model default, a lower-precedence model from another provider is not carried across that boundary.  
-Example profile JSON (put the object on one line when using a dotenv variable, never paste actual keys into the JSON):  
-```json
-{
-  "answers": {"provider": "openai_compatible", "openai_base_url": "https://api.openai.com/v1", "api_key_env": "OPENAI_API_KEY", "api_dialect": "openai", "chat_model": "gpt-6.1-terra", "chat_capable": true, "embedding_capable": false},
-  "summaries": {"provider": "openai_compatible", "openai_base_url": "https://api.deepseek.com", "api_key_env": "DEEPSEEK_API_KEY", "api_dialect": "deepseek", "chat_model": "deepseek-chat", "chat_capable": true, "embedding_capable": false},
-  "vectors": {"provider": "local", "chat_capable": false, "embedding_capable": true, "embedding_model": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2", "local_embedding_options": {"device": "cpu", "local_files_only": true, "normalize_embeddings": true, "prompt_mode": "generic"}},
-  "local-server": {"provider": "openai_compatible", "local": true, "auth_mode": "none", "api_dialect": "generic", "openai_base_url": "http://127.0.0.1:11434/v1", "chat_model": "your-installed-model", "chat_capable": true, "embedding_capable": false}
-}
-```
-Disabled capabilities need no placeholder model. Local server software and models must already exist, PZP does not install/start Ollama, vLLM or llama.cpp. A Docker host/container origin must be explicitly added to deployment-owned `LOCAL_SERVER_ORIGINS`, `local=true` alone does not authorize arbitrary HTTP access. Use `auth_mode=api_key` plus an explicit secret reference for authenticated servers, no-auth profiles never inherit `OPENAI_API_KEY`.  
-Embedded chat uses `provider=local`, `chat_capable=true`, a causal `chat_model` and `local_chat_options`. Both local option objects accept revision, device (`auto`, `cpu`, `cuda`, `cuda:N`), dtype, cache directory and `local_files_only` (default true). Chat additionally uses tokenizer revision, input/output token limits, `top_p`, queue/time limits and bounded admission, embedding options include batch size, normalization, truncation dimension and generic versus query/document prompt mode. Model-provided chat templates and safe weights are required, remote repository code execution is never enabled.  
-`LOCAL_MODEL_ROOTS` and `LOCAL_CACHE_ROOTS` are deployment path allowlists, use explicit absolute paths for filesystem models/caches. Defaults stay under the data/model-cache area beside the memory store. `LOCAL_MAX_LOADED_MODELS` defaults to 2 and `LOCAL_DOWNLOAD_MAX_BYTES` to 536870912 (512 MiB). Models load lazily, viewing status/catalog pages neither downloads nor runs them. Explicit preparation resolves immutable Hub revisions or fingerprints a local model directory, reload verifies those artifact bytes.  
-```powershell
-uv run pzp-bot local-model prepare --profile vectors --mode embedding
-```
-The default only prepares cached artifacts offline. To deliberately fetch a model, set that profile's `local_files_only=false` and add `--allow-download`, the provider UI requires fresh owner verification for the equivalent action. Unknown artifact sizes, unsafe files and downloads over the deployment cap fail closed. After preparation, use the explicit provider test action and the embedding migration workflow in [operations.md](operations.md#embedding-index-migrations), readiness alone is not proof of inference.  
-Changing answer/summary routes is independent of stored embeddings. Changing a populated scope's embedding route/model requires an explicit migration, upgraded legacy vectors also require rebuilding from their retained authoritative source text before verified search.  
-
-## First Verification
-
-Run these after configuration changes:
+The same positive test ID must appear in `BOT_ADMINS` to exercise bot-owner features. Use a separate `DB_URL` and `MEMORY_DIR` if you already have real data or persisted runtime/provider settings, changing environment defaults does not clear those settings.
 
 ```powershell
-uv run pzp-bot doctor
-uv run pzp-bot show-config
-uv run pzp-bot memory-status --scope all
+Set-Location web
+pnpm install --frozen-lockfile
+pnpm runtime:check
+pnpm dev
 ```
 
-Then run `/learn_status` and `/ask <question>` in the target Telegram scope to confirm the bot sees the expected chat or topic.
+Open `http://localhost:3000`. The launcher starts FastAPI on loopback port 8000 and Nuxt on port 3000. The development frontend obtains a server-side session for the backend-configured ID. No Telegram bot object, webhook registration or admin DM runs while `WEBHOOK_URL` is empty. Sensitive operations still use action-specific development verification. This mode supports existing data/settings workflows, group enrollment and membership changes require Telegram connectivity.
+
+`pnpm dev:web` starts Nuxt alone, `uv run pzp-bot control-plane-dev` from the repository root starts the backend alone. Nuxt proxies `/api/control`, `/auth`, `/telegram/webhook` and `/health` to `PZP_API_DEV_ORIGIN` (default `http://127.0.0.1:8000`). If you change the API port, set that variable to the matching origin in the frontend shell. Keep `CONTROL_PLANE_DEV_ORIGIN` equal to the exact browser origin, `localhost` and `127.0.0.1` are different origins.
+
+To opt into Telegram-connected development, configure a valid bot token, complete public HTTPS `WEBHOOK_URL` ending in `/telegram/webhook` and non-placeholder `WEBHOOK_SECRET`. The backend registers a real webhook, clears the default command menu and enables owner-alert delivery. This changes the bot's update delivery, stop any competing writer first. An incomplete connected configuration fails before Telegram calls.
+
+## Deploy the control plane
+
+Follow [Deployment](deployment.md) for a public HTTPS origin, DNS/ports, Caddy, persistent volumes and Telegram OIDC/Mini App configuration. Production requires `CONTROL_PLANE_ENABLED=true`, a token, OIDC client credentials and a valid vault master-key ring. Development identity settings do not relax production authentication.
+
+Sign in as a bootstrap owner, open Chats and enroll a group before expecting its messages to enter memory. Enrollment also requires that you administer the selected group and that the bot is a member. Then enable learning for the desired chat/topic. Adding the bot to Telegram and enabling learning alone do not enroll it when managed-chat enforcement is active.
+
+## Troubleshooting
+
+| Symptom | Check |
+| --- | --- |
+| No `/help` reply | Token, process logs, network access, group membership and whether another poller/webhook owns updates |
+| Commands work but ordinary messages are missing | BotFather privacy, bot admin membership, correct topic, `/learn_status`, user allow/deny rules and active enrollment when the control plane is enabled |
+| Stored messages are skipped | `/memory_debug`, it reports policy reasons without message bodies |
+| Search says the index is not ready | Provider/model identity and the explicit embedding migration workflow, do not label old vectors with a new model |
+| Ask reports insufficient context | Query the same topic where the fact was learned, confirm eligible messages/notes exist and inspect search before tuning `ANSWER_MIN_SCORE` |
+| Provider authorization/quota error | Correct endpoint, supported models, process-exported custom key references and provider account quota, `doctor` does not make a paid test call |
+| UI has no owner pages | Development ID matches `BOT_ADMINS`, or the production Telegram identity has a current owner grant |
+| UI API requests fail | Backend is running, exact browser origin and proxy port match, production webhook/OIDC configuration is complete |
+| `.env` edits appear ineffective | Restart after environment edits, remove overriding process variables, inspect persisted runtime and scoped overlays through settings |

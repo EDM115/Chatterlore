@@ -1,11 +1,11 @@
 # Branding
 
-PZP AI includes generated logo assets for project identity, Telegram bot profile pictures, README presentation and promotional material.
+Use the supplied PNG assets for the project logo and Telegram bot profile picture.
 
 ## Primary Logo
 
-Use [docs/assets/brand/pzp-ai-logo.png](assets/brand/pzp-ai-logo.png) as the default project logo. It is a square transparent PNG suitable for README headers, social cards and general project branding.  
-Use [docs/assets/brand/pzp-ai-logo-512.png](assets/brand/pzp-ai-logo-512.png) when a smaller square avatar is preferred, especially for Telegram bot profile pictures or compact UI surfaces.
+Use [pzp-ai-logo.png](assets/brand/pzp-ai-logo.png) as the default square transparent logo.  
+Use [pzp-ai-logo-512.png](assets/brand/pzp-ai-logo-512.png) for a smaller avatar, including Telegram bot profile pictures.
 
 ## Alternate Concepts
 
