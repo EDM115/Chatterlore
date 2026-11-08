@@ -7,7 +7,7 @@ Use the offline suite for application regressions, production SSR/browser checks
 Run from the repository root:
 
 ```powershell
-uv sync --frozen --extra dev
+uv sync --frozen --extra dev,local
 uv run ruff format --check .
 uv run ruff check .
 uv run ty check
@@ -19,7 +19,6 @@ The `context` fixture builds a normal application with a temporary SQLite databa
 `AI_PROVIDER=fake` avoids remote AI calls in manual command checks, Telegram connectivity still depends on the runtime you start. Default tests mock network/provider boundaries, local-package tests use constructed artifacts without downloads. To exercise actual optional embedded dependencies:
 
 ```powershell
-uv sync --frozen --extra dev --extra local
 uv run pytest tests/test_local_inference.py
 ```
 

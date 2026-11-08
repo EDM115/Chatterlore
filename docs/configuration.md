@@ -108,7 +108,7 @@ With the control plane enabled, a remote managed profile can use an ordered pool
 
 Existing Ollama, vLLM or llama.cpp-compatible servers must be installed and started separately. Their HTTP adapters use the normal dependencies. A server reached from Docker needs the correct container/host address and an explicit allowed origin, `127.0.0.1` inside the bot container refers to that container.
 
-Embedded inference runs Transformers chat models and Sentence Transformers embeddings in the backend process. Install it with `uv sync --frozen --extra dev --extra local`, then define a `provider=local` profile with only the capabilities you need. For example:
+Embedded inference runs Transformers chat models and Sentence Transformers embeddings in the backend process. Install it with `uv sync --frozen --extra dev,local`, then define a `provider=local` profile with only the capabilities you need. For example:
 
 ```dotenv
 AI_PROVIDER_PROFILES='{"vectors":{"provider":"local","chat_capable":false,"embedding_capable":true,"embedding_model":"sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2","local_embedding_options":{"device":"cpu","local_files_only":false,"normalize_embeddings":true,"prompt_mode":"generic"}}}'

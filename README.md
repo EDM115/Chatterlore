@@ -24,7 +24,7 @@ You need Git, [uv](https://docs.astral.sh/uv/getting-started/installation/) and 
 git clone https://github.com/EDM115/Chatterlore.git
 Set-Location Chatterlore
 uv python install 3.12
-uv sync --frozen --python 3.12 --extra dev
+uv sync --frozen --python 3.12 --extra dev,local
 Copy-Item .env.example .env
 uv run chatterlore migrate
 uv run chatterlore doctor

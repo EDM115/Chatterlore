@@ -14,7 +14,7 @@ Use this checklist to qualify a specific source snapshot, its images and its tar
 Run from the repository root:
 
 ```powershell
-uv sync --frozen --extra dev --extra local
+uv sync --frozen --extra dev,local
 uv run ruff format --check .
 uv run ruff check .
 uv run ty check

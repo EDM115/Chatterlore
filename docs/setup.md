@@ -10,7 +10,7 @@ Install Git and [uv](https://docs.astral.sh/uv/getting-started/installation/). U
 git clone https://github.com/EDM115/Chatterlore.git
 Set-Location Chatterlore
 uv python install 3.12
-uv sync --frozen --python 3.12 --extra dev
+uv sync --frozen --python 3.12 --extra dev,local
 Copy-Item .env.example .env
 uv run chatterlore migrate
 uv run chatterlore doctor
@@ -66,7 +66,7 @@ REASONING_LEVEL=medium
 
 The chat model placeholder must be replaced. For another provider, use its base URL and supported model IDs, and ensure it provides embeddings or select a separate embedding profile. Model allowlists are optional deployment restrictions, empty `ALLOWED_CHAT_MODELS` and `ALLOWED_EMBEDDING_MODELS` impose no name restriction. A provider account still needs access and sufficient quota.
 
-Use [Configuration](configuration.md#provider-profiles) to route answers, summaries and embeddings to different profiles. That guide also covers existing local HTTP servers and optional embedded models. HTTP servers do not require the local Python extra. Embedded inference requires `uv sync --frozen --extra dev --extra local` plus explicit model preparation, it does not download models during status checks.
+Use [Configuration](configuration.md#provider-profiles) to route answers, summaries and embeddings to different profiles. That guide also covers existing local HTTP servers and optional embedded models. HTTP servers do not require the local Python extra. Embedded inference requires `uv sync --frozen --extra dev,local` plus explicit model preparation, it does not download models during status checks.
 
 After editing `.env`, run:
 
