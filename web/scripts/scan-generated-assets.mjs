@@ -32,6 +32,11 @@ const DEVELOPMENT_ONLY_MARKERS = [
   "/api/control/v1/auth/dev",
   "/api/control/v1/auth/dev/step-up",
 ];
+const PUBLIC_GITHUB_URL_KEYS = new Set([
+  "GITHUB_SERVER_URL",
+  "GITHUB_API_URL",
+  "GITHUB_GRAPHQL_URL",
+]);
 
 const SECRET_KEY_PATTERN = /(?:API[_-]?KEY|MASTER[_-]?KEY|PASSWORD|SECRET|TOKEN|WEBHOOK)/i;
 const STATIC_SECRET_PATTERNS = [
@@ -77,6 +82,7 @@ function parseEnvFileValues(content) {
 }
 
 function isSensitiveOrServerOnlyKey(key) {
+  if (PUBLIC_GITHUB_URL_KEYS.has(key)) return false;
   return (
     SECRET_KEY_PATTERN.test(key) ||
     key.endsWith("_URL") ||

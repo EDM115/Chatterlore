@@ -18,6 +18,42 @@ describe("scanGeneratedAssets", () => {
     });
   });
 
+  it("accepts public GitHub Actions service URLs in generated assets and bundled dependencies", async () => {
+    const root = await mkdtemp(join(tmpdir(), "chatterlore-ci-assets-"));
+    const environment = {
+      GITHUB_SERVER_URL: "https://github.com",
+      GITHUB_API_URL: "https://api.github.com",
+      GITHUB_GRAPHQL_URL: "https://api.github.com/graphql",
+    };
+    await mkdir(join(root, "server", "node_modules", "dependency"), { recursive: true });
+    await writeFile(join(root, "app.js"), JSON.stringify(Object.values(environment)));
+    await writeFile(
+      join(root, "server", "node_modules", "dependency", "package.json"),
+      JSON.stringify({ repository: "https://github.com/example/dependency" }),
+    );
+
+    await expect(scanGeneratedAssets(root, { environment, envFiles: [] })).resolves.toEqual({
+      filesScanned: 2,
+    });
+  });
+
+  it.each([
+    ["INTERNAL_SERVICE_URL", "https://github.com"],
+    ["INTERNAL_SERVICE_ORIGIN", "https://api.github.com"],
+    ["GITHUB_TOKEN", "ci-private-token-that-must-never-ship"],
+  ])("still rejects sensitive environment values from %s", async (key, value) => {
+    const root = await mkdtemp(join(tmpdir(), "chatterlore-sensitive-ci-assets-"));
+    await mkdir(join(root, "server"));
+    await writeFile(join(root, "server", "dependency.mjs"), JSON.stringify(value));
+
+    await expect(
+      scanGeneratedAssets(root, {
+        environment: { GITHUB_SERVER_URL: "https://github.com", [key]: value },
+        envFiles: [],
+      }),
+    ).rejects.toThrow("environment or server-only value");
+  });
+
   it("rejects secret values and server-only configuration without echoing the secret", async () => {
     const root = await mkdtemp(join(tmpdir(), "chatterlore-leaking-assets-"));
     const envFile = join(root, "build.env");
