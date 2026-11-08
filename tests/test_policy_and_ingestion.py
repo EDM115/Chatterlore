@@ -6,12 +6,12 @@ import pytest
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from pzp_ai_bot.app_context import AppContext
-from pzp_ai_bot.db.repositories import PolicyRepository
-from pzp_ai_bot.db.session import session_scope
-from pzp_ai_bot.memory.policy import PolicyService
-from pzp_ai_bot.memory.scope import Scope
-from pzp_ai_bot.memory.service import IncomingMessage
+from chatterlore.app_context import AppContext
+from chatterlore.db.repositories import PolicyRepository
+from chatterlore.db.session import session_scope
+from chatterlore.memory.policy import PolicyService
+from chatterlore.memory.scope import Scope
+from chatterlore.memory.service import IncomingMessage
 
 
 def incoming(scope: Scope, text: str, user_id: int = 222, message_id: int = 1) -> IncomingMessage:

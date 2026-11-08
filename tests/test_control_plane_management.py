@@ -8,17 +8,17 @@ from typing import Any
 
 import pytest
 
-from pzp_ai_bot.app_context import build_context
-from pzp_ai_bot.config import Settings
-from pzp_ai_bot.control_plane.auth.identity import TelegramIdentity
-from pzp_ai_bot.control_plane.auth.sessions import SessionAuthenticationError
-from pzp_ai_bot.control_plane.management import (
+from chatterlore.app_context import build_context
+from chatterlore.config import Settings
+from chatterlore.control_plane.auth.identity import TelegramIdentity
+from chatterlore.control_plane.auth.sessions import SessionAuthenticationError
+from chatterlore.control_plane.management import (
     ControlPlaneManagementConflictError,
     ControlPlaneManagementError,
 )
-from pzp_ai_bot.db.session import upgrade_schema
-from pzp_ai_bot.memory.scope import Scope
-from pzp_ai_bot.memory.service import IncomingMessage
+from chatterlore.db.session import upgrade_schema
+from chatterlore.memory.scope import Scope
+from chatterlore.memory.service import IncomingMessage
 
 NOW = datetime(2026, 8, 1, 12, 0, tzinfo=UTC)
 

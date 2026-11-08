@@ -8,9 +8,9 @@ import pytest
 from aiogram import Bot
 from fastapi.testclient import TestClient
 
-from pzp_ai_bot.app_context import AppContext
-from pzp_ai_bot.telegram.dispatcher import build_dispatcher
-from pzp_ai_bot.telegram.webhook import create_webhook_app
+from chatterlore.app_context import AppContext
+from chatterlore.telegram.dispatcher import build_dispatcher
+from chatterlore.telegram.webhook import create_webhook_app
 
 
 class HealthBotDouble:
@@ -65,7 +65,10 @@ def test_health_reports_running_critical_background_tasks(context: AppContext) -
     assert response.status_code == 200
     assert response.json() == {
         "ok": True,
-        "tasks": {"pzp-idle-summarizer": True, "pzp-runtime-settings-refresher": True},
+        "tasks": {
+            "chatterlore-idle-summarizer": True,
+            "chatterlore-runtime-settings-refresher": True,
+        },
         "control_plane": {
             "enabled": False,
             "oidc_configured": False,
@@ -83,7 +86,7 @@ def test_health_returns_503_when_critical_background_task_is_dead(context: AppCo
     )
 
     with TestClient(app) as client:
-        idle_handle = app.state.background_tasks["pzp-idle-summarizer"]
+        idle_handle = app.state.background_tasks["chatterlore-idle-summarizer"]
         cast(Any, client).portal.call(idle_handle.task.cancel)
         cast(Any, client).portal.call(asyncio.sleep, 0)
         response = client.get("/health")
@@ -91,7 +94,10 @@ def test_health_returns_503_when_critical_background_task_is_dead(context: AppCo
     assert response.status_code == 503
     assert response.json() == {
         "ok": False,
-        "tasks": {"pzp-idle-summarizer": False, "pzp-runtime-settings-refresher": True},
+        "tasks": {
+            "chatterlore-idle-summarizer": False,
+            "chatterlore-runtime-settings-refresher": True,
+        },
         "control_plane": {
             "enabled": False,
             "oidc_configured": False,

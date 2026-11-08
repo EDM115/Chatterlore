@@ -4,7 +4,7 @@ import type { ProviderForm, LocalInferenceOptions } from "~/types/providerForms"
 import { requiresEmbeddingMigration } from "~/utils/routeSettings";
 
 definePageMeta({ middleware: "auth" });
-useSeoMeta({ title: "Providers · PZP AI Control Plane" });
+useSeoMeta({ title: "Providers · Chatterlore Control Plane" });
 
 type ProviderProfile = components["schemas"]["ProviderProfileResponse"] &
   Partial<

@@ -1,18 +1,18 @@
 <p align="center">
-  <img src="docs/assets/brand/pzp-ai-logo.png" alt="PZP AI logo" width="160">
+  <img src="docs/assets/brand/chatterlore-logo.png" alt="Chatterlore logo" width="160">
 </p>
 
-<h1 align="center">PZP AI</h1>
+<h1 align="center">Chatterlore</h1>
 
 <p align="center">A self-hosted Telegram bot that remembers group conversations and answers questions from them.</p>
 
 <p align="center">
-  <a href="https://github.com/SpamVerse/PZP-AI/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/SpamVerse/PZP-AI/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/EDM115/Chatterlore/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/EDM115/Chatterlore/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="Python 3.12+" src="https://img.shields.io/badge/python-3.12%2B-blue.svg">
   <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-green.svg">
 </p>
 
-PZP AI collects messages where admins enable learning, summarizes them into durable memory and retrieves that memory for `/ask` and `/memory_search`. It keeps chats and forum topics separate, supports manual notes and reviewed imports, and includes a web interface for administration.
+Chatterlore collects messages where admins enable learning, summarizes them into durable memory and retrieves that memory for `/ask` and `/memory_search`. It keeps chats and forum topics separate, supports manual notes and reviewed imports, and includes a web interface for administration.
 
 SQLite holds messages, memory and operational state. Markdown files provide readable, rebuildable copies of durable memory. You can use OpenAI-compatible APIs, an existing local model server or embedded local models, with separate providers for answers, summaries and embeddings.
 
@@ -21,13 +21,13 @@ SQLite holds messages, memory and operational state. Markdown files provide read
 You need Git, [uv](https://docs.astral.sh/uv/getting-started/installation/) and Python 3.12 or newer. uv can install Python for you. The commands below use PowerShell 7, run them from the repository root.
 
 ```powershell
-git clone https://github.com/SpamVerse/PZP-AI.git
-Set-Location PZP-AI
+git clone https://github.com/EDM115/Chatterlore.git
+Set-Location Chatterlore
 uv python install 3.12
 uv sync --frozen --python 3.12 --extra dev
 Copy-Item .env.example .env
-uv run pzp-bot migrate
-uv run pzp-bot doctor
+uv run chatterlore migrate
+uv run chatterlore doctor
 ```
 
 The default `AI_PROVIDER=fake` lets you check the installation without an AI account or model download. It produces deterministic test output. Follow [Setup](docs/setup.md) to configure a real AI provider, create your Telegram bot, enable learning and verify an answer from a known message.
@@ -35,7 +35,7 @@ The default `AI_PROVIDER=fake` lets you check the installation without an AI acc
 After setting `TELEGRAM_BOT_TOKEN` and your numeric `BOT_ADMINS` in `.env`, start the bot:
 
 ```powershell
-uv run pzp-bot polling
+uv run chatterlore polling
 ```
 
 Add the bot to a group, allow it to receive ordinary messages through BotFather privacy settings or group-admin membership, then send `/allow_chat` in that group (or `/allow_topic` inside one forum topic). Send a useful fact as an ordinary message, then try `/memory_search <question>` and `/ask <question>`.
@@ -74,4 +74,4 @@ For a public instance, follow [Deployment](docs/deployment.md). The Compose stac
 
 ## License and attribution
 
-PZP AI uses the [MIT License](LICENSE). Project by [@EDM115](https://github.com/EDM115) on behalf of PZP, with help from Codex. The logo assets were generated with OpenAI image generation.
+Chatterlore uses the [MIT License](LICENSE). Project by [@EDM115](https://github.com/EDM115), with help from Codex. The logo assets were generated with OpenAI image generation.

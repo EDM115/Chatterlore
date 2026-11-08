@@ -1,6 +1,6 @@
 <script setup lang="ts">
 useSeoMeta({
-  title: "Sign in · PZP AI Control Plane",
+  title: "Sign in · Chatterlore Control Plane",
 });
 
 const route = useRoute();

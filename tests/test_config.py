@@ -1,4 +1,4 @@
-from pzp_ai_bot.config import Settings
+from chatterlore.config import Settings
 
 
 def test_blank_optional_dotenv_values_use_defaults(tmp_path) -> None:

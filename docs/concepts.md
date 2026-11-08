@@ -1,6 +1,6 @@
 # Concepts
 
-PZP AI retrieves stored conversation context before asking a model to answer. It does not train or fine-tune the model on your group. An embedding is a numerical representation used to find related stored text, a summary is generated text stored as durable knowledge.
+Chatterlore retrieves stored conversation context before asking a model to answer. It does not train or fine-tune the model on your group. An embedding is a numerical representation used to find related stored text, a summary is generated text stored as durable knowledge.
 
 ## Scopes
 
@@ -62,10 +62,10 @@ An unset scoped field inherits its parent. Use `inherit` in supported command op
 | Bootstrap bot owner (`BOT_ADMINS`) | Global administration and recovery, cannot be removed in the UI |
 | Managed bot owner | Global administration, granted/revoked by a bot owner, revocation also revokes that user's control-plane sessions |
 | Telegram chat admin | Commands in their own chat, and control-plane access to that active managed chat after current Telegram authority checks |
-| Delegated chat admin | PZP UI and command-admin access granted by a bot owner for one active chat, cannot manage grants or global settings |
+| Delegated chat admin | CHATTERLORE UI and command-admin access granted by a bot owner for one active chat, cannot manage grants or global settings |
 | Ordinary participant | Regular ask/search/help use in the chat, cannot change admin settings |
 
-Delegation grants PZP's scoped admin checks for an active managed chat, it does not change the person's Telegram platform membership or moderation rights. Browser login uses Telegram OIDC, Mini App login uses signed Telegram launch data. Sensitive control-plane actions require fresh verification for the exact action. Browser sign-out ends its browser session, other sessions and owner grants have separate lifecycles.
+Delegation grants CHATTERLORE's scoped admin checks for an active managed chat, it does not change the person's Telegram platform membership or moderation rights. Browser login uses Telegram OIDC, Mini App login uses signed Telegram launch data. Sensitive control-plane actions require fresh verification for the exact action. Browser sign-out ends its browser session, other sessions and owner grants have separate lifecycles.
 
 When you enable the control plane, group membership alone is insufficient for ingestion. A bot owner must enroll the group in Chats and enable learning for the intended scope. Enrollment checks that the requester administers the group and the bot is a member. The requester must start the bot DM to receive a browser enrollment selection.
 

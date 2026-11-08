@@ -5,9 +5,9 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from pzp_ai_bot.config import Settings, get_settings
-from pzp_ai_bot.db.models import Base
-from pzp_ai_bot.db.session import ensure_parent_for_sqlite
+from chatterlore.config import Settings, get_settings
+from chatterlore.db.models import Base
+from chatterlore.db.session import ensure_parent_for_sqlite
 
 config = context.config
 if config.config_file_name is not None:

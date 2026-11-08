@@ -9,14 +9,14 @@ import pytest
 from sqlalchemy import event, insert, select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from pzp_ai_bot.app_context import AppContext
-from pzp_ai_bot.db.models import Embedding, KnowledgeItem, LearningPolicy, Message
-from pzp_ai_bot.db.repositories import EmbeddingRepository, KnowledgeRepository, MessageRepository
-from pzp_ai_bot.db.session import session_scope
-from pzp_ai_bot.memory.retrieval import Retriever, SearchResult
-from pzp_ai_bot.memory.scope import Scope
-from pzp_ai_bot.memory.service import IncomingMessage
-from pzp_ai_bot.memory.vector import (
+from chatterlore.app_context import AppContext
+from chatterlore.db.models import Embedding, KnowledgeItem, LearningPolicy, Message
+from chatterlore.db.repositories import EmbeddingRepository, KnowledgeRepository, MessageRepository
+from chatterlore.db.session import session_scope
+from chatterlore.memory.retrieval import Retriever, SearchResult
+from chatterlore.memory.scope import Scope
+from chatterlore.memory.service import IncomingMessage
+from chatterlore.memory.vector import (
     cosine_similarity,
     encode_vector,
     normalize,

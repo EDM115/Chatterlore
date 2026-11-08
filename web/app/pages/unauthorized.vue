@@ -1,6 +1,6 @@
 <script setup lang="ts">
 useSeoMeta({
-  title: "Access denied · PZP AI Control Plane",
+  title: "Access denied · Chatterlore Control Plane",
 });
 </script>
 

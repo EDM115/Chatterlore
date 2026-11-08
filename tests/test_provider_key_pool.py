@@ -22,27 +22,27 @@ from openai import (
     UnprocessableEntityError,
 )
 
-from pzp_ai_bot.ai.credential_pool import (
+from chatterlore.ai.credential_pool import (
     CredentialPoolService,
     ProviderCallError,
     ProviderPoolExhaustedError,
 )
-from pzp_ai_bot.ai.factory import ProviderRegistry
-from pzp_ai_bot.ai.failure_classification import (
+from chatterlore.ai.factory import ProviderRegistry
+from chatterlore.ai.failure_classification import (
     MAX_RETRY_AFTER_SECONDS,
     ProviderFailureClassification,
     classify_provider_failure,
 )
-from pzp_ai_bot.ai.protocols import ChatMessage
-from pzp_ai_bot.config import Settings
-from pzp_ai_bot.control_plane.secrets.service import ProviderSecretService
-from pzp_ai_bot.db.repos.alerts import AdminAlertRepository
-from pzp_ai_bot.db.repos.provider_credentials import (
+from chatterlore.ai.protocols import ChatMessage
+from chatterlore.config import Settings
+from chatterlore.control_plane.secrets.service import ProviderSecretService
+from chatterlore.db.repos.alerts import AdminAlertRepository
+from chatterlore.db.repos.provider_credentials import (
     ProviderCredentialRepository,
     ProviderProfileRepository,
 )
-from pzp_ai_bot.db.session import create_schema, create_session_factory, session_scope
-from pzp_ai_bot.memory.provider_operations import ProviderOperations
+from chatterlore.db.session import create_schema, create_session_factory, session_scope
+from chatterlore.memory.provider_operations import ProviderOperations
 from test_chat_streaming import ControlledStream, StreamEndpoint, chunk
 
 NOW = datetime(2026, 8, 1, 12, 0, tzinfo=UTC)

@@ -4,18 +4,18 @@ Use the supplied PNG assets for the project logo and Telegram bot profile pictur
 
 ## Primary Logo
 
-Use [pzp-ai-logo.png](assets/brand/pzp-ai-logo.png) as the default square transparent logo.  
-Use [pzp-ai-logo-512.png](assets/brand/pzp-ai-logo-512.png) for a smaller avatar, including Telegram bot profile pictures.
+Use [chatterlore-logo.png](assets/brand/chatterlore-logo.png) as the default square transparent logo.  
+Use [chatterlore-logo-512.png](assets/brand/chatterlore-logo-512.png) for a smaller avatar, including Telegram bot profile pictures.
 
 ## Alternate Concepts
 
 | Asset                                                                 | Intended use                                           |
 | --------------------------------------------------------------------- | ------------------------------------------------------ |
-| [pzp-logo-constellation.png](assets/brand/pzp-logo-constellation.png) | Primary concept: chat bubble plus memory constellation |
-| [pzp-logo-bot.png](assets/brand/pzp-logo-bot.png)                     | Friendlier bot-avatar concept                          |
-| [pzp-logo-vault.png](assets/brand/pzp-logo-vault.png)                 | Privacy/security-forward concept                       |
-| [pzp-logo-telegram.png](assets/brand/pzp-logo-telegram.png)           | Paper plane style concept                              |
-| [pzp-logo-retrieval.png](assets/brand/pzp-logo-retrieval.png)         | Retrieval-based memory concept                         |
+| [chatterlore-logo-constellation.png](assets/brand/chatterlore-logo-constellation.png) | Primary concept: chat bubble plus memory constellation |
+| [chatterlore-logo-bot.png](assets/brand/chatterlore-logo-bot.png)                     | Friendlier bot-avatar concept                          |
+| [chatterlore-logo-vault.png](assets/brand/chatterlore-logo-vault.png)                 | Privacy/security-forward concept                       |
+| [chatterlore-logo-telegram.png](assets/brand/chatterlore-logo-telegram.png)           | Paper plane style concept                              |
+| [chatterlore-logo-retrieval.png](assets/brand/chatterlore-logo-retrieval.png)         | Retrieval-based memory concept                         |
 
 The `*-source.png` files are the original generated images on chroma-key backgrounds. The transparent PNGs are the reusable assets.
 

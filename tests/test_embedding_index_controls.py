@@ -14,12 +14,12 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from typer.testing import CliRunner
 
-from pzp_ai_bot.control_plane.secrets.service import ProviderSecretService
-from pzp_ai_bot.db.models import AIUsage
-from pzp_ai_bot.db.repos.control_plane import ControlPlaneAccessRepository
-from pzp_ai_bot.db.session import session_scope
-from pzp_ai_bot.main import app
-from pzp_ai_bot.memory.scope import Scope
+from chatterlore.control_plane.secrets.service import ProviderSecretService
+from chatterlore.db.models import AIUsage
+from chatterlore.db.repos.control_plane import ControlPlaneAccessRepository
+from chatterlore.db.session import session_scope
+from chatterlore.main import app
+from chatterlore.memory.scope import Scope
 from test_control_plane_api import ORIGIN, build_test_app, signed_init_data
 from test_telegram_integration import RecordingTelegramSession, feed, message_update
 
@@ -262,7 +262,7 @@ def test_index_activation_requires_exact_phrase_and_action_bound_fresh_verificat
     assert response.json()["error"]["code"] == "step_up_required"
     asyncio.run(
         context.control_plane.sessions.mark_step_up(
-            client.cookies["pzp_control_session"],
+            client.cookies["chatterlore_control_session"],
             now=datetime.now(UTC),
             action="embedding:activate",
         )
@@ -341,7 +341,7 @@ def test_local_prepare_never_downloads_by_default_and_download_requires_separate
 
 
 def test_cli_index_status_and_activation_share_service_contract(controls, monkeypatch) -> None:
-    import pzp_ai_bot.embedding_cli as cli
+    import chatterlore.embedding_cli as cli
 
     context, indexes, _ = controls
 
@@ -361,7 +361,7 @@ def test_cli_index_status_and_activation_share_service_contract(controls, monkey
 
 
 def test_cli_errors_do_not_echo_unrecognized_prefixed_exception_text(controls, monkeypatch):
-    import pzp_ai_bot.embedding_cli as cli
+    import chatterlore.embedding_cli as cli
 
     context, indexes, _ = controls
 
@@ -382,8 +382,8 @@ def test_cli_errors_do_not_echo_unrecognized_prefixed_exception_text(controls, m
 
 @pytest.mark.asyncio
 async def test_telegram_index_command_denies_chat_admin_and_bounds_owner_work(context) -> None:
-    from pzp_ai_bot.telegram.routers.embedding_indexes import register_embedding_index_handlers
-    from pzp_ai_bot.telegram.routers.shared import RouterGuards
+    from chatterlore.telegram.routers.embedding_indexes import register_embedding_index_handlers
+    from chatterlore.telegram.routers.shared import RouterGuards
 
     indexes = IndexServiceDouble()
     context.memory.embedding_indexes = indexes
@@ -394,7 +394,7 @@ async def test_telegram_index_command_denies_chat_admin_and_bounds_owner_work(co
     async def require_owner(message):
         if message.from_user.id == 111:
             return True
-        from pzp_ai_bot.telegram.safe_api import safe_answer
+        from chatterlore.telegram.safe_api import safe_answer
 
         await safe_answer(message, "Only bot admins can use embedding indexes")
         return False
@@ -424,7 +424,7 @@ async def test_telegram_index_command_denies_chat_admin_and_bounds_owner_work(co
 async def test_local_download_fails_closed_before_fetch_for_unknown_or_excessive_size(
     context, monkeypatch, file_size
 ) -> None:
-    from pzp_ai_bot.memory import local_preparation
+    from chatterlore.memory import local_preparation
 
     downloads: list[dict[str, Any]] = []
     hub = SimpleNamespace(
@@ -449,7 +449,7 @@ async def test_local_download_fails_closed_before_fetch_for_unknown_or_excessive
 async def test_local_download_is_pinned_allowlisted_then_loaded_offline(
     context, monkeypatch, tmp_path
 ) -> None:
-    from pzp_ai_bot.memory import local_preparation
+    from chatterlore.memory import local_preparation
 
     downloads: list[dict[str, Any]] = []
     prepared: list[dict[str, Any]] = []
@@ -563,7 +563,7 @@ def test_real_index_service_lifecycle_through_api(tmp_path):
         assert status.json()["spaces"][0]["dimension"] > 0
         asyncio.run(
             context.control_plane.sessions.mark_step_up(
-                client.cookies["pzp_control_session"],
+                client.cookies["chatterlore_control_session"],
                 now=datetime.now(UTC),
                 action="embedding:activate",
             )
@@ -583,7 +583,7 @@ def test_real_index_service_lifecycle_through_api(tmp_path):
 async def test_cached_local_preparation_resolves_and_pins_without_metadata_network(
     context, monkeypatch
 ):
-    from pzp_ai_bot.memory import local_preparation
+    from chatterlore.memory import local_preparation
 
     service = await install_local_profile(context)
     calls: list[dict[str, Any]] = []
@@ -616,7 +616,7 @@ async def test_cached_local_preparation_resolves_and_pins_without_metadata_netwo
 def test_cli_local_prepare_pins_keyless_environment_profile_and_audits_local_operator(
     test_settings, monkeypatch
 ):
-    import pzp_ai_bot.embedding_cli as cli
+    import chatterlore.embedding_cli as cli
 
     model = test_settings.memory_dir.parent / "models" / "fixture"
     model.mkdir(parents=True)
@@ -670,8 +670,8 @@ def test_cli_local_prepare_pins_keyless_environment_profile_and_audits_local_ope
     ]
 
     async def inspect():
-        from pzp_ai_bot.db.models import AIProviderProfile, BotEvent
-        from pzp_ai_bot.db.session import create_session_factory
+        from chatterlore.db.models import AIProviderProfile, BotEvent
+        from chatterlore.db.session import create_session_factory
 
         sessions = create_session_factory(test_settings)
         async with session_scope(sessions) as session:
@@ -696,8 +696,8 @@ def test_cli_local_prepare_pins_keyless_environment_profile_and_audits_local_ope
 async def test_changed_local_directory_digest_fails_before_dependency_or_weight_loading(
     tmp_path, monkeypatch, mode
 ):
-    from pzp_ai_bot.ai import local, local_chat, local_runtime
-    from pzp_ai_bot.local_models import LocalModelOptions
+    from chatterlore.ai import local, local_chat, local_runtime
+    from chatterlore.local_models import LocalModelOptions
 
     (tmp_path / "config.json").write_bytes(b"{}")
     (tmp_path / "model.safetensors").write_bytes(b"initial weights")
@@ -749,7 +749,7 @@ def test_index_activation_rejects_wrong_action_and_expired_verification(controls
     headers = login(client)
     asyncio.run(
         context.control_plane.sessions.mark_step_up(
-            client.cookies["pzp_control_session"],
+            client.cookies["chatterlore_control_session"],
             now=datetime.now(UTC) - timedelta(seconds=offset),
             action=action,
         )

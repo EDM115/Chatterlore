@@ -15,17 +15,17 @@ from fastapi.testclient import TestClient
 from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from pzp_ai_bot.app_context import AppContext, build_context
-from pzp_ai_bot.control_plane.app import _memory_export_stream, create_control_plane_app
-from pzp_ai_bot.control_plane.insights import bounded_directory_size
-from pzp_ai_bot.db.models import AIUsage
-from pzp_ai_bot.db.repos.control_plane import ControlPlaneAccessRepository
-from pzp_ai_bot.db.repos.events import EventRepository
-from pzp_ai_bot.db.repos.knowledge import KnowledgeRepository
-from pzp_ai_bot.db.repos.profiles import MemoryReviewRepository
-from pzp_ai_bot.db.session import create_schema, session_scope, upgrade_schema
-from pzp_ai_bot.memory.contracts import AIRequestOptions, IncomingMessage
-from pzp_ai_bot.memory.scope import Scope
+from chatterlore.app_context import AppContext, build_context
+from chatterlore.control_plane.app import _memory_export_stream, create_control_plane_app
+from chatterlore.control_plane.insights import bounded_directory_size
+from chatterlore.db.models import AIUsage
+from chatterlore.db.repos.control_plane import ControlPlaneAccessRepository
+from chatterlore.db.repos.events import EventRepository
+from chatterlore.db.repos.knowledge import KnowledgeRepository
+from chatterlore.db.repos.profiles import MemoryReviewRepository
+from chatterlore.db.session import create_schema, session_scope, upgrade_schema
+from chatterlore.memory.contracts import AIRequestOptions, IncomingMessage
+from chatterlore.memory.scope import Scope
 from test_control_plane_api import ORIGIN, FakeOIDCClient, settings_for, signed_init_data
 
 NOW = datetime(2026, 8, 2, 9, 0, tzinfo=UTC)
@@ -798,7 +798,7 @@ def test_bounded_directory_size_stops_scandir_lazily_at_the_entry_cap(
             return FakeEntry()
 
     scan = FakeScandir()
-    monkeypatch.setattr("pzp_ai_bot.control_plane.insights.os.scandir", lambda _path: scan)
+    monkeypatch.setattr("chatterlore.control_plane.insights.os.scandir", lambda _path: scan)
 
     assert bounded_directory_size(tmp_path, max_entries=2) == (2, 2, True)
     assert scan.next_calls == 3

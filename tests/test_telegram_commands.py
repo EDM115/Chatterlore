@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from pzp_ai_bot.telegram.commands import COMMAND_DESCRIPTIONS, clear_bot_commands, command_help_text
+from chatterlore.telegram.commands import (
+    COMMAND_DESCRIPTIONS,
+    clear_bot_commands,
+    command_help_text,
+)
 
 
 class FakeBot:

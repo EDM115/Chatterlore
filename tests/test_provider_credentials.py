@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from pzp_ai_bot.config import Settings
-from pzp_ai_bot.db.session import (
+from chatterlore.config import Settings
+from chatterlore.db.session import (
     create_schema,
     create_session_factory,
     session_scope,
@@ -37,7 +37,7 @@ def provider_settings(tmp_path: Path) -> Settings:
 
 def repository_api():
     try:
-        module = importlib.import_module("pzp_ai_bot.db.repos.provider_credentials")
+        module = importlib.import_module("chatterlore.db.repos.provider_credentials")
     except ModuleNotFoundError:
         pytest.fail("provider credential repositories are not implemented")
     return module.ProviderCredentialRepository, module.ProviderProfileRepository

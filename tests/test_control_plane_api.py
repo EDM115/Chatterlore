@@ -15,17 +15,17 @@ from aiogram import Bot, Dispatcher
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
-from pzp_ai_bot.app_context import AppContext, build_context
-from pzp_ai_bot.config import Settings
-from pzp_ai_bot.control_plane.app import create_control_plane_app
-from pzp_ai_bot.control_plane.auth.identity import TelegramIdentity
-from pzp_ai_bot.db.models import BotEvent, ControlPlaneSession, ControlPlaneUser
-from pzp_ai_bot.db.repos.alerts import AdminAlertRepository
-from pzp_ai_bot.db.repos.control_plane import ControlPlaneAccessRepository
-from pzp_ai_bot.db.session import create_schema, session_scope
-from pzp_ai_bot.memory.contracts import IncomingMessage
-from pzp_ai_bot.memory.scope import Scope
-from pzp_ai_bot.telegram.webhook import create_webhook_app
+from chatterlore.app_context import AppContext, build_context
+from chatterlore.config import Settings
+from chatterlore.control_plane.app import create_control_plane_app
+from chatterlore.control_plane.auth.identity import TelegramIdentity
+from chatterlore.db.models import BotEvent, ControlPlaneSession, ControlPlaneUser
+from chatterlore.db.repos.alerts import AdminAlertRepository
+from chatterlore.db.repos.control_plane import ControlPlaneAccessRepository
+from chatterlore.db.session import create_schema, session_scope
+from chatterlore.memory.contracts import IncomingMessage
+from chatterlore.memory.scope import Scope
+from chatterlore.telegram.webhook import create_webhook_app
 
 NOW = datetime.now(UTC).replace(microsecond=0)
 ORIGIN = "https://control.example.test"
@@ -163,7 +163,7 @@ def test_mini_app_session_csrf_logout_headers_and_audit_are_fail_closed(tmp_path
         assert login.json()["user"]["telegram_user_id"] == 887_758_628
         csrf = login.json()["csrf_token"]
         cookie = login.headers["set-cookie"]
-        assert "pzp_control_session=" in cookie
+        assert "chatterlore_control_session=" in cookie
         assert "HttpOnly" in cookie
         assert "Secure" in cookie
         assert "SameSite=lax" in cookie
@@ -223,7 +223,7 @@ def test_session_refresh_keeps_other_tab_csrf_valid(tmp_path: Path, client_kind:
         )
     )
     with TestClient(app, base_url=ORIGIN) as client:
-        client.cookies.set("pzp_control_session", issued.session_token)
+        client.cookies.set("chatterlore_control_session", issued.session_token)
         first_tab = client.get("/api/control/v1/session")
         second_tab = client.get("/api/control/v1/session")
         assert first_tab.status_code == second_tab.status_code == 200
@@ -759,14 +759,14 @@ def test_admin_alert_delivery_is_started_but_is_not_a_critical_health_dependency
     )
 
     with TestClient(app) as client:
-        alert_handle = app.state.background_tasks["pzp-admin-alert-delivery"]
+        alert_handle = app.state.background_tasks["chatterlore-admin-alert-delivery"]
         assert alert_handle.healthy is True
         cast(Any, client).portal.call(alert_handle.task.cancel)
         cast(Any, client).portal.call(asyncio.sleep, 0)
         response = client.get("/health")
 
     assert response.status_code == 200
-    assert "pzp-admin-alert-delivery" not in response.json()["tasks"]
+    assert "chatterlore-admin-alert-delivery" not in response.json()["tasks"]
     assert response.json()["control_plane"]["alert_worker"] == {
         "configured": True,
         "running": False,

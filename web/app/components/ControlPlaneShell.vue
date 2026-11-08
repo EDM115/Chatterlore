@@ -78,11 +78,11 @@ async function logout() {
   <a class="skip-link" href="#control-plane-content">Skip to content</a>
   <div class="control-plane-shell">
     <aside class="shell-sidebar">
-      <NuxtLink class="brand-lockup" to="/" aria-label="PZP AI control plane home">
-        <span class="brand-mark" aria-hidden="true">PZP</span>
+      <NuxtLink class="brand-lockup" to="/" aria-label="Chatterlore control plane home">
+        <span class="brand-mark" aria-hidden="true">C</span>
         <span>
-          <strong>Control Plane</strong>
-          <small>Private operations</small>
+          <strong>Chatterlore</strong>
+          <small>Control Plane</small>
         </span>
       </NuxtLink>
 
@@ -124,9 +124,9 @@ async function logout() {
 
     <div class="shell-workspace">
       <header class="mobile-header">
-        <NuxtLink class="brand-lockup" to="/" aria-label="PZP AI control plane home">
-          <span class="brand-mark" aria-hidden="true">PZP</span>
-          <strong>Control Plane</strong>
+        <NuxtLink class="brand-lockup" to="/" aria-label="Chatterlore control plane home">
+          <span class="brand-mark" aria-hidden="true">C</span>
+          <strong>Chatterlore</strong>
         </NuxtLink>
         <details ref="mobileMenu" class="mobile-menu">
           <summary>Menu</summary>
@@ -161,7 +161,7 @@ async function logout() {
       </main>
 
       <footer class="shell-footer">
-        <span>PZP AI</span>
+        <span>Chatterlore</span>
         <span>Same-origin control plane</span>
       </footer>
     </div>

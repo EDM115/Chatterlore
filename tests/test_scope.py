@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from pzp_ai_bot.memory.scope import Scope, parse_scope
-from pzp_ai_bot.telegram.utils import message_created_at, scope_from_message
+from chatterlore.memory.scope import Scope, parse_scope
+from chatterlore.telegram.utils import message_created_at, scope_from_message
 
 
 def test_topic_scope_uses_thread_id_only_for_topic_messages() -> None:

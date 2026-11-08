@@ -8,7 +8,7 @@ import { scanGeneratedAssets } from "../scripts/scan-generated-assets.mjs";
 
 describe("scanGeneratedAssets", () => {
   it("accepts generated assets that contain only public control-plane configuration", async () => {
-    const root = await mkdtemp(join(tmpdir(), "pzp-safe-assets-"));
+    const root = await mkdtemp(join(tmpdir(), "chatterlore-safe-assets-"));
     await mkdir(join(root, "_nuxt"));
     await writeFile(join(root, "index.html"), '<meta name="api-base" content="/api/control/v1">');
     await writeFile(join(root, "_nuxt", "app.js"), 'const label = "Sign in with Telegram"');
@@ -19,7 +19,7 @@ describe("scanGeneratedAssets", () => {
   });
 
   it("rejects secret values and server-only configuration without echoing the secret", async () => {
-    const root = await mkdtemp(join(tmpdir(), "pzp-leaking-assets-"));
+    const root = await mkdtemp(join(tmpdir(), "chatterlore-leaking-assets-"));
     const envFile = join(root, "build.env");
     const secret = "phase2-never-print-this-telegram-secret";
     await writeFile(envFile, `TELEGRAM_BOT_TOKEN=${secret}\n`);
@@ -40,7 +40,7 @@ describe("scanGeneratedAssets", () => {
   });
 
   it("rejects any non-trivial value loaded from an env file", async () => {
-    const root = await mkdtemp(join(tmpdir(), "pzp-env-assets-"));
+    const root = await mkdtemp(join(tmpdir(), "chatterlore-env-assets-"));
     const envFile = join(root, "build.env");
     const value = "phase2-internal-build-label";
     await writeFile(envFile, `INTERNAL_BUILD_LABEL=${value}\n`);
@@ -52,7 +52,7 @@ describe("scanGeneratedAssets", () => {
   });
 
   it("rejects development authentication markers from production output", async () => {
-    const root = await mkdtemp(join(tmpdir(), "pzp-development-assets-"));
+    const root = await mkdtemp(join(tmpdir(), "chatterlore-development-assets-"));
     await writeFile(
       join(root, "server.mjs"),
       'const key="CONTROL_PLANE_DEV_USER_ID"; fetch("/api/control/v1/auth/dev/step-up")',

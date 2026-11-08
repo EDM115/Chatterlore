@@ -1,8 +1,8 @@
 # Configuration
 
-Run backend commands from the repository root. PZP AI reads environment variables and the root `.env`, process variables take precedence. Unknown keys are ignored and empty values leave defaults in effect. Restart the backend after changing deployment configuration. Safe runtime settings and scoped overlays persist in SQLite and can override environment defaults, see [Concepts](concepts.md#settings-precedence).
+Run backend commands from the repository root. Chatterlore reads environment variables and the root `.env`, process variables take precedence. Unknown keys are ignored and empty values leave defaults in effect. Restart the backend after changing deployment configuration. Safe runtime settings and scoped overlays persist in SQLite and can override environment defaults, see [Concepts](concepts.md#settings-precedence).
 
-`.env.example` is a starting configuration. The tables below list application defaults, deployment-specific variables are separate. Keep secrets out of Git, images, Telegram commands and frontend environment variables. Use `uv run pzp-bot show-config` for non-secret diagnostics and [Secrets](secrets.md) for key storage and rotation.
+`.env.example` is a starting configuration. The tables below list application defaults, deployment-specific variables are separate. Keep secrets out of Git, images, Telegram commands and frontend environment variables. Use `uv run chatterlore show-config` for non-secret diagnostics and [Secrets](secrets.md) for key storage and rotation.
 
 ## Telegram, storage and logging
 
@@ -20,7 +20,7 @@ Run backend commands from the repository root. PZP AI reads environment variable
 | `LOG_LEVEL` | `INFO` | Structured log verbosity |
 | `ADMIN_CACHE_TTL_SECONDS` | `300` | Process-local Telegram chat-admin cache lifetime, `0` disables reuse |
 
-Use SQLite for the documented deployment and maintenance workflows. For an absolute database path, use `sqlite+aiosqlite:////srv/pzp/bot.db` on Linux or `sqlite+aiosqlite:///C:/pzp/data/bot.db` on Windows. Back up existing state before starting code that can migrate it.
+Use SQLite for the documented deployment and maintenance workflows. For an absolute database path, use `sqlite+aiosqlite:////srv/chatterlore/bot.db` on Linux or `sqlite+aiosqlite:///C:/chatterlore/data/bot.db` on Windows. Back up existing state before starting code that can migrate it.
 
 ## AI defaults and learning
 
@@ -77,7 +77,7 @@ Replace both model placeholders and ensure the local embedding server is running
 
 ```powershell
 $env:ANSWER_API_KEY = Read-Host 'Answer provider key' -MaskInput
-uv run pzp-bot polling
+uv run chatterlore polling
 ```
 
 `api_key_env` and `openai_api_key_env` read the process environment. An arbitrary key defined only in `.env` is ignored by that lookup, this also applies to an explicit `api_key_env: "OPENAI_API_KEY"` reference. Compose's backend `env_file` injects those variables into the container environment. In production, use platform secret injection or managed encrypted credentials.
@@ -100,7 +100,7 @@ uv run pzp-bot polling
 
 The JSON may also be a list of objects with `name`. Names are lowercase, use `a-z`, digits, `_` and `-` within 64 characters for managed profiles. Bootstrap profiles without an explicit credential can inherit the default key only at the same default endpoint, foreign endpoints require an explicit credential source. No-auth local servers never inherit the remote key.
 
-PZP AI uses the OpenAI-compatible Chat Completions and embeddings paths. The OpenAI dialect adapts recognized reasoning models, the DeepSeek dialect maps requested medium reasoning to high, and the generic local-server dialect omits unsupported reasoning fields. Verify model capability with the Providers page's explicit test action, ordinary page loads do not run inference or paid checks.
+Chatterlore uses the OpenAI-compatible Chat Completions and embeddings paths. The OpenAI dialect adapts recognized reasoning models, the DeepSeek dialect maps requested medium reasoning to high, and the generic local-server dialect omits unsupported reasoning fields. Verify model capability with the Providers page's explicit test action, ordinary page loads do not run inference or paid checks.
 
 With the control plane enabled, a remote managed profile can use an ordered pool of up to ten environment/database credential sources. Successful credentials remain sticky, classified credential or temporary failures can rotate/cool down keys within the attempt bound. Invalid requests and unknown failures do not rotate keys. This is failover within one profile, it does not redirect content to another provider. See [Operations](operations.md) and [Secrets](secrets.md).
 
@@ -118,7 +118,7 @@ AI_EMBEDDING_PROVIDER_PROFILE=vectors
 This example keeps the default answer/summary profile, configure those separately for useful generated text. Preparation is explicit:
 
 ```powershell
-uv run pzp-bot local-model prepare --profile vectors --mode embedding --allow-download
+uv run chatterlore local-model prepare --profile vectors --mode embedding --allow-download
 ```
 
 Without `--allow-download`, preparation uses cached files only. Downloads also require `local_files_only=false` in that profile and must fit the deployment byte limit. Pin model/tokenizer revisions for reproducibility, use explicit model tests after preparation. A prepared artifact is not evidence of answer quality or adequate hardware capacity.
@@ -194,16 +194,16 @@ The callback is always `<CONTROL_PLANE_PUBLIC_ORIGIN>/auth/telegram/callback`. B
 | `CONTROL_PLANE_DEV_USER_ID` | Empty | Positive backend-configured test identity, required by `control-plane-dev` |
 | `CONTROL_PLANE_DEV_ORIGIN` | `http://localhost:3000` | Exact loopback browser origin |
 | `CONTROL_PLANE_DEV_API_PORT` | `8000` | Loopback FastAPI development listener |
-| `PZP_API_DEV_ORIGIN` | `http://127.0.0.1:8000` | Nuxt development proxy target, set in the frontend environment |
+| `CHATTERLORE_API_DEV_ORIGIN` | `http://127.0.0.1:8000` | Nuxt development proxy target, set in the frontend environment |
 | `CADDY_SITE_ADDRESS` | `CONTROL_PLANE_PUBLIC_ORIGIN` or `https://localhost` | Compose ingress listener/site address, can differ behind an external TLS terminator |
-| `PZP_HTTP_PORT` | `80` | Compose host HTTP port |
-| `PZP_HTTPS_PORT` | `443` | Compose host HTTPS TCP/UDP port |
+| `CHATTERLORE_HTTP_PORT` | `80` | Compose host HTTP port |
+| `CHATTERLORE_HTTPS_PORT` | `443` | Compose host HTTPS TCP/UDP port |
 | `NITRO_HOST`, `NITRO_PORT` | Compose uses `0.0.0.0`, `3000` | Production Nuxt listener |
 
 Development auth exists only in the dedicated loopback runtime/build. An empty `WEBHOOK_URL` keeps combined development disconnected from Telegram. The development vault reuses a supplied key ring or stores an ignored stable key in `data/control-plane-dev-master-key`, keep that key with local development data. Production needs externally managed master keys.
 
 ## Runtime and scoped settings
 
-Bot owners can edit safe defaults through Bot Settings, `/runtime_settings` or `pzp-bot runtime-settings --set key=value`. Editable keys are `learning_default_enabled`, `retrieval_candidate_limit`, `retrieval_top_k`, `summary_batch_size`, `summary_idle_seconds`, `summary_model`, `system_prompt_template`, `provider_profile`, `chat_provider_profile`, `summary_provider_profile`, `embedding_provider_profile`, `chat_model`, `embedding_model`, `reasoning_level`, `answer_min_score`, `forget_confirm_ttl_seconds`, `raw_message_retention_days`, `knowledge_retention_days` and `review_before_compact`. Tokens, endpoints, vault keys, authentication configuration and model path/origin allowlists are deployment settings rather than runtime settings.
+Bot owners can edit safe defaults through Bot Settings, `/runtime_settings` or `chatterlore runtime-settings --set key=value`. Editable keys are `learning_default_enabled`, `retrieval_candidate_limit`, `retrieval_top_k`, `summary_batch_size`, `summary_idle_seconds`, `summary_model`, `system_prompt_template`, `provider_profile`, `chat_provider_profile`, `summary_provider_profile`, `embedding_provider_profile`, `chat_model`, `embedding_model`, `reasoning_level`, `answer_min_score`, `forget_confirm_ttl_seconds`, `raw_message_retention_days`, `knowledge_retention_days` and `review_before_compact`. Tokens, endpoints, vault keys, authentication configuration and model path/origin allowlists are deployment settings rather than runtime settings.
 
 Chats and Telegram `/memory_settings` or confirmed `/settings` expose the supported scoped subset. Short Telegram aliases include `top_k`, `provider`, `chat_provider`, `summary_provider`, `embedding_provider`, `reasoning`, `system_prompt`, `raw_retention_days` and `knowledge_retention_days`. `inherit` clears supported overrides, retention `off` clears the local retention value so inheritance can still apply. See [Commands](commands.md#settings-and-admin-review) for syntax and [Concepts](concepts.md#settings-precedence) for resolution.

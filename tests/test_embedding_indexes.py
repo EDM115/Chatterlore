@@ -6,15 +6,15 @@ from dataclasses import replace
 import pytest
 from sqlalchemy import delete, select
 
-from pzp_ai_bot.db.models import Embedding, KnowledgeItem
-from pzp_ai_bot.db.repos.embeddings import EmbeddingRepository
-from pzp_ai_bot.db.repos.shared import utc_now
-from pzp_ai_bot.db.session import session_scope
-from pzp_ai_bot.memory.scope import Scope
+from chatterlore.db.models import Embedding, KnowledgeItem
+from chatterlore.db.repos.embeddings import EmbeddingRepository
+from chatterlore.db.repos.shared import utc_now
+from chatterlore.db.session import session_scope
+from chatterlore.memory.scope import Scope
 
 
 def space(selection, dimension=64):
-    from pzp_ai_bot.embedding_identity import embedding_space_metadata
+    from chatterlore.embedding_identity import embedding_space_metadata
 
     return embedding_space_metadata(selection, dimension)
 
@@ -36,7 +36,7 @@ async def add_note(context, text="durable private source", scope=Scope(-100555))
 
 
 def test_space_identity_separates_endpoint_model_and_preprocessing(test_settings):
-    from pzp_ai_bot.ai.factory import ProviderRegistry
+    from chatterlore.ai.factory import ProviderRegistry
 
     selection = ProviderRegistry(test_settings).select()
     base = space(selection)
@@ -73,7 +73,7 @@ def test_space_identity_separates_endpoint_model_and_preprocessing(test_settings
 
 
 async def test_repository_preserves_spaces_updates_idempotently_and_filters_before_quota(context):
-    from pzp_ai_bot.embedding_identity import content_hash
+    from chatterlore.embedding_identity import content_hash
 
     scope = Scope(-100555)
     target_id = await add_note(context)
@@ -147,7 +147,7 @@ async def test_legacy_vectors_are_not_silently_adopted(context):
 
 
 async def test_epoch_guard_rolls_back_old_route_source_writes(context):
-    from pzp_ai_bot.db.repos.embedding_indexes import (
+    from chatterlore.db.repos.embedding_indexes import (
         EmbeddingIndexRepository,
         EmbeddingRouteChanged,
     )
@@ -164,7 +164,7 @@ async def test_epoch_guard_rolls_back_old_route_source_writes(context):
 
 
 def index_service(context):
-    from pzp_ai_bot.memory.embedding_indexes import EmbeddingIndexService
+    from chatterlore.memory.embedding_indexes import EmbeddingIndexService
 
     return EmbeddingIndexService(
         context.settings,
@@ -176,7 +176,7 @@ def index_service(context):
 
 
 async def test_job_builds_without_activation_and_activation_fences_writes(context):
-    from pzp_ai_bot.db.repos.embedding_indexes import EmbeddingIndexRepository
+    from chatterlore.db.repos.embedding_indexes import EmbeddingIndexRepository
 
     scope = Scope(-100555)
     await add_note(context)
@@ -289,8 +289,8 @@ async def test_activation_requires_exact_confirmation_phrase(context):
 
 
 async def test_activation_rejects_changed_settings_and_profile_without_mutation(context):
-    from pzp_ai_bot.db.repos.embedding_indexes import EmbeddingIndexRepository
-    from pzp_ai_bot.db.repos.settings import ScopeSettingsRepository
+    from chatterlore.db.repos.embedding_indexes import EmbeddingIndexRepository
+    from chatterlore.db.repos.settings import ScopeSettingsRepository
 
     scope = Scope(-100555)
     await add_note(context)
@@ -378,8 +378,8 @@ async def test_cancelled_inflight_job_cannot_resurrect_or_overwrite_status(conte
 async def test_expired_worker_lease_is_reclaimed_and_fenced(context):
     from datetime import timedelta
 
-    from pzp_ai_bot.db.models import EmbeddingIndexJob
-    from pzp_ai_bot.db.repos.embedding_indexes import EmbeddingIndexRepository
+    from chatterlore.db.models import EmbeddingIndexJob
+    from chatterlore.db.repos.embedding_indexes import EmbeddingIndexRepository
 
     service = index_service(context)
     job = await service.create_job(Scope(-100555), "default", actor_user_id=111)
@@ -408,8 +408,8 @@ def test_schema_upgrade_preserves_legacy_vectors_and_matches_metadata(test_setti
     from alembic.migration import MigrationContext
     from sqlalchemy import create_engine, text
 
-    from pzp_ai_bot.db.models import Base
-    from pzp_ai_bot.db.session import upgrade_schema
+    from chatterlore.db.models import Base
+    from chatterlore.db.session import upgrade_schema
 
     upgrade_schema(test_settings, "0018_provider_operation_profiles")
     engine = create_engine(test_settings.db_url.replace("+aiosqlite", ""))
@@ -455,9 +455,9 @@ def test_schema_upgrade_preserves_legacy_vectors_and_matches_metadata(test_setti
 
 
 async def test_managed_profile_missing_or_changed_in_database_cannot_bless_stale_vectors(context):
-    from pzp_ai_bot.db.models import AIProviderProfile
-    from pzp_ai_bot.db.repos.embedding_indexes import EmbeddingRouteChanged
-    from pzp_ai_bot.embedding_identity import content_hash
+    from chatterlore.db.models import AIProviderProfile
+    from chatterlore.db.repos.embedding_indexes import EmbeddingRouteChanged
+    from chatterlore.embedding_identity import content_hash
 
     scope = Scope(-100555)
     target_id = await add_note(context)
@@ -520,7 +520,7 @@ async def test_managed_profile_missing_or_changed_in_database_cannot_bless_stale
 
 
 async def test_topic_coverage_uses_one_space_and_activation_preserves_descendant_override(context):
-    from pzp_ai_bot.db.repos.settings import ScopeSettingsRepository
+    from chatterlore.db.repos.settings import ScopeSettingsRepository
 
     scope, topic = Scope(-100555), Scope(-100555, 7)
     await add_note(context, "main note", scope)
@@ -574,8 +574,8 @@ async def test_rollback_requires_rebuilding_missing_sources_and_preserves_new_sp
 
 
 async def test_route_change_inside_embedding_add_rolls_back_the_source_transaction(context):
-    from pzp_ai_bot.db.repos.embedding_indexes import EmbeddingRouteChanged
-    from pzp_ai_bot.embedding_identity import content_hash
+    from chatterlore.db.repos.embedding_indexes import EmbeddingRouteChanged
+    from chatterlore.embedding_identity import content_hash
 
     scope = Scope(-100555)
     await add_note(context, "original")
@@ -612,8 +612,8 @@ async def test_route_change_inside_embedding_add_rolls_back_the_source_transacti
 
 
 async def test_activation_sees_old_route_writer_committed_before_coverage_check(context):
-    from pzp_ai_bot.db.repos.embedding_indexes import EmbeddingIndexRepository
-    from pzp_ai_bot.embedding_identity import content_hash
+    from chatterlore.db.repos.embedding_indexes import EmbeddingIndexRepository
+    from chatterlore.embedding_identity import content_hash
 
     scope = Scope(-100555)
     await add_note(context, "original")
@@ -664,7 +664,7 @@ async def test_activation_sees_old_route_writer_committed_before_coverage_check(
 
 
 async def test_deleted_managed_job_profile_does_not_fall_back_to_environment_profile(context):
-    from pzp_ai_bot.db.models import AIProviderProfile
+    from chatterlore.db.models import AIProviderProfile
 
     scope = Scope(-100555)
     await add_note(context)
@@ -707,7 +707,7 @@ async def test_deleted_managed_job_profile_does_not_fall_back_to_environment_pro
 
 
 async def test_activation_classifies_database_profile_drift_as_actionable_conflict(context):
-    from pzp_ai_bot.db.models import AIProviderProfile
+    from chatterlore.db.models import AIProviderProfile
 
     scope = Scope(-100555)
     await add_note(context)
@@ -755,9 +755,9 @@ async def test_activation_classifies_database_profile_drift_as_actionable_confli
 async def test_source_repositories_persist_fingerprints_and_raw_edits_invalidate_them(context):
     from sqlalchemy import text
 
-    from pzp_ai_bot.db.repos.knowledge import KnowledgeRepository
-    from pzp_ai_bot.db.repos.messages import MessageRepository
-    from pzp_ai_bot.embedding_identity import content_hash
+    from chatterlore.db.repos.knowledge import KnowledgeRepository
+    from chatterlore.db.repos.messages import MessageRepository
+    from chatterlore.embedding_identity import content_hash
 
     scope = Scope(-100555)
     async with session_scope(context.session_factory) as session:
@@ -801,7 +801,7 @@ async def test_source_repositories_persist_fingerprints_and_raw_edits_invalidate
             text("UPDATE messages SET normalized_text='raw SQL message edit' WHERE id=:id"),
             {"id": message.id},
         )
-        from pzp_ai_bot.db.models import Message
+        from chatterlore.db.models import Message
 
         assert (
             await session.scalar(
@@ -816,7 +816,7 @@ async def test_coverage_uses_two_aggregate_queries_without_hashing_source_payloa
 ):
     from sqlalchemy import event
 
-    import pzp_ai_bot.db.repos.embedding_indexes as module
+    import chatterlore.db.repos.embedding_indexes as module
 
     scope = Scope(-100555)
     await add_note(context)
@@ -851,7 +851,7 @@ async def test_coverage_uses_two_aggregate_queries_without_hashing_source_payloa
 
 
 async def test_missing_source_payload_hydration_is_bounded_before_hashing(context, monkeypatch):
-    import pzp_ai_bot.db.repos.embedding_indexes as module
+    import chatterlore.db.repos.embedding_indexes as module
 
     scope = Scope(-100555)
     for value in range(12):
@@ -881,7 +881,7 @@ async def test_verified_retrieval_applies_sql_freshness_before_candidate_limit(
 ):
     from sqlalchemy import text
 
-    import pzp_ai_bot.db.repos.embeddings as module
+    import chatterlore.db.repos.embeddings as module
 
     scope = Scope(-100555)
     older = await add_note(context, "older fresh note")
@@ -909,8 +909,8 @@ async def test_verified_retrieval_applies_sql_freshness_before_candidate_limit(
 async def test_deliberately_owned_create_all_schema_installs_freshness_triggers(test_settings):
     from sqlalchemy import text
 
-    from pzp_ai_bot.db.repos.knowledge import KnowledgeRepository
-    from pzp_ai_bot.db.session import create_schema, create_session_factory
+    from chatterlore.db.repos.knowledge import KnowledgeRepository
+    from chatterlore.db.session import create_schema, create_session_factory
 
     await create_schema(test_settings)
     factory = create_session_factory(test_settings)

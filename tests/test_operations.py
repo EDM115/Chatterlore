@@ -10,21 +10,21 @@ from typing import Any, cast
 import pytest
 from sqlalchemy import event, select, text
 
-from pzp_ai_bot.ai.fake import FakeProvider
-from pzp_ai_bot.app_context import AppContext, build_context
-from pzp_ai_bot.config import Settings
-from pzp_ai_bot.db.models import AIUsage, ForgetChallenge
-from pzp_ai_bot.db.repositories import EventRepository, utc_now
-from pzp_ai_bot.db.session import session_scope
-from pzp_ai_bot.main import sqlite_stats
-from pzp_ai_bot.memory.scope import Scope
-from pzp_ai_bot.memory.service import (
+from chatterlore.ai.fake import FakeProvider
+from chatterlore.app_context import AppContext, build_context
+from chatterlore.config import Settings
+from chatterlore.db.models import AIUsage, ForgetChallenge
+from chatterlore.db.repositories import EventRepository, utc_now
+from chatterlore.db.session import session_scope
+from chatterlore.main import sqlite_stats
+from chatterlore.memory.scope import Scope
+from chatterlore.memory.service import (
     IncomingMessage,
     audit_events_jsonl,
     format_runtime_settings,
     parse_runtime_settings_args,
 )
-from pzp_ai_bot.telegram import scheduler as scheduler_module
+from chatterlore.telegram import scheduler as scheduler_module
 
 TOKEN_RE = re.compile(r"confirm=([^ ]+)")
 
@@ -364,7 +364,7 @@ async def test_background_loop_recovers_with_bounded_content_free_backoff(
     context = SimpleNamespace(
         settings=SimpleNamespace(runtime_settings_refresh_seconds=4), memory=memory
     )
-    state = scheduler_module.BackgroundTaskState(name="pzp-runtime-settings-refresher")
+    state = scheduler_module.BackgroundTaskState(name="chatterlore-runtime-settings-refresher")
     monkeypatch.setattr(scheduler_module.asyncio, "sleep", fake_sleep)
     monkeypatch.setattr(
         scheduler_module,
@@ -387,7 +387,7 @@ async def test_background_loop_recovers_with_bounded_content_free_backoff(
             "background_task_iteration_failed",
             {
                 "event_type": "background_task_iteration_failed",
-                "task": "pzp-runtime-settings-refresher",
+                "task": "chatterlore-runtime-settings-refresher",
                 "exception_type": "RuntimeError",
                 "consecutive_failures": 1,
                 "backoff_seconds": 1,
@@ -418,7 +418,7 @@ async def test_background_loop_caps_repeated_failure_backoff(
     context = SimpleNamespace(
         settings=SimpleNamespace(runtime_settings_refresh_seconds=3), memory=MemoryDouble()
     )
-    state = scheduler_module.BackgroundTaskState(name="pzp-runtime-settings-refresher")
+    state = scheduler_module.BackgroundTaskState(name="chatterlore-runtime-settings-refresher")
     monkeypatch.setattr(scheduler_module.asyncio, "sleep", fake_sleep)
     monkeypatch.setattr(
         scheduler_module, "logger", SimpleNamespace(warning=lambda event, **values: None)
@@ -446,7 +446,7 @@ async def test_background_loop_cancellation_during_sleep_is_prompt(
     context = SimpleNamespace(
         settings=SimpleNamespace(runtime_settings_refresh_seconds=3), memory=MemoryDouble()
     )
-    state = scheduler_module.BackgroundTaskState(name="pzp-runtime-settings-refresher")
+    state = scheduler_module.BackgroundTaskState(name="chatterlore-runtime-settings-refresher")
     monkeypatch.setattr(scheduler_module.asyncio, "sleep", cancelled_sleep)
 
     with pytest.raises(asyncio.CancelledError):

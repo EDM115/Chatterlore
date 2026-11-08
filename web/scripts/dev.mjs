@@ -19,8 +19,8 @@ export function developmentProcessSpecs({
       name: "backend",
       command: windows ? powershell : "uv",
       args: windows
-        ? [...windowsCommand, "uv run pzp-bot control-plane-dev"]
-        : ["run", "pzp-bot", "control-plane-dev"],
+        ? [...windowsCommand, "uv run chatterlore control-plane-dev"]
+        : ["run", "chatterlore", "control-plane-dev"],
       cwd: repositoryRoot,
     },
     {

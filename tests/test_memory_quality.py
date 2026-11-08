@@ -8,22 +8,22 @@ from pathlib import Path
 import pytest
 from sqlalchemy import select
 
-from pzp_ai_bot.ai.factory import ProviderSelection
-from pzp_ai_bot.ai.fake import FakeProvider
-from pzp_ai_bot.ai.protocols import ChatResult
-from pzp_ai_bot.config import Settings
-from pzp_ai_bot.db.models import AIUsage, CanonicalScopeSnapshot, KnowledgeItem
-from pzp_ai_bot.db.repositories import (
+from chatterlore.ai.factory import ProviderSelection
+from chatterlore.ai.fake import FakeProvider
+from chatterlore.ai.protocols import ChatResult
+from chatterlore.config import Settings
+from chatterlore.db.models import AIUsage, CanonicalScopeSnapshot, KnowledgeItem
+from chatterlore.db.repositories import (
     CanonicalScopeSnapshotRepository,
     EventRepository,
     KnowledgeRepository,
     MessageRepository,
     utc_now,
 )
-from pzp_ai_bot.db.session import session_scope
-from pzp_ai_bot.memory.canonical import CanonicalMemoryEntry
-from pzp_ai_bot.memory.scope import Scope
-from pzp_ai_bot.memory.service import IncomingMessage
+from chatterlore.db.session import session_scope
+from chatterlore.memory.canonical import CanonicalMemoryEntry
+from chatterlore.memory.scope import Scope
+from chatterlore.memory.service import IncomingMessage
 
 
 def daily_projection_text(memory_dir: Path) -> str:

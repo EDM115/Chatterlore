@@ -10,11 +10,11 @@ import pytest
 from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
 from aiogram.methods import SendMessage
 
-from pzp_ai_bot.config import Settings
-from pzp_ai_bot.control_plane.alerts import AdminAlertService
-from pzp_ai_bot.db.repos.alerts import AdminAlertRepository
-from pzp_ai_bot.db.repos.control_plane import ControlPlaneAccessRepository
-from pzp_ai_bot.db.session import (
+from chatterlore.config import Settings
+from chatterlore.control_plane.alerts import AdminAlertService
+from chatterlore.db.repos.alerts import AdminAlertRepository
+from chatterlore.db.repos.control_plane import ControlPlaneAccessRepository
+from chatterlore.db.session import (
     create_schema,
     create_session_factory,
     session_scope,

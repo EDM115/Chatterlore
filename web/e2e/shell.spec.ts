@@ -212,7 +212,7 @@ test("foundation routes retain distinct document titles", async ({ page }) => {
   await stubAuthenticatedSession(page);
   await stubDashboard(page);
   await page.goto("/");
-  await expect(page).toHaveTitle("Dashboard · PZP AI Control Plane");
+  await expect(page).toHaveTitle("Dashboard · Chatterlore Control Plane");
 });
 
 test("bot administrators can hydrate the direct provider operations route", async ({ page }) => {
@@ -360,7 +360,7 @@ test("anonymous browsers retain the sign-in document title", async ({ page }) =>
     route.fulfill({ body: JSON.stringify({ detail: "authentication required" }), status: 401 }),
   );
   await page.goto("/login");
-  await expect(page).toHaveTitle("Sign in · PZP AI Control Plane");
+  await expect(page).toHaveTitle("Sign in · Chatterlore Control Plane");
 });
 
 test("expired sessions return to login with an explicit recovery message", async ({ page }) => {

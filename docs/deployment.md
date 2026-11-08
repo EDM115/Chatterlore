@@ -5,7 +5,7 @@ Choose polling for bot-only operation or the Caddy/Nuxt/FastAPI stack for the br
 ## Polling
 
 ```powershell
-uv run pzp-bot polling
+uv run chatterlore polling
 ```
 
 Polling needs a valid `TELEGRAM_BOT_TOKEN`. Startup deletes the current webhook with `drop_pending_updates=False`, clears the default command menu and starts one poller. It exposes no HTTP server or browser control plane. Supervise its process and the background-task events described in [operations](operations.md#health-and-logs).  
@@ -25,7 +25,7 @@ WEBAPP_PORT=8080
 ```
 
 ```powershell
-uv run pzp-bot webhook
+uv run chatterlore webhook
 ```
 
 Terminate public HTTPS at a trusted proxy and route `/telegram/webhook` to this process. Startup registers the URL and dispatcher update types without dropping pending updates. The endpoint rejects missing/wrong `X-Telegram-Bot-Api-Secret-Token`, startup rejects blank secrets and `change-me`, `changeme`, `placeholder`, `default` or `secret`. Use a random value accepted by Telegram, see [secrets](secrets.md).  
@@ -43,7 +43,7 @@ Production uses one external HTTPS origin and three containers. FastAPI owns ide
 
 Install Docker Engine with the Compose plugin (or Docker Desktop), create DNS for your public hostname and allow inbound HTTP/HTTPS to Caddy. Run Compose commands from the repository root. Keep a stable origin such as `https://bot.example.com`, then register the same bot in BotFather:
 
-1. Open the BotFather Mini App, select your bot and open Login Widget. Add both the origin `https://bot.example.com` and the exact OIDC redirect URL `https://bot.example.com/auth/telegram/callback` to Allowed URLs, then copy its client ID and client secret into the backend configuration. PZP uses OIDC rather than an embedded login widget, see [Telegram Login setup](https://core.telegram.org/bots/telegram-login#registering-your-allowed-urls).
+1. Open the BotFather Mini App, select your bot and open Login Widget. Add both the origin `https://bot.example.com` and the exact OIDC redirect URL `https://bot.example.com/auth/telegram/callback` to Allowed URLs, then copy its client ID and client secret into the backend configuration. CHATTERLORE uses OIDC rather than an embedded login widget, see [Telegram Login setup](https://core.telegram.org/bots/telegram-login#registering-your-allowed-urls).
 2. Under `/mybots` > your bot > Bot Settings > Configure Mini App, enable the Main Mini App and set its URL to `https://bot.example.com/`. This creates the bot-profile launch button, see [Main Mini App setup](https://core.telegram.org/bots/webapps#launching-the-main-mini-app).
 3. To expose the same app from the bot DM menu, use `/setmenubutton` (or Bot Settings > Menu Button), choose the bot, enter a label such as Open control plane and use `https://bot.example.com/` as the URL. [Telegram's menu-button configuration](https://core.telegram.org/bots/webapps#launching-mini-apps-from-the-menu-button) is separate from the slash-command list.
 4. Start the bot DM as each owner who needs browser enrollment buttons or health alerts. Put at least one real numeric owner ID in `BOT_ADMINS`. Keep Telegram group privacy/member access configured as described in [Setup](setup.md#start-polling-and-verify-a-group).
@@ -65,13 +65,13 @@ CONTROL_PLANE_MASTER_KEYS={"primary":"<base64-encoded-32-byte-key>"}
 
 Generate the vault key as described in [Secrets](secrets.md#vault-keys-and-encrypted-credentials) and a webhook secret with `[Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))`. Add the chosen AI provider configuration. Supply real generated secrets, examples above are placeholders. Keep the exact external origin consistent across browser, Mini App and OIDC settings. Compose loads `.env` only into the bot service, custom API-key environment references work there through `env_file`. The frontend receives only listener/Node settings, Caddy receives its site address.  
 Compose fixes `DB_URL=sqlite+aiosqlite:///data/bot.db`, `MEMORY_DIR=data/memory`, `RUNTIME_MODE=webhook`, host `0.0.0.0` and port `8080` inside the bot. A different container database location requires a matching Compose override/mount. Ensure the non-root user can create SQLite sidecars under the mounted directory. The stock backend image omits the heavy `local` extra, embedded inference needs a deliberately built image with those dependencies and persistent model artifacts, or use an allowlisted local HTTP server profile.  
-`CADDY_SITE_ADDRESS` defaults to `CONTROL_PLANE_PUBLIC_ORIGIN`. Caddy handles TLS for a normal public hostname. For an external TLS terminator such as cloudflared, set `CADDY_SITE_ADDRESS=:80` only with a trusted private/local Caddy listener, retain the exact external HTTPS origin in application configuration. `PZP_HTTP_PORT` and `PZP_HTTPS_PORT` change published port numbers, they do not restrict bind addresses or change internal ports. Use a Compose override to bind the ingress to loopback when a local tunnel owns public access. An ephemeral tunnel hostname needs matching Telegram/OIDC registration and is not a stable production address.
+`CADDY_SITE_ADDRESS` defaults to `CONTROL_PLANE_PUBLIC_ORIGIN`. Caddy handles TLS for a normal public hostname. For an external TLS terminator such as cloudflared, set `CADDY_SITE_ADDRESS=:80` only with a trusted private/local Caddy listener, retain the exact external HTTPS origin in application configuration. `CHATTERLORE_HTTP_PORT` and `CHATTERLORE_HTTPS_PORT` change published port numbers, they do not restrict bind addresses or change internal ports. Use a Compose override to bind the ingress to loopback when a local tunnel owns public access. An ephemeral tunnel hostname needs matching Telegram/OIDC registration and is not a stable production address.
 
 ```powershell
 docker compose config --quiet
 docker compose build
-docker compose run --rm bot pzp-bot doctor
-docker compose run --rm bot pzp-bot migrate
+docker compose run --rm bot chatterlore doctor
+docker compose run --rm bot chatterlore migrate
 docker compose up -d --wait
 docker compose ps
 docker compose logs --tail 100 bot
@@ -79,7 +79,7 @@ docker compose logs --tail 100 bot
 
 Inspect the resolved configuration locally if needed, plain `docker compose config` expands environment values and can disclose secrets in terminal/log output. The `.env` file is optional for offline image inspection, starting this production stack still requires complete live settings. Startup also applies migrations, take the pre-upgrade backup before any new-image application command. `doctor` checks local configuration/path/dependency state and does not verify live authentication.  
 Open the public origin in a browser and sign in with the Telegram identity listed in `BOT_ADMINS`, then open the bot's Main Mini App and confirm it reaches the same owner pages. In Chats, enroll a group you administer with the requester-bound selection, the bot must already be a member. Activate the chat, enable learning for its intended scope and repeat the known-fact search/answer from [Setup](setup.md#start-polling-and-verify-a-group). Enrollment and learning are separate requirements.  
-The Python image uses multi-stage `python:3.12-slim`, frozen non-editable installation and non-root `pzp`. The Nuxt image builds frozen dependencies on Node major 26, copies `.output` into a non-root Node runtime and probes `/login`. Caddy uses `caddy:2-alpine`. Standalone installers and base-image tags can change, record resolved versions and image digests for release/recovery. Application dependency locks remain frozen.  
+The Python image uses multi-stage `python:3.12-slim`, frozen non-editable installation and non-root `chatterlore`. The Nuxt image builds frozen dependencies on Node major 26, copies `.output` into a non-root Node runtime and probes `/login`. Caddy uses `caddy:2-alpine`. Standalone installers and base-image tags can change, record resolved versions and image digests for release/recovery. Application dependency locks remain frozen.  
 The bot image's generic healthcheck runs `doctor`, Compose replaces it with HTTP `/health`. Caddy's check validates its config, frontend probes `/login`. Healthy container status alone does not verify external TLS, routes, identity or Telegram delivery.
 
 ## Routing and deployment verification

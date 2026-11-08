@@ -11,16 +11,16 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-import pzp_ai_bot.main as main_module
-from pzp_ai_bot.ai.factory import ProviderRegistry
-from pzp_ai_bot.app_context import build_context
-from pzp_ai_bot.config import Settings, get_settings
-from pzp_ai_bot.control_plane.secrets.service import ProviderSecretService
-from pzp_ai_bot.db.repos.provider_credentials import ProviderCredentialRepository
-from pzp_ai_bot.db.session import create_session_factory, session_scope, upgrade_schema
-from pzp_ai_bot.main import app
-from pzp_ai_bot.memory.scope import Scope
-from pzp_ai_bot.memory.service import IncomingMessage, MemoryService
+import chatterlore.main as main_module
+from chatterlore.ai.factory import ProviderRegistry
+from chatterlore.app_context import build_context
+from chatterlore.config import Settings, get_settings
+from chatterlore.control_plane.secrets.service import ProviderSecretService
+from chatterlore.db.repos.provider_credentials import ProviderCredentialRepository
+from chatterlore.db.session import create_session_factory, session_scope, upgrade_schema
+from chatterlore.main import app
+from chatterlore.memory.scope import Scope
+from chatterlore.memory.service import IncomingMessage, MemoryService
 
 runner = CliRunner()
 
@@ -465,7 +465,7 @@ def test_runtime_audit_and_db_maintenance_commands(
 def test_cli_redacts_database_url_credentials(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    credentialed_url = "postgresql+asyncpg://user:pass123@example.invalid:5432/pzp"
+    credentialed_url = "postgresql+asyncpg://user:pass123@example.invalid:5432/chatterlore"
     monkeypatch.setenv("DB_URL", credentialed_url)
     monkeypatch.setenv("MEMORY_DIR", str(tmp_path / "memory"))
     monkeypatch.setenv("AI_PROVIDER", "fake")
@@ -483,7 +483,7 @@ def test_cli_redacts_database_url_credentials(
     combined = show_config.output + doctor.output + migrate.output
     assert "pass123" not in combined
     assert "user:" not in combined
-    assert "postgresql+asyncpg://[REDACTED]@example.invalid:5432/pzp" in combined
+    assert "postgresql+asyncpg://[REDACTED]@example.invalid:5432/chatterlore" in combined
 
 
 def test_secret_status_and_atomic_rewrap_report_counts_only(

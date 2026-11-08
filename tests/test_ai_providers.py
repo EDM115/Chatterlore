@@ -11,17 +11,17 @@ from openai import APIConnectionError, AsyncOpenAI, BadRequestError
 from sqlalchemy import select
 from typer.testing import CliRunner
 
-from pzp_ai_bot.ai.factory import ProviderRegistry, ProviderSelection
-from pzp_ai_bot.ai.local import LocalSentenceTransformerEmbeddingProvider
-from pzp_ai_bot.ai.openai_compatible import OpenAICompatibleProvider
-from pzp_ai_bot.ai.protocols import ChatMessage, ChatResult
-from pzp_ai_bot.ai.provider_call_policy import ProviderLeaseCallError
-from pzp_ai_bot.config import Settings, get_settings
-from pzp_ai_bot.db.models import AIUsage
-from pzp_ai_bot.db.session import session_scope
-from pzp_ai_bot.main import app
-from pzp_ai_bot.memory.scope import Scope
-from pzp_ai_bot.memory.service import AIRequestOptions, IncomingMessage
+from chatterlore.ai.factory import ProviderRegistry, ProviderSelection
+from chatterlore.ai.local import LocalSentenceTransformerEmbeddingProvider
+from chatterlore.ai.openai_compatible import OpenAICompatibleProvider
+from chatterlore.ai.protocols import ChatMessage, ChatResult
+from chatterlore.ai.provider_call_policy import ProviderLeaseCallError
+from chatterlore.config import Settings, get_settings
+from chatterlore.db.models import AIUsage
+from chatterlore.db.session import session_scope
+from chatterlore.main import app
+from chatterlore.memory.scope import Scope
+from chatterlore.memory.service import AIRequestOptions, IncomingMessage
 
 runner = CliRunner()
 

@@ -28,15 +28,15 @@ ENV PATH="/opt/venv/bin:$PATH" \
 
 WORKDIR /app
 
-RUN addgroup --system pzp && adduser --system --ingroup pzp --home /app pzp && mkdir -p /app/data && chown -R pzp:pzp /app
+RUN addgroup --system chatterlore && adduser --system --ingroup chatterlore --home /app chatterlore && mkdir -p /app/data && chown -R chatterlore:chatterlore /app
 
-COPY --from=builder --chown=pzp:pzp /opt/venv /opt/venv
-COPY --chown=pzp:pzp alembic.ini ./alembic.ini
-COPY --chown=pzp:pzp alembic ./alembic
-COPY --chown=pzp:pzp docs ./docs
+COPY --from=builder --chown=chatterlore:chatterlore /opt/venv /opt/venv
+COPY --chown=chatterlore:chatterlore alembic.ini ./alembic.ini
+COPY --chown=chatterlore:chatterlore alembic ./alembic
+COPY --chown=chatterlore:chatterlore docs ./docs
 
-USER pzp
+USER chatterlore
 
-HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 CMD pzp-bot doctor || exit 1
+HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 CMD chatterlore doctor || exit 1
 
-CMD ["pzp-bot", "polling"]
+CMD ["chatterlore", "polling"]

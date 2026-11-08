@@ -7,14 +7,14 @@ from dataclasses import replace
 import pytest
 from sqlalchemy import select
 
-from pzp_ai_bot.db.models import BotEvent, Embedding, KnowledgeItem, Message
-from pzp_ai_bot.db.repos.embedding_indexes import EmbeddingIndexRepository
-from pzp_ai_bot.db.repos.embeddings import EmbeddingRepository
-from pzp_ai_bot.db.repos.shared import utc_now
-from pzp_ai_bot.db.session import session_scope
-from pzp_ai_bot.embedding_adoption import LegacyAdoptionManifest
-from pzp_ai_bot.embedding_identity import embedding_configuration, embedding_space_metadata
-from pzp_ai_bot.memory.scope import Scope
+from chatterlore.db.models import BotEvent, Embedding, KnowledgeItem, Message
+from chatterlore.db.repos.embedding_indexes import EmbeddingIndexRepository
+from chatterlore.db.repos.embeddings import EmbeddingRepository
+from chatterlore.db.repos.shared import utc_now
+from chatterlore.db.session import session_scope
+from chatterlore.embedding_adoption import LegacyAdoptionManifest
+from chatterlore.embedding_identity import embedding_configuration, embedding_space_metadata
+from chatterlore.memory.scope import Scope
 
 
 async def legacy_manifest(context):

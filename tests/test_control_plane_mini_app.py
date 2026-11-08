@@ -8,7 +8,7 @@ from urllib.parse import urlencode
 
 import pytest
 
-from pzp_ai_bot.control_plane.auth.mini_app import (
+from chatterlore.control_plane.auth.mini_app import (
     MiniAppValidationError,
     classify_mini_app_validation_error,
     validate_mini_app_init_data,

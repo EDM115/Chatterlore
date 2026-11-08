@@ -41,16 +41,16 @@ jobs:
 
       - name: Migration check
         env:
-          DB_URL: sqlite+aiosqlite:///${{ runner.temp }}/pzp-ai-migration-check.db
+          DB_URL: sqlite+aiosqlite:///${{ runner.temp }}/chatterlore-migration-check.db
         run: |
           uv run alembic upgrade head
           uv run alembic check
 
       - name: CLI help check
-        run: uv run pzp-bot --help
+        run: uv run chatterlore --help
 
       - name: Doctor check
-        run: uv run pzp-bot doctor
+        run: uv run chatterlore doctor
 
   frontend:
     name: Frontend Gates
@@ -97,7 +97,7 @@ jobs:
           CONTROL_PLANE_MASTER_KEYS: '{"ci":"cGhhc2UyLWNpLW1hc3Rlci1rZXktdGhhdC1uZXZlci1zaGlwcw=="}'
           DB_URL: sqlite+aiosqlite:///phase2-ci-secret.db
           OPENAI_API_KEY: sk-phase2-ci-secret-that-must-never-ship
-          PZP_API_DEV_ORIGIN: https://phase2-ci-internal-api.example
+          CHATTERLORE_API_DEV_ORIGIN: https://phase2-ci-internal-api.example
           TELEGRAM_BOT_TOKEN: 123456789:phase2-ci-telegram-secret-that-must-never-ship
           TELEGRAM_OIDC_CLIENT_SECRET: phase2-ci-oidc-secret-that-must-never-ship
           WEBHOOK_SECRET: phase2-ci-webhook-secret-that-must-never-ship
@@ -114,10 +114,10 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Build image
-        run: docker build --tag pzp-ai:ci .
+        run: docker build --tag chatterlore:ci .
 
       - name: Build frontend image
-        run: docker build --tag pzp-ai-web:ci ./web
+        run: docker build --tag chatterlore-web:ci ./web
 
       - name: Run doctor in image
-        run: docker run --rm -e AI_PROVIDER=fake -e DB_URL=sqlite+aiosqlite:////tmp/pzp/bot.db -e MEMORY_DIR=/tmp/pzp/memory pzp-ai:ci pzp-bot doctor
+        run: docker run --rm -e AI_PROVIDER=fake -e DB_URL=sqlite+aiosqlite:////tmp/chatterlore/bot.db -e MEMORY_DIR=/tmp/chatterlore/memory chatterlore:ci chatterlore doctor

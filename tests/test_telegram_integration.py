@@ -17,13 +17,13 @@ from aiogram.types import Message as TelegramMessage
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from pzp_ai_bot.app_context import AppContext, build_context
-from pzp_ai_bot.db.models import Message
-from pzp_ai_bot.db.repos.control_plane import ControlPlaneAccessRepository
-from pzp_ai_bot.db.repositories import EffectiveScopeSettings, MemoryProfileView
-from pzp_ai_bot.db.session import session_scope
-from pzp_ai_bot.memory.scope import Scope
-from pzp_ai_bot.memory.service import (
+from chatterlore.app_context import AppContext, build_context
+from chatterlore.db.models import Message
+from chatterlore.db.repos.control_plane import ControlPlaneAccessRepository
+from chatterlore.db.repositories import EffectiveScopeSettings, MemoryProfileView
+from chatterlore.db.session import session_scope
+from chatterlore.memory.scope import Scope
+from chatterlore.memory.service import (
     AIRequestOptions,
     AuditEventPreview,
     MemoryExportChunk,
@@ -39,13 +39,13 @@ from pzp_ai_bot.memory.service import (
     SummaryTemplatePreview,
     SystemPromptTemplatePreview,
 )
-from pzp_ai_bot.telegram import safe_api as safe_api_module
-from pzp_ai_bot.telegram.commands import COMMAND_DESCRIPTIONS
-from pzp_ai_bot.telegram.dispatcher import build_dispatcher
-from pzp_ai_bot.telegram.polling import run_polling
-from pzp_ai_bot.telegram.router import export_document_stream, export_documents
-from pzp_ai_bot.telegram.safe_api import safe_answer, safe_answer_document
-from pzp_ai_bot.telegram.webhook import create_webhook_app
+from chatterlore.telegram import safe_api as safe_api_module
+from chatterlore.telegram.commands import COMMAND_DESCRIPTIONS
+from chatterlore.telegram.dispatcher import build_dispatcher
+from chatterlore.telegram.polling import run_polling
+from chatterlore.telegram.router import export_document_stream, export_documents
+from chatterlore.telegram.safe_api import safe_answer, safe_answer_document
+from chatterlore.telegram.webhook import create_webhook_app
 
 
 class RecordingTelegramSession(BaseSession):
@@ -134,7 +134,7 @@ class EnrollmentTelegramSession(RecordingTelegramSession):
             )
         if api_method == "getMe":
             self.calls.append(method)
-            return SimpleNamespace(id=999, is_bot=True, first_name="PZP")
+            return SimpleNamespace(id=999, is_bot=True, first_name="CHATTERLORE")
         if api_method == "getChatMember":
             self.calls.append(method)
             user_id = int(cast(Any, method).user_id)
@@ -630,7 +630,7 @@ def test_webhook_accepts_valid_update_and_invokes_dispatcher(context: AppContext
 async def test_polling_deletes_webhook_before_starting_and_uses_router(
     context: AppContext, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import pzp_ai_bot.telegram.polling as polling_module
+    import chatterlore.telegram.polling as polling_module
 
     events: list[str] = []
     dispatcher = FakePollingDispatcher(events)

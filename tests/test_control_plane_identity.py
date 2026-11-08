@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from pzp_ai_bot.config import Settings
-from pzp_ai_bot.db.session import upgrade_schema
+from chatterlore.config import Settings
+from chatterlore.db.session import upgrade_schema
 
 
 def control_plane_settings(tmp_path: Path, **overrides: object) -> Settings:
