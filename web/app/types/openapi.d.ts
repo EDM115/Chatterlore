@@ -450,6 +450,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/control/v1/embedding-indexes/legacy/adopt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Adopt Legacy */
+        post: operations["adopt_legacy_api_control_v1_embedding_indexes_legacy_adopt_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/control/v1/embedding-indexes/legacy/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Legacy */
+        post: operations["preview_legacy_api_control_v1_embedding_indexes_legacy_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/control/v1/embedding-indexes/preview": {
         parameters: {
             query?: never;
@@ -1215,8 +1249,12 @@ export interface components {
              * Format: date-time
              */
             expires_at: string;
+            /** Step Up Action */
+            step_up_action?: string | null;
             /** Step Up At */
             step_up_at: string | null;
+            /** Step Up Expires At */
+            step_up_expires_at?: string | null;
             user: components["schemas"]["ControlPlaneUserResponse"];
         };
         /** ControlPlaneUserResponse */
@@ -1398,6 +1436,73 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** LegacyAdoptionCommitRequest */
+        LegacyAdoptionCommitRequest: {
+            /** Confirmation */
+            confirmation: string;
+            manifest: components["schemas"]["LegacyAdoptionManifest"];
+            /** Preview Hash */
+            preview_hash: string;
+            /** Provenance Attested */
+            provenance_attested: boolean;
+        };
+        /** LegacyAdoptionCommitView */
+        LegacyAdoptionCommitView: {
+            /** Adopted */
+            adopted: number;
+            /** Preview Hash */
+            preview_hash: string;
+            space: components["schemas"]["EmbeddingSpaceView"];
+        };
+        /** LegacyAdoptionManifest */
+        LegacyAdoptionManifest: {
+            /** Dimension */
+            dimension: number;
+            /** Entries */
+            entries: components["schemas"]["LegacyEmbeddingEvidence"][];
+            /** Model */
+            model: string;
+            /** Original Config Hash */
+            original_config_hash: string;
+            /** Provider Profile */
+            provider_profile: string;
+            /** Scope */
+            scope: string;
+        };
+        /** LegacyAdoptionPreviewRequest */
+        LegacyAdoptionPreviewRequest: {
+            manifest: components["schemas"]["LegacyAdoptionManifest"];
+        };
+        /** LegacyAdoptionPreviewView */
+        LegacyAdoptionPreviewView: {
+            /** Configuration Fingerprint */
+            configuration_fingerprint: string;
+            /** Count */
+            count: number;
+            /** Dimension */
+            dimension: number;
+            /** Model */
+            model: string;
+            /** Preview Hash */
+            preview_hash: string;
+            /** Provider Profile */
+            provider_profile: string;
+            /** Route Epoch */
+            route_epoch: number;
+            /** Scope */
+            scope: string;
+            /** Space Key */
+            space_key: string;
+        };
+        /** LegacyEmbeddingEvidence */
+        LegacyEmbeddingEvidence: {
+            /** Embedding Id */
+            embedding_id: number;
+            /** Source Sha256 */
+            source_sha256: string;
+            /** Vector Sha256 */
+            vector_sha256: string;
         };
         /** LocalModelPrepareRequest */
         LocalModelPrepareRequest: {
@@ -4553,6 +4658,162 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EmbeddingJobView"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneConflictEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    adopt_legacy_api_control_v1_embedding_indexes_legacy_adopt_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LegacyAdoptionCommitRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LegacyAdoptionCommitView"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneConflictEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneErrorEnvelope"];
+                };
+            };
+        };
+    };
+    preview_legacy_api_control_v1_embedding_indexes_legacy_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LegacyAdoptionPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LegacyAdoptionPreviewView"];
                 };
             };
             /** @description Unauthorized */

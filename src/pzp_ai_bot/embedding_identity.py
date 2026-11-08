@@ -68,17 +68,35 @@ def embedding_configuration(profile: ProviderProfile, model: str) -> dict[str, A
 
 
 def embedding_space_metadata(selection: ProviderSelection, dimension: int) -> dict[str, Any]:
+    return embedding_space_for_profile(
+        selection.profile,
+        selection.embedding_model,
+        dimension,
+        managed_profile=selection.managed_profile,
+        profile_revision=selection.profile_revision,
+    )
+
+
+def embedding_space_for_profile(
+    profile: ProviderProfile,
+    model: str,
+    dimension: int,
+    *,
+    managed_profile: bool = False,
+    profile_revision: int = 0,
+) -> dict[str, Any]:
+    """Build semantic metadata without constructing an inference provider."""
     if isinstance(dimension, bool) or not isinstance(dimension, int) or dimension < 1:
         raise ValueError("embedding_dimension_invalid")
-    configuration = embedding_configuration(selection.profile, selection.embedding_model)
+    configuration = embedding_configuration(profile, model)
     return {
         "key": _fingerprint({"config_hash": configuration["config_hash"], "dimension": dimension}),
-        "provider_profile": selection.profile.name,
-        "provider_kind": selection.profile.provider,
-        "model": selection.embedding_model,
-        "profile_embedding_model": selection.profile.embedding_model,
-        "managed_profile": selection.managed_profile,
-        "profile_revision": selection.profile_revision,
+        "provider_profile": profile.name,
+        "provider_kind": profile.provider,
+        "model": model,
+        "profile_embedding_model": profile.embedding_model,
+        "managed_profile": managed_profile,
+        "profile_revision": profile_revision,
         "dimension": dimension,
         **configuration,
         "created_at": datetime.now(UTC).isoformat(),

@@ -47,6 +47,8 @@ AUTHORIZATION_MATRIX = {
     ("post", "/api/control/v1/providers/{name}/prepare-local"): "bot_admin",
     ("get", "/api/control/v1/embedding-indexes"): "bot_admin",
     ("get", "/api/control/v1/embedding-indexes/preview"): "bot_admin",
+    ("post", "/api/control/v1/embedding-indexes/legacy/preview"): "bot_admin",
+    ("post", "/api/control/v1/embedding-indexes/legacy/adopt"): "bot_admin_step_up",
     ("post", "/api/control/v1/embedding-indexes/jobs"): "bot_admin",
     ("get", "/api/control/v1/embedding-indexes/jobs/{job_id}"): "bot_admin",
     ("post", "/api/control/v1/embedding-indexes/jobs/{job_id}/run"): "bot_admin",

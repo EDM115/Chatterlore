@@ -133,3 +133,97 @@ test("scoped admins cannot load owner-only index data", async ({ page }) => {
   await expect(page).toHaveURL(/\/unauthorized$/);
   expect(paths).toEqual(["/api/control/v1/session"]);
 });
+
+test("legacy adoption keeps original evidence explicit and cannot bypass fresh owner verification", async ({
+  page,
+}) => {
+  const posts: string[] = [];
+  const errors: string[] = [];
+  let verified = false;
+  page.on("pageerror", (error) => errors.push(error.message));
+  const manifest = {
+    scope: "all",
+    provider_profile: profile.name,
+    model: profile.embedding_model,
+    dimension: 384,
+    original_config_hash: "a".repeat(64),
+    entries: [{ embedding_id: 11, source_sha256: "b".repeat(64), vector_sha256: "c".repeat(64) }],
+  };
+  const preview = {
+    preview_hash: "d".repeat(64),
+    count: 1,
+    scope: "all",
+    provider_profile: profile.name,
+    model: profile.embedding_model,
+    dimension: 384,
+    space_key: "e".repeat(64),
+    configuration_fingerprint: "a".repeat(64),
+    route_epoch: 3,
+  };
+  await page.route("**/api/control/v1/**", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname.replace("/api/control/v1", "");
+    if (request.method() !== "GET") posts.push(path);
+    let body: unknown;
+    if (path === "/session")
+      body = verified
+        ? {
+            ...session,
+            step_up_action: "embedding:adopt",
+            step_up_expires_at: new Date(Date.now() + 60_000).toISOString(),
+          }
+        : session;
+    else if (path === "/providers") body = [profile];
+    else if (path === "/embedding-indexes")
+      body = { scope: "all", active: oldSpace, spaces: [oldSpace], jobs: [], legacy_unverified: 1 };
+    else if (path === "/embedding-indexes/legacy/preview") {
+      expect(request.postDataJSON()).toEqual({ manifest });
+      body = preview;
+    } else if (path === "/embedding-indexes/legacy/adopt") {
+      expect(verified).toBe(true);
+      expect(request.postDataJSON()).toEqual({
+        manifest,
+        preview_hash: preview.preview_hash,
+        confirmation: `ADOPT ${preview.preview_hash}`,
+        provenance_attested: true,
+      });
+      body = {
+        adopted: 1,
+        space_id: 3,
+        space_key: preview.space_key,
+        preview_hash: preview.preview_hash,
+      };
+    } else throw new Error(`Unexpected adoption request: ${path}`);
+    await route.fulfill({ body: JSON.stringify(body), contentType: "application/json" });
+  });
+  await page.goto("/embedding-indexes");
+  await expect(page.getByRole("heading", { name: "Embedding indexes", exact: true })).toBeVisible();
+  expect(posts).toEqual([]);
+  await page.getByTestId("legacy-adoption-manifest").fill(JSON.stringify(manifest));
+  await page.getByTestId("preview-legacy-adoption").click();
+  await expect(page.getByText("1 legacy vector validated", { exact: false })).toBeVisible();
+  await expect(page.getByTestId("commit-legacy-adoption")).toBeDisabled();
+  await page.getByTestId("legacy-adoption-confirmation").fill(`ADOPT ${preview.preview_hash}`);
+  await expect(page.getByTestId("commit-legacy-adoption")).toBeDisabled();
+  await page.getByTestId("legacy-provenance-attested").check();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.route("**/auth/telegram/step-up/start?**", (route) =>
+    route.fulfill({ body: "Fresh verification required", contentType: "text/html" }),
+  );
+  await page.getByTestId("commit-legacy-adoption").click();
+  await expect(page).toHaveURL(/action=embedding%3Aadopt/);
+  expect(posts).toEqual(["/embedding-indexes/legacy/preview"]);
+  verified = true;
+  await page.goto("/embedding-indexes");
+  await page.getByTestId("legacy-adoption-manifest").fill(JSON.stringify(manifest));
+  await page.getByTestId("preview-legacy-adoption").click();
+  await expect(page.getByTestId("commit-legacy-adoption")).toBeDisabled();
+  await page.getByTestId("legacy-adoption-confirmation").fill(`ADOPT ${preview.preview_hash}`);
+  await page.getByTestId("legacy-provenance-attested").check();
+  await page.getByTestId("commit-legacy-adoption").click();
+  await expect(page.getByText("Adopted 1 legacy vector.", { exact: false })).toBeVisible();
+  expect(posts.filter((path) => path.endsWith("/adopt"))).toHaveLength(1);
+  expect(errors).toEqual([]);
+});

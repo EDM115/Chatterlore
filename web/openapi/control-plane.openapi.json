@@ -761,6 +761,17 @@
             "title": "Expires At",
             "type": "string"
           },
+          "step_up_action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step Up Action"
+          },
           "step_up_at": {
             "anyOf": [
               {
@@ -772,6 +783,18 @@
               }
             ],
             "title": "Step Up At"
+          },
+          "step_up_expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step Up Expires At"
           },
           "user": {
             "$ref": "#/components/schemas/ControlPlaneUserResponse"
@@ -1278,6 +1301,204 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "LegacyAdoptionCommitRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "confirmation": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Confirmation",
+            "type": "string"
+          },
+          "manifest": {
+            "$ref": "#/components/schemas/LegacyAdoptionManifest"
+          },
+          "preview_hash": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Preview Hash",
+            "type": "string"
+          },
+          "provenance_attested": {
+            "title": "Provenance Attested",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "manifest",
+          "preview_hash",
+          "confirmation",
+          "provenance_attested"
+        ],
+        "title": "LegacyAdoptionCommitRequest",
+        "type": "object"
+      },
+      "LegacyAdoptionCommitView": {
+        "properties": {
+          "adopted": {
+            "title": "Adopted",
+            "type": "integer"
+          },
+          "preview_hash": {
+            "title": "Preview Hash",
+            "type": "string"
+          },
+          "space": {
+            "$ref": "#/components/schemas/EmbeddingSpaceView"
+          }
+        },
+        "required": [
+          "adopted",
+          "preview_hash",
+          "space"
+        ],
+        "title": "LegacyAdoptionCommitView",
+        "type": "object"
+      },
+      "LegacyAdoptionManifest": {
+        "additionalProperties": false,
+        "properties": {
+          "dimension": {
+            "maximum": 65536.0,
+            "minimum": 1.0,
+            "title": "Dimension",
+            "type": "integer"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/LegacyEmbeddingEvidence"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Entries",
+            "type": "array"
+          },
+          "model": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Model",
+            "type": "string"
+          },
+          "original_config_hash": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Original Config Hash",
+            "type": "string"
+          },
+          "provider_profile": {
+            "pattern": "^[a-z0-9_-]{1,64}$",
+            "title": "Provider Profile",
+            "type": "string"
+          },
+          "scope": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope",
+          "provider_profile",
+          "model",
+          "dimension",
+          "original_config_hash",
+          "entries"
+        ],
+        "title": "LegacyAdoptionManifest",
+        "type": "object"
+      },
+      "LegacyAdoptionPreviewRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "manifest": {
+            "$ref": "#/components/schemas/LegacyAdoptionManifest"
+          }
+        },
+        "required": [
+          "manifest"
+        ],
+        "title": "LegacyAdoptionPreviewRequest",
+        "type": "object"
+      },
+      "LegacyAdoptionPreviewView": {
+        "properties": {
+          "configuration_fingerprint": {
+            "title": "Configuration Fingerprint",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "dimension": {
+            "title": "Dimension",
+            "type": "integer"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "preview_hash": {
+            "title": "Preview Hash",
+            "type": "string"
+          },
+          "provider_profile": {
+            "title": "Provider Profile",
+            "type": "string"
+          },
+          "route_epoch": {
+            "title": "Route Epoch",
+            "type": "integer"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "space_key": {
+            "title": "Space Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "preview_hash",
+          "count",
+          "scope",
+          "provider_profile",
+          "model",
+          "dimension",
+          "space_key",
+          "configuration_fingerprint",
+          "route_epoch"
+        ],
+        "title": "LegacyAdoptionPreviewView",
+        "type": "object"
+      },
+      "LegacyEmbeddingEvidence": {
+        "additionalProperties": false,
+        "properties": {
+          "embedding_id": {
+            "minimum": 1.0,
+            "title": "Embedding Id",
+            "type": "integer"
+          },
+          "source_sha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Source Sha256",
+            "type": "string"
+          },
+          "vector_sha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Vector Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "embedding_id",
+          "source_sha256",
+          "vector_sha256"
+        ],
+        "title": "LegacyEmbeddingEvidence",
         "type": "object"
       },
       "LocalModelPrepareRequest": {
@@ -7374,6 +7595,191 @@
           }
         },
         "summary": "Run",
+        "tags": [
+          "embedding-indexes"
+        ],
+        "x-pzp-capability": "bot_admin"
+      }
+    },
+    "/api/control/v1/embedding-indexes/legacy/adopt": {
+      "post": {
+        "operationId": "adopt_legacy_api_control_v1_embedding_indexes_legacy_adopt_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LegacyAdoptionCommitRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LegacyAdoptionCommitView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneConflictEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "summary": "Adopt Legacy",
+        "tags": [
+          "embedding-indexes"
+        ],
+        "x-pzp-capability": "bot_admin_step_up",
+        "x-pzp-step-up-action": "embedding:adopt"
+      }
+    },
+    "/api/control/v1/embedding-indexes/legacy/preview": {
+      "post": {
+        "operationId": "preview_legacy_api_control_v1_embedding_indexes_legacy_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LegacyAdoptionPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LegacyAdoptionPreviewView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneConflictEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "summary": "Preview Legacy",
         "tags": [
           "embedding-indexes"
         ],

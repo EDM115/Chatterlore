@@ -881,25 +881,25 @@ class MemorySummaryService:
         )
         failure = execution.failure
         telemetry = execution.telemetry
-        if execution.result is None:
-            content = None
-        else:
-            content = execution.result.content.strip() or None
-            if content is None:
-                failure = ProviderOperationError(
-                    error_type="EmptySummaryResponse",
-                    safe_summary="EmptySummaryResponse: provider returned empty content",
-                )
-                telemetry = provider_call_telemetry(
-                    provider=telemetry.provider,
-                    model=telemetry.model,
-                    operation=telemetry.operation,
-                    latency_ms=telemetry.latency_ms,
-                    prompt_tokens=telemetry.prompt_tokens,
-                    completion_tokens=telemetry.completion_tokens,
-                    failure=failure,
-                    metadata=dict(telemetry.metadata),
-                )
+        content = execution.result.content.strip() or None if execution.result is not None else None
+        if content is None and (
+            execution.result is not None
+            or (failure is not None and failure.error_type == "EmptyChatResponse")
+        ):
+            failure = ProviderOperationError(
+                error_type="EmptySummaryResponse",
+                safe_summary="EmptySummaryResponse: provider returned empty content",
+            )
+            telemetry = provider_call_telemetry(
+                provider=telemetry.provider,
+                model=telemetry.model,
+                operation=telemetry.operation,
+                latency_ms=telemetry.latency_ms,
+                prompt_tokens=telemetry.prompt_tokens,
+                completion_tokens=telemetry.completion_tokens,
+                failure=failure,
+                metadata=dict(telemetry.metadata),
+            )
         return SummaryGenerationResult(
             content=content,
             chat_result=execution.result,

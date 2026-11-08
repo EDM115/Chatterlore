@@ -3,12 +3,14 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 from typing import Annotated, Any
 
 import typer
 
 from pzp_ai_bot.app_context import AppContext, build_context
 from pzp_ai_bot.config import get_settings
+from pzp_ai_bot.embedding_adoption import LegacyAdoptionManifest
 from pzp_ai_bot.memory.embedding_control_errors import control_error_code
 from pzp_ai_bot.memory.local_preparation import prepare_local_model
 from pzp_ai_bot.memory.scope import parse_scope
@@ -46,6 +48,46 @@ def status(scope: str = "all", job_id: Annotated[int | None, typer.Option(min=1)
             context.memory.embedding_indexes.get_job(job_id)
             if job_id is not None
             else context.memory.embedding_indexes.status(parsed)
+        )
+    )
+
+
+def _legacy_manifest(path: Path) -> dict[str, Any]:
+    try:
+        with path.open("rb") as stream:
+            raw = stream.read(65_537)
+        if len(raw) > 65_536:
+            raise ValueError("manifest limit exceeded")
+        return LegacyAdoptionManifest.parse(json.loads(raw.decode("utf-8"))).model_dump(mode="json")
+    except (OSError, ValueError, RecursionError):
+        raise typer.BadParameter(
+            "The manifest is invalid (embedding_adoption_manifest_invalid)"
+        ) from None
+
+
+@embedding_index_app.command("adopt-preview")
+def adopt_preview(manifest: Annotated[Path, typer.Option("--manifest")]) -> None:
+    """Validate original provenance for at most 100 explicit legacy vector mappings."""
+    payload = _legacy_manifest(manifest)
+    _execute(lambda context: context.memory.embedding_indexes.preview_legacy_adoption(payload))
+
+
+@embedding_index_app.command("adopt")
+def adopt_legacy(
+    manifest: Annotated[Path, typer.Option("--manifest")],
+    preview_hash: Annotated[str, typer.Option("--preview-hash")],
+    confirmation: Annotated[str, typer.Option("--confirmation")],
+    attest_provenance: Annotated[bool, typer.Option("--attest-provenance")] = False,
+) -> None:
+    """Adopt only explicitly evidenced vectors after preview, attestation and exact confirmation."""
+    if not attest_provenance or confirmation != f"ADOPT {preview_hash}":
+        raise typer.BadParameter(
+            "Confirmation/attestation required (embedding_adoption_confirmation_required)"
+        )
+    payload = _legacy_manifest(manifest)
+    _execute(
+        lambda context: context.memory.embedding_indexes.adopt_legacy(
+            payload, preview_hash=preview_hash, confirmation=confirmation, provenance_attested=True
         )
     )
 

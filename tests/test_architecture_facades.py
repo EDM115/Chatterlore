@@ -348,3 +348,42 @@ def test_registered_telegram_command_names_remain_unique_and_ordered() -> None:
     assert len(names) == len(set(names))
     assert names[0:4] == ["start", "ask", "memory_search", "memory_export"]
     assert names[-3:] == ["summarize_now", "forget", "help"]
+
+
+def test_control_plane_route_builders_are_owned_by_family_modules() -> None:
+    from pzp_ai_bot.control_plane import app as facade
+
+    for family, name in [
+        ("auth", "_build_auth_router"),
+        ("providers", "_build_provider_router"),
+        ("alerts", "_build_alert_router"),
+        ("management", "_build_management_router"),
+        ("query", "_build_query_router"),
+        ("memory", "_build_memory_router"),
+        ("stats", "_build_stats_router"),
+        ("audit", "_build_audit_router"),
+        ("operations", "_build_operations_router"),
+    ]:
+        factory = getattr(facade, name)
+        assert factory.__module__ == f"pzp_ai_bot.control_plane.api.{family}"
+        assert factory().routes
+
+
+def test_control_plane_extracted_dependencies_preserve_public_identity_without_back_imports() -> (
+    None
+):
+    import importlib
+    import importlib.util
+
+    from pzp_ai_bot.control_plane import app as facade
+
+    assert importlib.util.find_spec("pzp_ai_bot.control_plane.api") is not None
+    common = importlib.import_module("pzp_ai_bot.control_plane.api.common")
+    auth = importlib.import_module("pzp_ai_bot.control_plane.api.auth")
+    memory = importlib.import_module("pzp_ai_bot.control_plane.api.memory")
+    assert facade.ControlPlaneAPIError is common.ControlPlaneAPIError
+    assert facade.DevelopmentAuthConfig is auth.DevelopmentAuthConfig
+    assert facade._memory_export_stream is memory._memory_export_stream
+    source_root = Path(__file__).parents[1] / "src" / "pzp_ai_bot" / "control_plane"
+    for path in [*(source_root / "api").glob("*.py"), source_root / "embedding_routes.py"]:
+        assert "pzp_ai_bot.control_plane.app" not in imported_modules(path)

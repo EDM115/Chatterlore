@@ -49,6 +49,25 @@ const queuedJob = {
   created_at: "2026-11-07T12:00:00Z",
   updated_at: "2026-11-07T12:00:00Z",
 };
+const adoptionManifest = {
+  scope: "all",
+  provider_profile: "new-embedding",
+  model: "prepared/embed",
+  dimension: 384,
+  original_config_hash: "c".repeat(64),
+  entries: [{ embedding_id: 11, source_sha256: "a".repeat(64), vector_sha256: "b".repeat(64) }],
+};
+const adoptionPreview = {
+  preview_hash: "d".repeat(64),
+  count: 1,
+  scope: "all",
+  provider_profile: "new-embedding",
+  model: "prepared/embed",
+  dimension: 384,
+  space_key: "e".repeat(64),
+  configuration_fingerprint: "c".repeat(64),
+  route_epoch: 3,
+};
 
 beforeEach(() => {
   clearNuxtState();
@@ -97,6 +116,9 @@ function stubIndexes(initialJobs: (typeof queuedJob)[] = []) {
         jobs = [{ ...queuedJob, status: "cancelled", version: 6 }];
         return jobs[0];
       }
+      if (input.endsWith("/embedding-indexes/legacy/preview")) return adoptionPreview;
+      if (input.endsWith("/embedding-indexes/legacy/adopt"))
+        return { adopted: 1, preview_hash: adoptionPreview.preview_hash, space: oldSpace };
       if (input.endsWith("/auth/dev/step-up"))
         return {
           step_up: true,
@@ -111,6 +133,56 @@ function stubIndexes(initialJobs: (typeof queuedJob)[] = []) {
 }
 
 describe("Embedding index migrations", () => {
+  it("requires reviewed provenance, exact preview confirmation and fresh verification for adoption", async () => {
+    const request = stubIndexes();
+    const wrapper = await mountSuspended(EmbeddingIndexesPage);
+    await vi.waitFor(() => expect(wrapper.text()).toContain("old/embed"));
+    await wrapper
+      .get('[data-testid="legacy-adoption-manifest"]')
+      .setValue(JSON.stringify(adoptionManifest));
+    await wrapper.get('[data-testid="preview-legacy-adoption"]').trigger("click");
+    await vi.waitFor(() => expect(wrapper.text()).toContain("1 legacy vector"));
+    const adopt = wrapper.get('[data-testid="commit-legacy-adoption"]');
+    expect(adopt.attributes("disabled")).toBeDefined();
+    await wrapper
+      .get('[data-testid="legacy-adoption-confirmation"]')
+      .setValue(`ADOPT ${adoptionPreview.preview_hash}`);
+    expect(adopt.attributes("disabled")).toBeDefined();
+    await wrapper.get('[data-testid="legacy-provenance-attested"]').setValue(true);
+    expect(request.mock.calls.some(([input]) => input.endsWith("/legacy/adopt"))).toBe(false);
+    await adopt.trigger("click");
+    await vi.waitFor(() => expect(wrapper.text()).toContain("Adopted 1 legacy vector"));
+    expect(request).toHaveBeenCalledWith(
+      "/api/control/v1/auth/dev/step-up",
+      expect.objectContaining({ body: { action: "embedding:adopt" } }),
+    );
+    expect(request).toHaveBeenCalledWith(
+      "/api/control/v1/embedding-indexes/legacy/adopt",
+      expect.objectContaining({
+        body: {
+          manifest: adoptionManifest,
+          preview_hash: adoptionPreview.preview_hash,
+          confirmation: `ADOPT ${adoptionPreview.preview_hash}`,
+          provenance_attested: true,
+        },
+      }),
+    );
+  });
+
+  it("invalidates legacy adoption proof when its manifest changes", async () => {
+    const request = stubIndexes();
+    const wrapper = await mountSuspended(EmbeddingIndexesPage);
+    await vi.waitFor(() => expect(wrapper.text()).toContain("old/embed"));
+    const manifest = wrapper.get('[data-testid="legacy-adoption-manifest"]');
+    await manifest.setValue(JSON.stringify(adoptionManifest));
+    await wrapper.get('[data-testid="preview-legacy-adoption"]').trigger("click");
+    await vi.waitFor(() =>
+      expect(wrapper.find('[data-testid="commit-legacy-adoption"]').exists()).toBe(true),
+    );
+    await manifest.setValue(JSON.stringify({ ...adoptionManifest, scope: "-1001" }));
+    expect(wrapper.find('[data-testid="commit-legacy-adoption"]').exists()).toBe(false);
+    expect(request.mock.calls.some(([input]) => input.endsWith("/legacy/adopt"))).toBe(false);
+  });
   it("keeps jobs visible when the backend canonicalizes a main-thread scope alias", async () => {
     const request = vi.fn(async (input: string, options?: { method?: string }) => {
       if (input.endsWith("/providers")) return [profile];

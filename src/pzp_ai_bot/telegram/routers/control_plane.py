@@ -5,6 +5,9 @@ from aiogram.types import Message
 
 from pzp_ai_bot.app_context import AppContext
 from pzp_ai_bot.control_plane.management import ControlPlaneManagementError
+from pzp_ai_bot.db.repos.events import EventRepository
+from pzp_ai_bot.db.session import session_scope
+from pzp_ai_bot.memory.scope import Scope
 from pzp_ai_bot.telegram.safe_api import safe_answer
 from pzp_ai_bot.telegram.utils import message_user_id
 
@@ -31,7 +34,14 @@ def register_control_plane_enrollment_handler(router: Router, context: AppContex
                 shared_username=shared.username,
                 bot=message.bot,
             )
-        except ControlPlaneManagementError:
+        except ControlPlaneManagementError as error:
+            async with session_scope(context.session_factory) as session:
+                await EventRepository(session).add(
+                    event_type="control_plane.chat_enrollment.rejected",
+                    scope=Scope(shared.chat_id, None),
+                    user_id=user_id,
+                    payload={"request_id": shared.request_id, "reason": error.code},
+                )
             await safe_answer(
                 message,
                 "This chat enrollment could not be verified. "

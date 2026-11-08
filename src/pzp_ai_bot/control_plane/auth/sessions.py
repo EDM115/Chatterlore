@@ -211,6 +211,7 @@ SENSITIVE_ACTIONS = frozenset(
         "chat:forget",
         "chat:leave",
         "embedding:activate",
+        "embedding:adopt",
         "local_model:download",
     }
 )

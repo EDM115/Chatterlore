@@ -13,6 +13,8 @@ export interface ControlPlaneSession {
   client_kind: "browser" | "mini_app";
   authenticated_at: string;
   step_up_at: string | null;
+  step_up_action?: string | null;
+  step_up_expires_at?: string | null;
   expires_at: string;
   csrf_token: string;
   capabilities: string[];
@@ -124,6 +126,13 @@ export function useControlSession() {
   }
 
   async function ensureStepUp(action: string, returnTo = "/"): Promise<boolean> {
+    if (
+      session.value?.client_kind === "browser" &&
+      session.value.step_up_action === action &&
+      session.value.step_up_expires_at &&
+      Date.parse(session.value.step_up_expires_at) > Date.now()
+    )
+      return true;
     const initData = import.meta.client ? (miniAppProof.value ?? readTelegramInitData()) : "";
     try {
       let verified: StepUpResponse;

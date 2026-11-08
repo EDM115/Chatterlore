@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import asyncio
+from collections import deque
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
 
+import structlog
 from aiogram import Bot, Dispatcher
 from aiogram.types import Update
 from fastapi import FastAPI, Header, HTTPException, Request
@@ -25,6 +28,8 @@ from pzp_ai_bot.telegram.scheduler import (
 )
 
 UNSAFE_WEBHOOK_SECRETS = {"", "change-me", "changeme", "default", "placeholder", "secret"}
+MAX_WEBHOOK_ANSWER_TASKS = 128
+logger = structlog.get_logger(__name__)
 
 
 def require_safe_webhook_secret(secret: str) -> None:
@@ -44,6 +49,18 @@ def create_webhook_app(
     owns_bot = bot is None
     telegram_bot: Any = bot or Bot(context.settings.telegram_bot_token)
     telegram_dispatcher: Any = dispatcher or build_dispatcher(context)
+    answer_tasks: dict[int, asyncio.Task[Any]] = {}
+    completed_answers: deque[int] = deque(maxlen=256)
+
+    def answer_finished(update_id: int, task: asyncio.Task[Any]) -> None:
+        answer_tasks.pop(update_id, None)
+        completed_answers.append(update_id)
+        if not task.cancelled() and (error := task.exception()) is not None:
+            logger.warning(
+                "telegram_webhook_answer_failed",
+                update_id=update_id,
+                error_type=type(error).__name__,
+            )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
@@ -66,6 +83,11 @@ def create_webhook_app(
             yield
         finally:
             await telegram_dispatcher.emit_shutdown(bot=telegram_bot)
+            pending_answers = tuple(answer_tasks.values())
+            for task in pending_answers:
+                task.cancel()
+            if pending_answers:
+                await asyncio.gather(*pending_answers, return_exceptions=True)
             await stop_task(idle_task)
             await stop_task(settings_task)
             await stop_task(index_task)
@@ -80,6 +102,7 @@ def create_webhook_app(
     app = FastAPI(title="PZP AI Telegram Memory Bot", lifespan=lifespan)
     app.state.telegram_bot = telegram_bot
     app.state.telegram_dispatcher = telegram_dispatcher
+    app.state.webhook_answer_tasks = answer_tasks
 
     @app.post("/telegram/webhook")
     async def telegram_webhook(
@@ -88,6 +111,21 @@ def create_webhook_app(
         if x_telegram_bot_api_secret_token != context.settings.webhook_secret:
             raise HTTPException(status_code=401, detail="invalid webhook secret")
         update = Update.model_validate(await request.json(), context={"bot": telegram_bot})
+        text = (update.message.text or update.message.caption) if update.message else None
+        command = text.split(maxsplit=1)[0].split("@", 1)[0] if text and text.strip() else ""
+        if command == "/ask":
+            # Acknowledge before generation so Telegram can deliver this chat's Stop update
+            if update.update_id in answer_tasks or update.update_id in completed_answers:
+                return {"ok": True}
+            if len(answer_tasks) >= MAX_WEBHOOK_ANSWER_TASKS:
+                raise HTTPException(status_code=503, detail="answer capacity unavailable")
+            task = asyncio.create_task(
+                telegram_dispatcher.feed_update(telegram_bot, update),
+                name=f"telegram-answer-{update.update_id}",
+            )
+            answer_tasks[update.update_id] = task
+            task.add_done_callback(lambda done, uid=update.update_id: answer_finished(uid, done))
+            return {"ok": True}
         await telegram_dispatcher.feed_update(telegram_bot, update)
         return {"ok": True}
 

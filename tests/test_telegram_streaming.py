@@ -9,6 +9,7 @@ from aiogram import Bot
 from aiogram.exceptions import TelegramRetryAfter
 from aiogram.methods import SendRichMessageDraft
 from aiogram.types import Chat, MessageGenerationStopped
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
 from pzp_ai_bot.ai.protocols import ChatResult
@@ -17,6 +18,7 @@ from pzp_ai_bot.db.models import AIUsage
 from pzp_ai_bot.db.session import session_scope
 from pzp_ai_bot.memory.scope import Scope
 from pzp_ai_bot.telegram.dispatcher import build_dispatcher
+from pzp_ai_bot.telegram.webhook import create_webhook_app
 from test_telegram_integration import RecordingTelegramSession, feed, message_update
 from test_telegram_presentation import PresentationSession, incoming
 
@@ -66,6 +68,25 @@ async def test_private_drafts_animate_one_id_then_persist_the_complete_rich_answ
     assert first.can_stop and not first.keep_on_stop
     assert "<strong>Copper 1234</strong>" in final.rich_message.html
     assert "[source:17]" in final.rich_message.html
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("prefix", ["#", "## ", "```python\n", "- "])
+async def test_formatting_only_prefix_does_not_send_an_empty_draft_or_throttle_next_text(
+    prefix: str,
+) -> None:
+    session = PresentationSession()
+    bot = Bot("123456:TEST_TOKEN", session=session)
+    delivery = streaming_api().AnswerDelivery(private_message(bot), clock=lambda: 0.0)
+    await delivery.update(prefix)
+    assert session.calls == []
+    await delivery.update("# Visible answer")
+    assert len(session.calls) == 1
+    draft = session.calls[0]
+    assert draft.__api_method__ == "sendRichMessageDraft"
+    assert "Visible answer" in draft.rich_message.html
+    assert draft.can_stop is True
+    await bot.session.close()
 
 
 @pytest.mark.asyncio
@@ -352,6 +373,129 @@ async def test_dispatcher_stop_update_closes_provider_and_sends_only_a_stopped_f
         [usage] = list((await db.scalars(select(AIUsage).where(AIUsage.operation == "ask"))).all())
         assert usage.error is not None and "CancelledError" in usage.error
         assert "PRIVATE_PARTIAL_OUTPUT" not in str(usage.metadata_json)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("command_field", ["text", "caption"])
+async def test_webhook_acknowledges_stream_before_next_stop_update(
+    context: AppContext, monkeypatch: pytest.MonkeyPatch, command_field: str
+) -> None:
+    await context.memory.remember(Scope(111, None), "Copper marker is Copper 1234")
+    ready = asyncio.Event()
+    closed = asyncio.Event()
+    calls = 0
+
+    async def stream(messages: Any, *, on_text: Any, **kwargs: Any) -> ChatResult:
+        nonlocal calls
+        calls += 1
+        try:
+            await on_text("PRIVATE_PARTIAL_OUTPUT")
+            ready.set()
+            await asyncio.Event().wait()
+        finally:
+            closed.set()
+        raise AssertionError("stopped stream cannot complete")
+
+    monkeypatch.setattr(context.memory.chat_provider, "generate_stream", stream, raising=False)
+    session = RecordingTelegramSession()
+    bot = Bot(context.settings.telegram_bot_token, session=session)
+    app = create_webhook_app(context, bot=bot)
+    headers = {"X-Telegram-Bot-Api-Secret-Token": context.settings.webhook_secret}
+    update = message_update("/ask Copper marker", user_id=111, chat_id=111)
+    update["message"]["chat"]["type"] = "private"
+    if command_field == "caption":
+        update["message"]["caption"] = update["message"].pop("text")
+        update["message"]["caption_entities"] = [{"type": "bot_command", "offset": 0, "length": 4}]
+        update["message"]["photo"] = [
+            {"file_id": "synthetic", "file_unique_id": "synthetic", "width": 1, "height": 1}
+        ]
+    async with (
+        app.router.lifespan_context(app),
+        AsyncClient(transport=ASGITransport(app), base_url="https://test") as client,
+    ):
+        response = await asyncio.wait_for(
+            client.post("/telegram/webhook", json=update, headers=headers), timeout=2
+        )
+        assert response.status_code == 200
+        await asyncio.wait_for(ready.wait(), timeout=5)
+        duplicate = await client.post("/telegram/webhook", json=update, headers=headers)
+        assert duplicate.status_code == 200 and calls == 1
+        draft = next(method for method in session.calls if isinstance(method, SendRichMessageDraft))
+        stop = {
+            "update_id": 88,
+            "stopped_message_generation": {
+                "chat": {"id": 111, "type": "private"},
+                "draft_id": draft.draft_id,
+            },
+        }
+        response = await client.post("/telegram/webhook", json=stop, headers=headers)
+        assert response.status_code == 200
+        await asyncio.wait_for(closed.wait(), timeout=5)
+        await asyncio.gather(*app.state.webhook_answer_tasks.values())
+        replay = await client.post("/telegram/webhook", json=update, headers=headers)
+        assert replay.status_code == 200 and calls == 1
+    assert session.sent_texts() == ["Generation stopped."]
+
+
+@pytest.mark.asyncio
+async def test_webhook_answer_queue_is_bounded_and_shutdown_closes_stream(
+    context: AppContext, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import pzp_ai_bot.telegram.webhook as webhook_module
+
+    monkeypatch.setattr(webhook_module, "MAX_WEBHOOK_ANSWER_TASKS", 1, raising=False)
+    await context.memory.remember(Scope(111, None), "Copper marker is Copper 1234")
+    ready = asyncio.Event()
+    closed = asyncio.Event()
+
+    async def stream(messages: Any, *, on_text: Any, **kwargs: Any) -> ChatResult:
+        try:
+            await on_text("PRIVATE_PARTIAL_OUTPUT")
+            ready.set()
+            await asyncio.Event().wait()
+        finally:
+            closed.set()
+        raise AssertionError("shutdown stream cannot complete")
+
+    monkeypatch.setattr(context.memory.chat_provider, "generate_stream", stream, raising=False)
+    bot = Bot(context.settings.telegram_bot_token, session=RecordingTelegramSession())
+    app = create_webhook_app(context, bot=bot)
+    headers = {"X-Telegram-Bot-Api-Secret-Token": context.settings.webhook_secret}
+    update = message_update("/ask Copper marker", user_id=111, chat_id=111)
+    update["message"]["chat"]["type"] = "private"
+    async with (
+        app.router.lifespan_context(app),
+        AsyncClient(transport=ASGITransport(app), base_url="https://test") as client,
+    ):
+        response = await asyncio.wait_for(
+            client.post("/telegram/webhook", json=update, headers=headers), timeout=2
+        )
+        assert response.status_code == 200
+        await asyncio.wait_for(ready.wait(), timeout=5)
+        update["update_id"] += 1
+        update["message"]["message_id"] += 1
+        overloaded = await client.post("/telegram/webhook", json=update, headers=headers)
+        assert overloaded.status_code == 503
+        assert not closed.is_set()
+    assert closed.is_set()
+    assert not app.state.webhook_answer_tasks
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("text", ["   ", "/askew"])
+async def test_webhook_non_answer_updates_keep_synchronous_handling(
+    context: AppContext, text: str
+) -> None:
+    bot = Bot(context.settings.telegram_bot_token, session=RecordingTelegramSession())
+    app = create_webhook_app(context, bot=bot)
+    async with AsyncClient(transport=ASGITransport(app), base_url="https://test") as client:
+        response = await client.post(
+            "/telegram/webhook",
+            json=message_update(text),
+            headers={"X-Telegram-Bot-Api-Secret-Token": context.settings.webhook_secret},
+        )
+    assert response.status_code == 200
+    assert not app.state.webhook_answer_tasks
 
 
 @pytest.mark.asyncio

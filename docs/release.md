@@ -18,7 +18,7 @@ Use this checklist before tagging or publishing a new PZP AI release. It is desi
 - Review config changes in `docs/setup.md`, `docs/deployment.md`, `docs/secrets.md` and `docs/operations.md`.
 - Run a manual Telegram smoke test for default command-menu cleanup and manually typed `/help`, `/learn_status`, `/runtime_settings`, `/audit_events`, `/ask`, `/memory_export`, `/settings` preview/confirm and `/forget` confirmation before inviting a real group. Validate rich headings/tables/code on the actual supported clients, private drafts/final persistence/native Stop, group/topic in-place progress, rate-limit/fallback behavior and no stale Generating state after cancellation. In the control plane, also validate browser and Mini App login, bot-owner add/remove and session revocation, prepared/DM group enrollment, delegated-admin boundaries, pause/resume/detach/leave/forget differences and chat/topic inherited settings against disposable accounts/chats.
 - Manually dispatch the GitHub Actions workflow after pushing the final branch and record its result for that exact snapshot (push/PR events no longer trigger it automatically).
-- The Plan 021 delegated-admin policy is resolved to bot-admin-only grant management, complete the remaining client/permission/enrollment/lifecycle, separate polling, disposable provider/DM and user-dispatched hosted CI checks in the [current live ledger](live-acceptance-2026-11-07.md) before release
+- The Plan 021 delegated-admin policy is resolved to bot-admin-only grant management, current owner enrollment/lifecycle and exclusive polling passed. Complete broader real-client/account/permission/logout/revocation, deferred two-key/admin-DM/DeepSeek, production sizing and owner-dispatched hosted CI holds in the [current closure report](release-closure-acceptance-2026-11-08.md) before release
 
 ## Release Notes Template
 
@@ -31,6 +31,10 @@ Include:
 - Any known limitations or operator action required before upgrade.
 
 ## Current Release Notes
+
+The [2026-11-08 closure report](release-closure-acceptance-2026-11-08.md) is the current qualification source. Route-family extraction and original-evidence legacy adoption are implemented, rich Telegram behavior is isolated-deployed and real owner Desktop/browser/Mini App, disposable lifecycle, exclusive polling, native image/recovery and bounded pretrained embedded/local-server/SSE checks passed. Existing source/image hashes, exact runtime-specific test counts, transient Telegram/OIDC failures and the final caption-command qualification boundary are recorded there. The actual legacy vectors remain unverified and preserved, no automatic adoption or production release occurred.  
+The package remains `0.11.0`, roadmap version is independent. Two-key/admin-DM and DeepSeek remain owner-deferred, broader real clients/accounts/permissions/logout/revocation, production sizing and owner-controlled Git/hosted CI/tagging remain release gates. Historical counts, revoked-key results and Docker unavailability below describe their named snapshots, not the current stack.  
+### Historical qualification snapshots
 
 - The [rich Telegram presentation source](superpowers/plans/2026-11-07-telegram-rich-replies.md) passes the final 648-test Python 3.14 suite with one live skip and three known upstream warnings, 71 final rich/SSE/managed-key-pool regressions and repository Ruff/ty/lock/API checks. Both Important review findings were reproduced and fixed, logical long-message chunking and explicit interruption notices are covered. This later uncommitted source is not deployed or real-client accepted, private draft/Stop animation, group/topic edits, rich rendering and default-menu cleanup remain deployment smoke checks
 - Package version is `0.11.0`.

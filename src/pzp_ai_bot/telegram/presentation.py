@@ -236,6 +236,17 @@ def _wrapped_fragments(
         yield raw_pending, start + html_pending + closing, ancestor_blocks + blocks_pending
 
 
+def markdown_has_text(text: str) -> bool:
+    tokens = list(_MARKDOWN.parse(text))
+    while tokens:
+        token = tokens.pop()
+        if token.type in {"text", "code_inline", "code_block", "fence"} and token.content.strip():
+            return True
+        if token.children:
+            tokens.extend(token.children)
+    return False
+
+
 def rich_payload(text: str, *, markdown: bool = False) -> InputRichMessage:
     if markdown:
         return InputRichMessage(html=_MARKDOWN.render(text), skip_entity_detection=True)
