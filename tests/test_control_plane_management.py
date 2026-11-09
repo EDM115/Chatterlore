@@ -76,6 +76,13 @@ class ManagementBotDouble:
     async def get_chat_member(self, chat_id: int, user_id: int) -> Any:
         return self.chat_members[(chat_id, user_id)]
 
+    async def get_chat_administrators(self, chat_id: int) -> list[Any]:
+        return [
+            member
+            for (member_chat_id, _), member in self.chat_members.items()
+            if member_chat_id == chat_id and member.status in {"administrator", "creator"}
+        ]
+
     async def get_me(self) -> Any:
         return SimpleNamespace(id=999, is_bot=True)
 
@@ -291,6 +298,141 @@ async def test_prepared_request_chat_enrollment_is_bound_to_the_requesting_admin
     assert [(chat.chat_id, chat.status, chat.title) for chat in chats] == [
         (-1002, "active", "Operations")
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("owner_source", ["bootstrap", "managed"])
+@pytest.mark.parametrize("group_role", ["administrator", "creator"])
+async def test_bot_admin_can_enroll_a_group_administered_by_another_bot_admin(
+    tmp_path: Path, owner_source: str, group_role: str
+) -> None:
+    settings = control_plane_settings(tmp_path)
+    if owner_source == "bootstrap":
+        settings = settings.model_copy(update={"bot_admins": "111,222"})
+    context = await build_context(settings)
+    assert context.control_plane is not None
+    management = context.control_plane.management
+    if owner_source == "managed":
+        await management.grant_bot_admin(telegram_user_id=222, actor_user_id=111, now=NOW)
+    bot = ManagementBotDouble()
+    bot.chats[-1002] = SimpleNamespace(
+        id=-1002, type="supergroup", title="Operations", username=None
+    )
+    bot.chat_members[(-1002, 111)] = SimpleNamespace(
+        status="member", user=SimpleNamespace(id=111, is_bot=False)
+    )
+    bot.chat_members[(-1002, 222)] = SimpleNamespace(
+        status=group_role, user=SimpleNamespace(id=222, is_bot=False)
+    )
+    bot.chat_members[(-1002, 999)] = SimpleNamespace(
+        status="member", user=SimpleNamespace(id=999, is_bot=True)
+    )
+    pending = await management.create_chat_enrollment(
+        telegram_user_id=111, bot=bot, delivery="mini_app", now=NOW
+    )
+
+    complete = await management.complete_chat_enrollment(
+        request_id=pending.request_id,
+        telegram_user_id=111,
+        chat_id=-1002,
+        shared_title=None,
+        shared_username=None,
+        bot=bot,
+        now=NOW,
+    )
+
+    assert complete.status == "completed"
+    assert complete.chat_id == -1002
+    [chat] = await management.list_managed_chats()
+    assert (chat.chat_id, chat.status) == (-1002, "active")
+    [event] = await context.memory.audit_events(event_type="control_plane.managed_chat.enrolled")
+    assert event.user_id == 111
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("requester_id", "group_admin_id", "revoke_owner"),
+    [(111, 333, False), (333, 222, False), (111, 222, True)],
+)
+async def test_enrollment_cannot_borrow_authority_from_unrelated_or_revoked_admins(
+    tmp_path: Path, requester_id: int, group_admin_id: int, revoke_owner: bool
+) -> None:
+    context = await build_context(control_plane_settings(tmp_path))
+    assert context.control_plane is not None
+    management = context.control_plane.management
+    await management.grant_bot_admin(telegram_user_id=222, actor_user_id=111, now=NOW)
+    bot = ManagementBotDouble()
+    bot.chats[-1002] = SimpleNamespace(
+        id=-1002, type="supergroup", title="Operations", username=None
+    )
+    bot.chat_members[(-1002, requester_id)] = SimpleNamespace(
+        status="member", user=SimpleNamespace(id=requester_id, is_bot=False)
+    )
+    bot.chat_members[(-1002, group_admin_id)] = SimpleNamespace(
+        status="administrator", user=SimpleNamespace(id=group_admin_id, is_bot=False)
+    )
+    bot.chat_members[(-1002, 999)] = SimpleNamespace(
+        status="member", user=SimpleNamespace(id=999, is_bot=True)
+    )
+    pending = await management.create_chat_enrollment(
+        telegram_user_id=requester_id, bot=bot, delivery="mini_app", now=NOW
+    )
+    if revoke_owner:
+        await management.revoke_bot_admin(
+            telegram_user_id=222, expected_version=1, actor_user_id=111, now=NOW
+        )
+
+    with pytest.raises(ControlPlaneManagementError) as rejected:
+        await management.complete_chat_enrollment(
+            request_id=pending.request_id,
+            telegram_user_id=requester_id,
+            chat_id=-1002,
+            shared_title=None,
+            shared_username=None,
+            bot=bot,
+            now=NOW,
+        )
+
+    assert rejected.value.code == "chat_enrollment_admin_required"
+    assert await management.list_managed_chats() == []
+
+
+@pytest.mark.asyncio
+async def test_pending_enrollment_rechecks_requester_bot_admin_authority(tmp_path: Path) -> None:
+    context = await build_context(control_plane_settings(tmp_path))
+    assert context.control_plane is not None
+    management = context.control_plane.management
+    await management.grant_bot_admin(telegram_user_id=222, actor_user_id=111, now=NOW)
+    bot = ManagementBotDouble()
+    bot.chats[-1002] = SimpleNamespace(
+        id=-1002, type="supergroup", title="Operations", username=None
+    )
+    bot.chat_members[(-1002, 222)] = SimpleNamespace(
+        status="administrator", user=SimpleNamespace(id=222, is_bot=False)
+    )
+    bot.chat_members[(-1002, 999)] = SimpleNamespace(
+        status="member", user=SimpleNamespace(id=999, is_bot=True)
+    )
+    pending = await management.create_chat_enrollment(
+        telegram_user_id=222, bot=bot, delivery="mini_app", now=NOW
+    )
+    await management.revoke_bot_admin(
+        telegram_user_id=222, expected_version=1, actor_user_id=111, now=NOW
+    )
+
+    with pytest.raises(ControlPlaneManagementError) as rejected:
+        await management.complete_chat_enrollment(
+            request_id=pending.request_id,
+            telegram_user_id=222,
+            chat_id=-1002,
+            shared_title=None,
+            shared_username=None,
+            bot=bot,
+            now=NOW,
+        )
+
+    assert rejected.value.code == "chat_enrollment_admin_required"
+    assert await management.list_managed_chats() == []
 
 
 @pytest.mark.asyncio

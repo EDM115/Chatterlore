@@ -3092,7 +3092,6 @@
           },
           "base_url": {
             "maxLength": 512,
-            "minLength": 1,
             "title": "Base Url",
             "type": "string"
           },
@@ -3513,7 +3512,6 @@
             "anyOf": [
               {
                 "maxLength": 512,
-                "minLength": 1,
                 "type": "string"
               },
               {

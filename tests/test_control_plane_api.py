@@ -49,7 +49,13 @@ def settings_for(tmp_path: Path, **overrides: object) -> Settings:
     return Settings.model_validate(values)
 
 
-def signed_init_data(user_id: int = 887_758_628, *, authenticated_at: datetime = NOW) -> str:
+def signed_init_data(
+    user_id: int = 887_758_628,
+    *,
+    authenticated_at: datetime | None = None,
+    user_fields: dict[str, object] | None = None,
+) -> str:
+    authenticated_at = authenticated_at or datetime.now(UTC)
     fields = {
         "auth_date": str(int(authenticated_at.timestamp())),
         "query_id": f"query-{user_id}",
@@ -59,6 +65,7 @@ def signed_init_data(user_id: int = 887_758_628, *, authenticated_at: datetime =
                 "is_bot": False,
                 "first_name": f"User {user_id}",
                 "username": f"user{user_id}",
+                **(user_fields or {}),
             },
             separators=(",", ":"),
         ),
@@ -143,6 +150,92 @@ def build_test_app(tmp_path: Path, **overrides: object):
     asyncio.run(create_schema(settings))
     context = asyncio.run(build_context(settings, ensure_schema=False))
     return context, create_control_plane_app(context, oidc_client=FakeOIDCClient())
+
+
+def test_mini_app_login_and_step_up_accept_empty_optional_profile_fields(tmp_path: Path) -> None:
+    _, app = build_test_app(tmp_path)
+    init_data = signed_init_data(
+        6_000_000_001,
+        user_fields={
+            "first_name": "",
+            "last_name": "",
+            "username": "",
+            "language_code": "",
+            "photo_url": "",
+        },
+    )
+    with TestClient(app, base_url=ORIGIN) as client:
+        login = client.post(
+            "/api/control/v1/auth/mini-app",
+            headers={"Origin": ORIGIN},
+            json={"init_data": init_data},
+        )
+
+        assert login.status_code == 200
+        payload = login.json()
+        assert payload["user"] == {
+            "telegram_user_id": 6_000_000_001,
+            "first_name": "Telegram user 6000000001",
+            "last_name": None,
+            "username": None,
+            "language_code": None,
+            "photo_url": None,
+            "is_premium": None,
+        }
+        assert payload["client_kind"] == "mini_app"
+        assert "bot.admin" not in payload["capabilities"]
+        restored = client.get("/api/control/v1/session")
+        assert restored.status_code == 200
+        assert restored.json()["user"] == payload["user"]
+
+        step_up = client.post(
+            "/api/control/v1/auth/step-up/mini-app",
+            headers={"Origin": ORIGIN, "X-CSRF-Token": payload["csrf_token"]},
+            json={"init_data": init_data, "action": "credential:create"},
+        )
+        assert step_up.status_code == 200
+        assert step_up.json()["step_up"] is True
+
+
+@pytest.mark.parametrize(
+    ("kind", "reason"),
+    [
+        ("signature", "validation_signature"),
+        ("expired", "validation_expired"),
+        ("identity", "validation_identity"),
+    ],
+)
+def test_mini_app_rejections_log_safe_validation_reasons(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], kind: str, reason: str
+) -> None:
+    _, app = build_test_app(tmp_path)
+    authenticated_at = datetime.now(UTC) - timedelta(seconds=301 if kind == "expired" else 0)
+    init_data = signed_init_data(
+        0 if kind == "identity" else 111, authenticated_at=authenticated_at
+    )
+    if kind == "signature":
+        init_data += "tampered"
+    with TestClient(app, base_url=ORIGIN) as client:
+        capsys.readouterr()
+        rejected = client.post(
+            "/api/control/v1/auth/mini-app",
+            headers={"Origin": ORIGIN},
+            json={"init_data": init_data},
+        )
+        output = capsys.readouterr().out
+
+    assert rejected.status_code == 401
+    events = [json.loads(line) for line in output.splitlines() if line.startswith("{")]
+    assert any(
+        event.get("event") == "control_plane_auth"
+        and event.get("method") == "mini_app"
+        and event.get("outcome") == "rejected"
+        and event.get("reason") == reason
+        for event in events
+    )
+    assert init_data not in output
+    assert BOT_TOKEN not in output
+    assert "init_data" not in output
 
 
 def test_mini_app_session_csrf_logout_headers_and_audit_are_fail_closed(tmp_path: Path) -> None:
@@ -512,7 +605,7 @@ def test_provider_credentials_are_bot_admin_only_action_bound_and_never_listed_r
                 "name": "Primary",
                 "provider_kind": "openai_compatible",
                 "base_url": "https://api.openai.com/v1",
-                "chat_model": "gpt-5.6-terra",
+                "chat_model": "gpt-6.1-terra",
                 "embedding_model": "text-embedding-3-small",
                 "chat_capable": True,
                 "embedding_capable": True,
@@ -644,7 +737,7 @@ def test_provider_pool_health_manual_checks_and_alert_history_are_bot_admin_only
                 "name": "Primary",
                 "provider_kind": "openai_compatible",
                 "base_url": "https://api.openai.com/v1",
-                "chat_model": "gpt-5.6-terra",
+                "chat_model": "gpt-6.1-terra",
                 "embedding_model": "text-embedding-3-small",
                 "chat_capable": True,
                 "embedding_capable": True,
@@ -683,7 +776,7 @@ def test_provider_pool_health_manual_checks_and_alert_history_are_bot_admin_only
         assert checked.status_code == 200
         assert checked.json()["ok"] is True
         assert checked.json()["mode"] == "chat"
-        assert checked.json()["model"] == "gpt-5.6-terra"
+        assert checked.json()["model"] == "gpt-6.1-terra"
         assert checked.json()["credential_label"] == "Primary key"
         assert "usage charges" in checked.json()["warning"]
         assert "secret" not in json.dumps(checked.json())

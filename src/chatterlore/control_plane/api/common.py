@@ -168,7 +168,9 @@ def _require_step_up(
 
 def _raise_provider_error(exc: ValueError) -> Never:
     dependency = getattr(exc, "code", None)
-    if dependency in {"embedding_migration_required", "profile_in_use"}:
+    if dependency == "profile_in_use":
+        raise ControlPlaneAPIError(409, dependency, str(exc)) from exc
+    if dependency == "embedding_migration_required":
         raise ControlPlaneAPIError(
             409,
             dependency,

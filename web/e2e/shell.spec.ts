@@ -101,7 +101,7 @@ async function stubProviderOperations(page: Page, credentials: object[] = []): P
           name: "primary",
           provider_kind: "openai_compatible",
           base_url: "https://api.openai.com/v1",
-          chat_model: "gpt-5.6-terra",
+          chat_model: "gpt-6.1-terra",
           embedding_model: "text-embedding-3-small",
           chat_capable: true,
           embedding_capable: true,

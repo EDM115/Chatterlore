@@ -10,7 +10,7 @@ from ..schemas import (
     OperationCheckResponse,
     OperationsHealthResponse,
 )
-from .common import ControlPlaneAPIError, _require_bot_admin
+from .common import ControlPlaneAPIError, _require_bot_admin, _require_step_up
 
 
 def _build_operations_router() -> APIRouter:
@@ -40,8 +40,12 @@ def _build_operations_router() -> APIRouter:
     async def run_operation_check(
         request: Request, name: str, payload: OperationCheckRequest
     ) -> dict[str, Any]:
-        _, runtime, authenticated, _ = await _require_bot_admin(request)
+        context, runtime, authenticated, _ = await _require_bot_admin(request)
         try:
+            if name == "local-model-readiness" and payload.allow_download and payload.profile_name:
+                profile = runtime.secrets.registry.profile_by_name(payload.profile_name)
+                if profile.provider == "local":
+                    _require_step_up(authenticated, action="local_model:download", context=context)
             return await runtime.operations.run_check(
                 name,
                 actor_user_id=authenticated.identity.telegram_user_id,

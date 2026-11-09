@@ -2,6 +2,8 @@ import { clearNuxtState, useState } from "#app";
 import { mountSuspended } from "@nuxt/test-utils/runtime";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ControlPlaneShell from "~/components/ControlPlaneShell.vue";
+import { useControlSession } from "~/composables/useControlSession";
+import { defineComponent } from "vue";
 
 beforeEach(() => clearNuxtState());
 afterEach(() => vi.unstubAllGlobals());
@@ -31,6 +33,32 @@ function authenticated(clientKind: "browser" | "mini_app") {
 }
 
 describe("ControlPlaneShell", () => {
+  it("shows Mini App step-up rejection and fresh-launch recovery from a protected action", async () => {
+    authenticated("mini_app");
+    const envelope = { error: { code: "mini_app_step_up_rejected" } };
+    vi.stubGlobal(
+      "$fetch",
+      vi.fn().mockRejectedValue({
+        data: envelope,
+        response: { status: 401, _data: envelope },
+      }),
+    );
+    useState("control-plane-mini-app-proof").value = "expired-launch-proof";
+    const harness = defineComponent({
+      components: { ControlPlaneShell },
+      setup: () => ({ session: useControlSession() }),
+      template:
+        "<ControlPlaneShell><button @click=\"session.ensureStepUp('chat:leave', '/chats')\">Leave chat</button></ControlPlaneShell>",
+    });
+    const wrapper = await mountSuspended(harness);
+    await wrapper.get("main button").trigger("click");
+    await vi.waitFor(() =>
+      expect(wrapper.get('main [role="alert"]').text()).toContain("Close this Mini App"),
+    );
+    expect(useState("control-plane-session-status").value).toBe("authenticated");
+    expect(wrapper.text()).toContain("reopen it from Telegram");
+  });
+
   it.each(["Primary navigation", "Mobile navigation"])(
     "logs out browser sessions from %s",
     async (navigation) => {

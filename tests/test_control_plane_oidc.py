@@ -88,9 +88,9 @@ def telegram_transport(
         "iat": int(NOW.timestamp()),
         "exp": int((NOW + timedelta(minutes=5)).timestamp()),
     }
-    claims.update(claims_override or {})
     for claim in remove_claims:
         claims.pop(claim, None)
+    claims.update(claims_override or {})
     signing_key: object = private_key
     if wrong_signing_key:
         signing_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
@@ -201,6 +201,80 @@ async def test_oidc_client_uses_fixed_telegram_contract_pkce_nonce_and_rs256(
         "/.well-known/jwks.json",
     ]
     await client.aclose()
+
+
+@pytest.mark.parametrize("value", [None, "", " \t "])
+async def test_oidc_login_accepts_blank_optional_profile_claims(
+    tmp_path: Path, value: str | None
+) -> None:
+    settings = settings_for(tmp_path)
+    transport, _ = telegram_transport(
+        settings=settings,
+        claims_override={"family_name": value, "preferred_username": value, "picture": value},
+    )
+    client = TelegramOIDCClient(settings, transport=transport)
+    try:
+        identity = await client.exchange_code(
+            code="telegram-code",
+            code_verifier="pkce-verifier",
+            redirect_uri=settings.control_plane_callback_url,
+            expected_nonce="expected-nonce",
+            now=NOW,
+        )
+    finally:
+        await client.aclose()
+
+    assert identity.telegram_user_id == 887_758_628
+    assert identity.first_name == "Lu"
+    assert identity.last_name is None
+    assert identity.username is None
+    assert identity.photo_url is None
+
+
+@pytest.mark.parametrize(
+    ("profile_claims", "expected_name"),
+    [
+        ({}, "Telegram user 887758628"),
+        ({"name": "Admin ☯️"}, "Admin ☯️"),
+        ({"given_name": "", "name": "Full name"}, "Full name"),
+        (
+            {"given_name": False, "family_name": [], "preferred_username": 123, "picture": {}},
+            "Telegram user 887758628",
+        ),
+        (
+            {
+                "given_name": "x" * 256,
+                "family_name": "x" * 256,
+                "preferred_username": "x" * 256,
+                "picture": "x" * 513,
+            },
+            "x" * 256,
+        ),
+    ],
+)
+async def test_oidc_profile_metadata_cannot_reject_a_verified_user(
+    tmp_path: Path, profile_claims: dict[str, object], expected_name: str
+) -> None:
+    settings = settings_for(tmp_path)
+    transport, _ = telegram_transport(
+        settings=settings,
+        remove_claims=("given_name", "family_name", "preferred_username", "picture", "name"),
+        claims_override=profile_claims,
+    )
+    client = TelegramOIDCClient(settings, transport=transport)
+    try:
+        identity = await client.exchange_code(
+            code="telegram-code",
+            code_verifier="pkce-verifier",
+            redirect_uri=settings.control_plane_callback_url,
+            expected_nonce="expected-nonce",
+            now=NOW,
+        )
+    finally:
+        await client.aclose()
+
+    assert identity.telegram_user_id == 887_758_628
+    assert identity.first_name == expected_name
 
 
 @pytest.mark.parametrize(

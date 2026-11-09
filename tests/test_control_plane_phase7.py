@@ -47,7 +47,7 @@ def local_dependency_available(request: pytest.FixtureRequest, monkeypatch: pyte
 
 def _build_phase7_app(tmp_path: Path, **overrides: object):
     values: dict[str, object] = {
-        "allowed_chat_models": "fake-chat,gpt-5.6-terra",
+        "allowed_chat_models": "fake-chat,gpt-6.1-terra",
         "allowed_embedding_models": (
             "fake-embedding,text-embedding-3-small,"
             "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
@@ -123,7 +123,7 @@ def test_query_catalog_is_scope_authorized_capability_accurate_and_secret_free(
                 "name": "managed-openai",
                 "provider_kind": "openai_compatible",
                 "base_url": "https://api.openai.com/v1",
-                "chat_model": "gpt-5.6-terra",
+                "chat_model": "gpt-6.1-terra",
                 "embedding_model": "text-embedding-3-small",
                 "chat_capable": True,
                 "embedding_capable": True,
@@ -146,7 +146,7 @@ def test_query_catalog_is_scope_authorized_capability_accurate_and_secret_free(
         assert response.status_code == 200
         payload = response.json()
         assert payload["scope"] == "-1001:main"
-        assert payload["chat_models"] == ["fake-chat", "gpt-5.6-terra"]
+        assert payload["chat_models"] == ["fake-chat", "gpt-6.1-terra"]
         assert payload["embedding_models"] == [
             "fake-embedding",
             "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",

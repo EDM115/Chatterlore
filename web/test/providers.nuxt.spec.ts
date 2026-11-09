@@ -43,7 +43,7 @@ describe("providers page", () => {
             name: "primary",
             provider_kind: "openai_compatible",
             base_url: "https://api.openai.com/v1",
-            chat_model: "gpt-5.6-terra",
+            chat_model: "gpt-6.1-terra",
             embedding_model: "text-embedding-3-small",
             chat_capable: true,
             embedding_capable: true,
@@ -127,7 +127,7 @@ describe("providers page", () => {
         return {
           ok: true,
           mode: "chat",
-          model: "gpt-5.6-terra",
+          model: "gpt-6.1-terra",
           dimensions: null,
           managed_profile_revision: 1,
           credential_fingerprint: "ab12cd34ef56",
@@ -154,7 +154,7 @@ describe("providers page", () => {
     expect(wrapper.text()).toContain("credential_recovered");
     expect(wrapper.text()).not.toContain("sk-sensitive");
     await wrapper.get('[data-testid="test-chat-42"]').trigger("click");
-    await vi.waitFor(() => expect(wrapper.text()).toContain("gpt-5.6-terra passed"));
+    await vi.waitFor(() => expect(wrapper.text()).toContain("gpt-6.1-terra passed"));
     expect(request).toHaveBeenCalledWith(
       "/api/control/v1/providers/primary/credentials/42/test",
       expect.objectContaining({ body: { mode: "chat" }, method: "POST" }),

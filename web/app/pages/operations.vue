@@ -6,12 +6,12 @@ useSeoMeta({ title: "Operations · Chatterlore Control Plane" });
 
 type OperationsHealth = components["schemas"]["OperationsHealthResponse"];
 type OperationCheck = components["schemas"]["OperationCheckResponse"];
-type QueryCatalog = components["schemas"]["QueryCatalogResponse"];
+type ProviderProfile = components["schemas"]["ProviderProfileResponse"];
 
 const api = useControlApi();
 const controlSession = useControlSession();
 const health = ref<OperationsHealth | null>(null);
-const catalog = ref<QueryCatalog | null>(null);
+const profiles = ref<ProviderProfile[]>([]);
 const providerProfile = ref("");
 const providerMode = ref<"chat" | "embedding">("chat");
 const localProfile = ref("");
@@ -21,12 +21,22 @@ const loading = ref(true);
 const activeCheck = ref<string | null>(null);
 const error = ref<string | null>(null);
 
-const providerProfiles = computed(
-  () => catalog.value?.profiles.filter((profile) => profile.enabled && !profile.local_state) ?? [],
+const providerProfiles = computed(() =>
+  profiles.value.filter(
+    (profile) => profile.enabled && !profile.local && profile.provider_kind !== "local",
+  ),
 );
-const localProfiles = computed(
-  () => catalog.value?.profiles.filter((profile) => profile.enabled && profile.local_state) ?? [],
+const localProfiles = computed(() =>
+  profiles.value.filter(
+    (profile) => profile.enabled && (profile.local || profile.provider_kind === "local"),
+  ),
 );
+const selectedLocalProfile = computed(() =>
+  localProfiles.value.find((profile) => profile.name === localProfile.value),
+);
+watch(localProfile, () => {
+  allowDownload.value = false;
+});
 const providerState = computed(
   () =>
     (health.value?.providers ?? {}) as {
@@ -48,14 +58,12 @@ async function loadOperations() {
   loading.value = true;
   error.value = null;
   try {
-    const [nextHealth, catalogScope] = await Promise.all([
+    const [nextHealth, nextProfiles] = await Promise.all([
       api.request<OperationsHealth>("/operations/health"),
-      resolveQueryCatalogScope(api),
+      api.request<ProviderProfile[]>("/providers"),
     ]);
     health.value = nextHealth;
-    catalog.value = catalogScope
-      ? await api.request<QueryCatalog>(`/query/catalog?scope=${encodeURIComponent(catalogScope)}`)
-      : null;
+    profiles.value = nextProfiles;
     providerProfile.value =
       providerProfiles.value.find((profile) => profile.name === providerProfile.value)?.name ??
       providerProfiles.value[0]?.name ??
@@ -64,9 +72,6 @@ async function loadOperations() {
       localProfiles.value.find((profile) => profile.name === localProfile.value)?.name ??
       localProfiles.value[0]?.name ??
       "";
-    if (!catalogScope) {
-      error.value = "Enroll or resume an active managed chat before running provider checks.";
-    }
   } catch (caught) {
     error.value = controlErrorMessage(caught, "Operational status could not be loaded.");
   } finally {
@@ -105,11 +110,15 @@ function runProviderCheck() {
   });
 }
 
-function runLocalCheck() {
+async function runLocalCheck() {
+  const prepareModels =
+    selectedLocalProfile.value?.provider_kind === "local" && allowDownload.value;
+  if (prepareModels && !(await controlSession.ensureStepUp("local_model:download", "/operations")))
+    return;
   return runCheck("local-model-readiness", {
     profile_name: localProfile.value,
     mode: null,
-    allow_download: allowDownload.value,
+    allow_download: prepareModels,
   });
 }
 </script>
@@ -232,9 +241,15 @@ function runLocalCheck() {
               {{ profile.name }}
             </option>
           </select></label
-        ><label class="checkbox-label"
-          ><input v-model="allowDownload" type="checkbox" /> Allow model load/download</label
-        ><UButton
+        >
+        <label v-if="selectedLocalProfile?.provider_kind === 'local'" class="checkbox-label"
+          ><input v-model="allowDownload" type="checkbox" /> Prepare models (allow bounded
+          downloads)</label
+        >
+        <p v-else-if="selectedLocalProfile">
+          Checks the local server configuration without contacting the endpoint.
+        </p>
+        <UButton
           color="warning"
           :loading="activeCheck === 'local-model-readiness'"
           :disabled="!localProfile"

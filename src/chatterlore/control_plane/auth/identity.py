@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -15,3 +16,8 @@ class TelegramIdentity:
     is_bot: bool
     is_premium: bool | None
     authenticated_at: datetime
+
+
+def profile_string(payload: Mapping[str, object], key: str) -> str | None:
+    value = payload.get(key)
+    return value if isinstance(value, str) and value.strip() else None

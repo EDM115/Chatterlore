@@ -139,7 +139,7 @@ describe("Phase 8 observability and operations", () => {
               id: 5,
               scope: "-1001",
               provider: "openai_compatible",
-              model: "gpt-5.6-terra",
+              model: "gpt-6.1-terra",
               operation: "answer",
               prompt_tokens: 120,
               completion_tokens: 30,
@@ -157,7 +157,7 @@ describe("Phase 8 observability and operations", () => {
     const wrapper = await mountSuspended(AuditPage);
     await vi.waitFor(() => expect(wrapper.text()).toContain("credential_disabled"));
 
-    expect(wrapper.text()).toContain("gpt-5.6-terra");
+    expect(wrapper.text()).toContain("gpt-6.1-terra");
     expect(wrapper.text()).toContain("120 prompt");
     expect(wrapper.text()).toContain('"safe": "visible"');
     expect(wrapper.text()).not.toContain("api_key");
@@ -195,39 +195,33 @@ describe("Phase 8 observability and operations", () => {
           next_cursor: null,
           has_more: false,
         };
-      if (input.endsWith("/query/catalog?scope=-1001"))
-        return {
-          scope: "-1001",
-          chat_models: ["gpt-5.6-terra"],
-          embedding_models: ["text-embedding-3-small", "all-MiniLM-L6-v2"],
-          reasoning_levels: ["medium"],
-          profiles: [
-            {
-              name: "primary",
-              provider_kind: "openai_compatible",
-              source: "managed",
-              enabled: true,
-              chat_model: "gpt-5.6-terra",
-              embedding_model: "text-embedding-3-small",
-              capabilities: ["chat", "embedding", "reasoning"],
-              availability: "ready",
-              local_state: null,
-              pool: { eligible: 2, total: 2 },
-            },
-            {
-              name: "local",
-              provider_kind: "local",
-              source: "environment",
-              enabled: true,
-              chat_model: "none",
-              embedding_model: "all-MiniLM-L6-v2",
-              capabilities: ["embedding"],
-              availability: "ready",
-              local_state: { dependency_available: true, model_loaded: false },
-              pool: null,
-            },
-          ],
-        };
+      if (input.endsWith("/providers"))
+        return [
+          {
+            name: "primary",
+            provider_kind: "openai_compatible",
+            source: "managed",
+            enabled: true,
+            chat_model: "gpt-6.1-terra",
+            embedding_model: "text-embedding-3-small",
+            capabilities: ["chat", "embedding", "reasoning"],
+            availability: "ready",
+            local_state: null,
+            pool: { eligible: 2, total: 2 },
+          },
+          {
+            name: "local",
+            provider_kind: "local",
+            source: "environment",
+            enabled: true,
+            chat_model: "none",
+            embedding_model: "all-MiniLM-L6-v2",
+            capabilities: ["embedding"],
+            availability: "ready",
+            local_state: { dependency_available: true, model_loaded: false },
+            pool: null,
+          },
+        ];
       if (input.endsWith("/operations/checks/db-integrity") && options?.method === "POST")
         return {
           check: "db-integrity",
@@ -247,7 +241,7 @@ describe("Phase 8 observability and operations", () => {
           check: "provider-profile",
           ok: true,
           result: "ready",
-          details: { profile_name: "primary", model: "gpt-5.6-terra", latency_ms: 220 },
+          details: { profile_name: "primary", model: "gpt-6.1-terra", latency_ms: 220 },
           warning: "This explicit manual check may incur provider usage charges.",
           elapsed_ms: 221,
         };
@@ -264,6 +258,6 @@ describe("Phase 8 observability and operations", () => {
     await wrapper.get('[data-testid="check-db-integrity"]').trigger("click");
     await vi.waitFor(() => expect(wrapper.text()).toContain("db-integrity · ok"));
     await wrapper.get('[data-testid="check-provider-profile"]').trigger("click");
-    await vi.waitFor(() => expect(wrapper.text()).toContain("gpt-5.6-terra"));
+    await vi.waitFor(() => expect(wrapper.text()).toContain("gpt-6.1-terra"));
   });
 });

@@ -126,6 +126,7 @@ export function useControlSession() {
   }
 
   async function ensureStepUp(action: string, returnTo = "/"): Promise<boolean> {
+    error.value = null;
     if (
       session.value?.client_kind === "browser" &&
       session.value.step_up_action === action &&
@@ -162,7 +163,7 @@ export function useControlSession() {
     } catch (caught) {
       error.value =
         controlResponseCode(caught) === "mini_app_step_up_rejected"
-          ? "Telegram verification could not be completed in this Mini App. Open the control plane in a regular browser to retry securely."
+          ? "Telegram verification could not be completed in this Mini App. Close this Mini App and reopen it from Telegram, then retry the action with a fresh launch. You can also sign in to the control plane in a regular browser."
           : "Fresh Telegram verification could not be completed.";
       return false;
     }

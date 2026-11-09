@@ -122,6 +122,18 @@ class PolicyService:
     async def set_user(
         self, scope: Scope | None, user_id: int, allowed: bool, updated_by: int | None = None
     ) -> None:
+        opposite_type = "user_deny" if allowed else "user_allow"
+        opposite = await self.repository.get_policy(
+            policy_type=opposite_type, scope=scope, user_id=user_id
+        )
+        if opposite is not None:
+            await self.repository.set_policy(
+                policy_type=opposite_type,
+                enabled=False,
+                scope=scope,
+                user_id=user_id,
+                updated_by=updated_by,
+            )
         await self.repository.set_policy(
             policy_type="user_allow" if allowed else "user_deny",
             enabled=True,

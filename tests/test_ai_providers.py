@@ -139,7 +139,7 @@ async def test_openai_compatible_retries_and_redacts_chat_and_embedding_payloads
     provider = OpenAICompatibleProvider(
         api_key="sk-test",
         base_url="https://example.test/v1",
-        chat_model="gpt-5.6-terra",
+        chat_model="gpt-6.1-terra",
         embedding_model="embed-a",
         retry_attempts=2,
         retry_backoff_seconds=0,
@@ -169,7 +169,7 @@ async def test_openai_compatible_retries_and_redacts_chat_and_embedding_payloads
     assert len(chat_create.calls) == 2
     assert len(embedding_create.calls) == 2
     chat_payload = chat_create.calls[1]["messages"][0]["content"]
-    assert chat_create.calls[1]["model"] == "gpt-5.6-terra"
+    assert chat_create.calls[1]["model"] == "gpt-6.1-terra"
     assert chat_create.calls[1]["reasoning_effort"] == "medium"
     embedding_payload = embedding_create.calls[1]["input"][0]
     assert "me@example.com" not in chat_payload
@@ -199,7 +199,7 @@ async def test_openai_compatible_real_sdk_preserves_redaction_usage_and_embeddin
                     "id": "chat-test",
                     "object": "chat.completion",
                     "created": 1,
-                    "model": "gpt-5.6-terra",
+                    "model": "gpt-6.1-terra",
                     "choices": [
                         {
                             "index": 0,
@@ -231,7 +231,7 @@ async def test_openai_compatible_real_sdk_preserves_redaction_usage_and_embeddin
         provider = OpenAICompatibleProvider(
             api_key="sk-test",
             base_url="https://provider.example.test/v1",
-            chat_model="gpt-5.6-terra",
+            chat_model="gpt-6.1-terra",
             embedding_model="embed-a",
             client=client,
         )
@@ -279,7 +279,7 @@ async def test_openai_compatible_selects_token_budget_field_by_model_family() ->
         "gpt-5.4-nano",
         "gpt-5.5",
         "gpt-5.6-luna",
-        "gpt-5.6-terra",
+        "gpt-6.1-terra",
         "gpt-5.6-sol",
     )
     for model in (*reasoning_models, "gpt-4.1"):
@@ -321,7 +321,7 @@ async def test_openai_compatible_does_not_retry_invalid_requests() -> None:
     provider = OpenAICompatibleProvider(
         api_key="sk-test",
         base_url="https://provider.example.test/v1",
-        chat_model="gpt-5.6-terra",
+        chat_model="gpt-6.1-terra",
         embedding_model="text-embedding-3-small",
         retry_attempts=3,
         retry_backoff_seconds=0,

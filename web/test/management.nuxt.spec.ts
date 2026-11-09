@@ -162,9 +162,7 @@ describe("Phase 6 management pages", () => {
     await remove?.trigger("click");
 
     await vi.waitFor(() =>
-      expect(wrapper.text()).toContain(
-        "Telegram verification could not be completed in this Mini App. Open the control plane in a regular browser to retry securely.",
-      ),
+      expect(wrapper.text()).toContain("Close this Mini App and reopen it from Telegram"),
     );
     expect(request).not.toHaveBeenCalledWith(
       expect.stringContaining("/bot-settings/admins/222"),

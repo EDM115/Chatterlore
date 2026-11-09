@@ -24,6 +24,7 @@ from chatterlore.db.repos.provider_credentials import (
     ProviderPoolStateRepository,
     ProviderProfileRepository,
 )
+from chatterlore.db.repos.settings import RuntimeSettingRepository
 from chatterlore.db.repos.shared import normalize_profile_name
 from chatterlore.db.session import session_scope
 
@@ -37,7 +38,13 @@ class ProviderSecretConflictError(ValueError):
 
 
 class ProviderProfileDependencyError(ValueError):
-    def __init__(self, *, deleting: bool = False) -> None:
+    def __init__(self, *, deleting: bool = False, setting: str | None = None) -> None:
+        if setting is not None:
+            self.code = "profile_in_use"
+            super().__init__(
+                f"{self.code}: reassign {setting} before disabling or deleting this provider"
+            )
+            return
         self.code = "profile_in_use" if deleting else "embedding_migration_required"
         super().__init__(
             f"{self.code}: profile is in use, create another profile and migrate its index first"
@@ -314,6 +321,8 @@ class ProviderSecretService:
                 await EmbeddingIndexRepository(session).advance_epoch()
                 if await profiles.has_embedding_dependencies(clean):
                     raise ProviderProfileDependencyError()
+                if disabling:
+                    await self._validate_profile_removal(session, clean)
             stored = await profiles.update(
                 existing.id,
                 expected_version=expected_version,
@@ -337,7 +346,33 @@ class ProviderSecretService:
         await self.refresh_registry()
         return result
 
+    async def _validate_profile_removal(
+        self, session: AsyncSession, name: str, *, deleting: bool = False
+    ) -> None:
+        if deleting and name in self.settings.provider_profiles:
+            return
+        if name == self.settings.ai_provider_profile.strip().lower():
+            raise ProviderProfileDependencyError(setting="deployment AI_PROVIDER_PROFILE")
+        runtime = await RuntimeSettingRepository(session).values()
+        for operation in ("chat", "summary", "embedding"):
+            key = f"{operation}_provider_profile"
+            if key not in runtime and name == getattr(self.settings, f"ai_{key}").strip().lower():
+                raise ProviderProfileDependencyError(setting=f"deployment AI_{key.upper()}")
+        if await ProviderProfileRepository(session).has_settings_dependencies(name):
+            raise ProviderProfileDependencyError(setting="the runtime or scoped provider settings")
+
     def _validate_deployment_profile(self, values: dict[str, Any]) -> None:
+        if values.get("provider_kind") == "openai_compatible":
+            parsed = urlsplit(values["base_url"])
+            if (
+                parsed.scheme not in {"http", "https"}
+                or not parsed.hostname
+                or parsed.username is not None
+                or parsed.password is not None
+                or parsed.fragment
+                or parsed.query
+            ):
+                raise ValueError("provider base URL is invalid")
         if (
             values.get("auth_mode") == "none"
             and not values.get("local")
@@ -364,6 +399,7 @@ class ProviderSecretService:
             if existing is None:
                 raise ValueError("managed provider profile was not found")
             await EmbeddingIndexRepository(session).advance_epoch()
+            await self._validate_profile_removal(session, clean, deleting=True)
             if await profiles.has_embedding_dependencies(clean):
                 raise ProviderProfileDependencyError(deleting=True)
             deleted = await profiles.delete(existing.id, expected_version=expected_version)
@@ -920,19 +956,6 @@ def _validated_profile_updates(updates: dict[str, Any]) -> dict[str, Any]:
     for field_name in ("base_url", "chat_model", "embedding_model"):
         if field_name in values:
             values[field_name] = str(values[field_name]).strip()
-            if field_name == "base_url" and not values[field_name]:
-                raise ValueError(f"{field_name} cannot be empty")
-    if "base_url" in values:
-        parsed = urlsplit(values["base_url"])
-        if (
-            parsed.scheme not in {"http", "https"}
-            or not parsed.hostname
-            or parsed.username is not None
-            or parsed.password is not None
-            or parsed.fragment
-            or parsed.query
-        ):
-            raise ValueError("provider base URL is invalid")
     if "api_dialect" in values and values["api_dialect"] not in {
         "auto",
         "openai",

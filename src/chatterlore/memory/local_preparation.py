@@ -19,7 +19,11 @@ from chatterlore.db.session import session_scope
 from chatterlore.local_models import LocalModelOptions
 
 if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+    from chatterlore.ai.factory import ProviderRegistry
     from chatterlore.app_context import AppContext
+    from chatterlore.config import Settings
 
 
 @dataclass(frozen=True)
@@ -147,7 +151,36 @@ async def prepare_local_model(
     allow_download: bool = False,
     actor_user_id: int | None = None,
 ) -> dict[str, Any]:
-    registry = context.memory.provider_registry
+    service = (
+        context.control_plane.secrets
+        if context.control_plane
+        else ProviderSecretService(
+            context.settings, context.session_factory, context.memory.provider_registry
+        )
+    )
+    return await prepare_local_profile(
+        context.settings,
+        context.session_factory,
+        context.memory.provider_registry,
+        service,
+        profile_name,
+        mode=mode,
+        allow_download=allow_download,
+        actor_user_id=actor_user_id,
+    )
+
+
+async def prepare_local_profile(
+    settings: Settings,
+    session_factory: async_sessionmaker[AsyncSession],
+    registry: ProviderRegistry,
+    service: ProviderSecretService,
+    profile_name: str,
+    *,
+    mode: Literal["chat", "embedding"],
+    allow_download: bool = False,
+    actor_user_id: int | None = None,
+) -> dict[str, Any]:
     profile = registry.profile_by_name(profile_name)
     if (
         profile.provider != "local"
@@ -156,14 +189,9 @@ async def prepare_local_model(
     ):
         raise ValueError("local_preparation_unsupported")
     raw_options = profile.local_chat_options if mode == "chat" else profile.local_embedding_options
-    options = LocalModelOptions.model_validate(context.settings.local_runtime_options(raw_options))
+    options = LocalModelOptions.model_validate(settings.local_runtime_options(raw_options))
     model = profile.chat_model if mode == "chat" else profile.embedding_model
-    context.settings.validate_local_paths(model, options.model_dump())
-    service = (
-        context.control_plane.secrets
-        if context.control_plane
-        else ProviderSecretService(context.settings, context.session_factory, registry)
-    )
+    settings.validate_local_paths(model, options.model_dump())
     baseline = await service.get_profile(profile.name)
     if (
         getattr(baseline, f"{mode}_model") != model
@@ -175,7 +203,7 @@ async def prepare_local_model(
         "mode": mode,
         "actor_kind": "telegram_user" if actor_user_id is not None else "local_operator",
     }
-    async with session_scope(context.session_factory) as session:
+    async with session_scope(session_factory) as session:
         await EventRepository(session).add(
             event_type="local_model.preparation_requested",
             user_id=actor_user_id,
@@ -186,7 +214,7 @@ async def prepare_local_model(
         download_bytes = 0
         downloaded = False
         local_directory = await asyncio.to_thread(Path(model).is_dir)
-        cache_dir = options.cache_dir or str(context.settings.local_default_cache_dir)
+        cache_dir = options.cache_dir or str(settings.local_default_cache_dir)
         if local_directory:
             revision = await asyncio.to_thread(local_directory_revision, model)
             tokenizer_revision = revision
@@ -209,7 +237,7 @@ async def prepare_local_model(
                 download_bytes = model_plan.total_bytes + (
                     tokenizer_plan.total_bytes if tokenizer_plan is not model_plan else 0
                 )
-                if download_bytes > context.settings.local_download_max_bytes:
+                if download_bytes > settings.local_download_max_bytes:
                     raise ValueError("local_download_too_large")
                 revision, tokenizer_revision = model_plan.revision, tokenizer_plan.revision
                 paths["model_path"] = await asyncio.to_thread(
@@ -254,12 +282,12 @@ async def prepare_local_model(
         except (ValueError, RuntimeError, TimeoutError):
             raise ValueError("local_preparation_failed") from None
     except (ValueError, RuntimeError, TimeoutError):
-        async with session_scope(context.session_factory) as session:
+        async with session_scope(session_factory) as session:
             await EventRepository(session).add(
                 event_type="local_model.preparation_failed", user_id=actor_user_id, payload=audit
             )
         raise
-    async with session_scope(context.session_factory) as session:
+    async with session_scope(session_factory) as session:
         await EventRepository(session).add(
             event_type="local_model.prepared",
             user_id=actor_user_id,

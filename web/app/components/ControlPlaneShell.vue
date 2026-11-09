@@ -157,6 +157,9 @@ async function logout() {
 
       <main id="control-plane-content" class="shell-content" tabindex="-1">
         <p v-if="logoutError" role="alert">{{ logoutError }}</p>
+        <p v-if="authenticated && controlSession.error.value" class="operation-error" role="alert">
+          {{ controlSession.error.value }}
+        </p>
         <slot />
       </main>
 

@@ -404,8 +404,8 @@ function delay(milliseconds: number): Promise<void> {
         <p class="eyebrow">Trusted enrollment</p>
         <h2 id="enroll-title">Add a Telegram group</h2>
         <p>
-          Telegram performs the selection. The backend accepts only the matching short-lived
-          <code>chat_shared</code> result and verifies your admin role plus the bot membership.
+          Telegram will open the group picker. The bot must already be a member, and you or another
+          current bot administrator must administer the group.
         </p>
       </div>
       <UButton

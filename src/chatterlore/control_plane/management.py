@@ -523,9 +523,14 @@ class ControlPlaneManagementService:
                 raise ControlPlaneManagementError(
                     "chat_enrollment_request_inactive", "the enrollment request is no longer active"
                 )
+        bot_admin_ids = {admin.telegram_user_id for admin in await self.list_bot_admins()}
+        if telegram_user_id not in bot_admin_ids:
+            raise ControlPlaneManagementError(
+                "chat_enrollment_admin_required", "only bot administrators can enroll groups"
+            )
         try:
             chat = await bot.get_chat(chat_id)
-            requester = await bot.get_chat_member(chat_id, telegram_user_id)
+            chat_administrators = await bot.get_chat_administrators(chat_id)
             bot_user = await bot.get_me()
             bot_member = await bot.get_chat_member(chat_id, int(bot_user.id))
         except Exception as exc:
@@ -536,9 +541,16 @@ class ControlPlaneManagementService:
             raise ControlPlaneManagementError(
                 "chat_enrollment_type_invalid", "only groups and supergroups can be enrolled"
             )
-        if _member_status(requester) not in {"administrator", "creator", "owner"}:
+        chat_admin_ids = {
+            int(member.user.id)
+            for member in chat_administrators
+            if _member_status(member) in {"administrator", "creator", "owner"}
+            and not member.user.is_bot
+        }
+        if not chat_admin_ids & bot_admin_ids:
             raise ControlPlaneManagementError(
-                "chat_enrollment_admin_required", "the requester must administer the selected chat"
+                "chat_enrollment_admin_required",
+                "a bot administrator must administer the selected chat",
             )
         if _member_status(bot_member) in {"left", "kicked"}:
             raise ControlPlaneManagementError(

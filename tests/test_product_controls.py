@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
@@ -9,8 +10,9 @@ import pytest
 
 import chatterlore.memory.transfer as transfer_module
 from chatterlore.app_context import AppContext
-from chatterlore.memory.scope import Scope
-from chatterlore.memory.service import IncomingMessage
+from chatterlore.memory.scope import Scope, parse_scope
+from chatterlore.memory.service import IncomingMessage, format_settings_change_preview
+from chatterlore.telegram.utils import parse_key_values
 
 
 def incoming(
@@ -146,6 +148,31 @@ async def test_settings_preview_requires_confirmation(context: AppContext) -> No
     assert confirmed.applied is True
     assert after.retrieval_top_k == 9
     assert events and events[0].payload["updates"] == {"retrieval_top_k": 9}
+
+
+@pytest.mark.parametrize("target", [Scope.global_scope(), Scope(-604), Scope(-604, 7)])
+@pytest.mark.asyncio
+async def test_settings_preview_suggested_confirmation_preserves_target(
+    context: AppContext, target: Scope
+) -> None:
+    current = Scope(111)
+    preview = await context.memory.preview_scope_settings(
+        target, {"retrieval_top_k": 9}, user_id=111
+    )
+    suggested = re.search(r"/settings (.+?) before ", format_settings_change_preview(preview))
+    assert suggested is not None
+    args = parse_key_values(suggested.group(1))
+    command_scope = parse_scope(args.get("scope", "this_topic"), current=current)
+
+    confirmed = await context.memory.confirm_scope_settings(
+        command_scope, user_id=111, confirm=args["confirm"]
+    )
+
+    assert confirmed.applied is True
+    assert confirmed.scope == target
+    assert (await context.memory.get_scope_settings(target)).retrieval_top_k == 9
+    if not target.is_global:
+        assert (await context.memory.get_scope_settings(current)).retrieval_top_k != 9
 
 
 @pytest.mark.asyncio

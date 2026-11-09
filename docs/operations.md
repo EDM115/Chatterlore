@@ -12,7 +12,7 @@ docker compose logs --tail 100 bot
 ```
 
 `show-config` masks secrets and database URL credentials. `doctor` checks bootstrap configuration, provider dependency/key presence and local paths without starting Telegram or making a paid inference call. It does not prove provider authentication, local inference, webhook reachability or browser login. Its bootstrap OpenAI-compatible key check can report a missing key for a no-auth local-server profile, use an explicit selected-profile check to establish that route's operation.  
-Application JSON logs include timestamps, identifiers, update type, duration and safe error metadata. `telegram_rate_limited` and `telegram_api_error` distinguish delivery trouble from provider failure. Logs/audits still contain identifiers, restrict their access and retention. Successful AI usage does not prove Telegram received the answer.  
+Application JSON logs include timestamps, identifiers, update type, duration and safe error metadata. `telegram_rate_limited` and `telegram_api_error` distinguish delivery trouble from provider failure. `control_plane_auth` records the authentication method, outcome and bounded rejection reason, such as `validation_signature` or `validation_expired`, without signed launch data or tokens. Logs/audits still contain identifiers, restrict their access and retention. Successful AI usage does not prove Telegram received the answer.  
 Webhook `GET /health` returns 200 while `chatterlore-idle-summarizer` and `chatterlore-runtime-settings-refresher` are running, and 503 if either handle stops. It checks liveness, repeated iteration failures can continue while health stays 200. Monitor `background_task_iteration_failed` (task, exception type, failure count, backoff) and `background_task_stopped_unexpectedly`. Supervised loops retry ordinary exceptions with bounded exponential backoff and reset the count after success.  
 Bot runtimes also run the embedding-index worker. Control-plane runtimes deliver admin alerts, this non-critical worker appears separately in health. Polling has no HTTP server, use process supervision and structured events.
 
@@ -32,9 +32,9 @@ Dashboard, Stats, Operations and bot-admin `GET /api/control/v1/operations/healt
 | `db-integrity` | SQLite `PRAGMA integrity_check` |
 | `projection-status` | Bounded read-only Markdown inspection |
 | `provider-profile` | Constant-input selected-profile chat/embedding call, which may consume quota |
-| `local-model-readiness` | Dependency/load state, preparation only with explicit `allow_download=true` |
+| `local-model-readiness` | Embedded dependency/runtime state for each enabled capability, or local HTTP server configuration without contacting the endpoint. Explicit embedded preparation uses bounded artifacts and `local_model:download` verification |
 
-Audit/usage APIs use descending keyset pagination with at most 100 rows, usage responses exclude request metadata. Synthetic provider checks establish function, measure recall, quality and capacity separately.
+Operations provider checks are available before any group is enrolled. Ordinary local readiness does not load models, download files or run inference, the explicit embedded preparation option can load approved artifacts and download within deployment limits. Successful preparation reports `prepared`, live per-model residency is separate and a single model slot can evict the other prepared model. Local server `configured` confirms configuration, use an explicit provider test to establish reachability and inference. Audit/usage APIs use descending keyset pagination with at most 100 rows, usage responses exclude request metadata. Synthetic provider checks establish function, measure recall, quality and capacity separately.
 
 ## Backup, upgrade and restore
 
@@ -72,10 +72,10 @@ uv run chatterlore runtime-settings --set retrieval_top_k=8 --set answer_min_sco
 uv run chatterlore runtime-settings --reload
 ```
 
-Safe database-backed defaults refresh at `RUNTIME_SETTINGS_REFRESH_SECONDS`. `/runtime_settings reload=on` requests immediate refresh for bot admins. Use `/settings key=value` to preview scoped changes and `/settings confirm=<token>` to apply, `/memory_settings` applies supported edits directly for authorized admins. Secrets belong in deployment configuration or the vault.  
+Safe database-backed defaults refresh at `RUNTIME_SETTINGS_REFRESH_SECONDS`. `/runtime_settings reload=on` requests immediate refresh for bot admins. Use `/settings key=value` to preview scoped changes, then run the exact confirmation command returned by the preview (it preserves the target scope). `/memory_settings` applies supported edits directly for authorized admins. Secrets belong in deployment configuration or the vault.  
 The control plane shows effective inherited values separately from exact overrides. **Reset to inherited** removes an override so later parent changes flow through. A stale version returns 409, reload/review before retrying. Populated embedding-route changes require an index migration.  
 `BOT_ADMINS` supplies bootstrap recovery owners. Managed owner changes apply without restart, removal revokes that user's sessions and cannot remove a bootstrap owner or the final effective owner. Only bot admins manage delegated grants, the target must be a non-bot chat member. Native/delegated admins operate within their active managed chats. `ADMIN_CACHE_TTL_SECONDS` controls native administrator caching (300 by default, 0 disables caching).  
-Enroll from Chats with a fresh requester-bound Mini App selection or the button in that requester's bot DM. The backend rechecks requester authority, group type and bot membership. An expired request requires a new selection.
+Enroll from Chats with a fresh requester-bound Mini App selection or the button in that requester's bot DM. The backend checks that the requester or another current bot owner is a Telegram administrator of the group, includes configured and database-managed owners, and verifies group type and bot membership. An expired request requires a new selection.
 
 | Action | Result |
 | --- | --- |
@@ -85,7 +85,7 @@ Enroll from Chats with a fresh requester-bound Mini App selection or the button 
 | Leave | Calls Telegram to leave, then detaches |
 | Forget | Deletes selected application messages/knowledge/vectors and reconciles Markdown after owner verification and exact confirmation |
 
-Forget does not delete Telegram chat history, rehearse on a disposable scope. [Privacy](privacy.md) explains backups/audit retention and why learning consent differs from raw storage. Browser **Log out** revokes the current session, the Mini App has no logout control. Stable session CSRF supports multiple tabs, refresh after `csrf_rejected` before retrying.
+Forget does not delete Telegram chat history, rehearse on a disposable scope. [Privacy](privacy.md) explains backups/audit retention and why learning consent differs from raw storage. Browser **Log out** revokes the current session, the Mini App has no logout control. Stable session CSRF supports multiple tabs, refresh after `csrf_rejected` before retrying. Sensitive-action verification failures appear across the authenticated UI, close and reopen an expired Mini App from Telegram for fresh launch data or use normal browser sign-in.
 
 ## Summary and projection recovery
 
@@ -150,6 +150,7 @@ CLI/HTTP exports stream bounded chunks. Telegram sends deterministic UTF-8-safe 
 ## Retrieval and Telegram delivery
 
 `retrieval_candidate_limit` defaults to 5,000 per authorized source scope, durable knowledge uses the quota before recent learned messages. `retrieval_top_k` separately controls returned results. Measure recall/latency before tuning, broad memory profiles multiply work. If required recall falls outside the bounded scan or latency stays too high, evaluate a native vector index.  
+The Query page selects chat and embedding routes independently. Configured local HTTP servers remain selectable before probing, embedded routes with the required dependency remain selectable after restart or eviction. Residency describes cache state, actual execution still checks artifacts, embedding identity and endpoint configuration. Search does not require a chat-capable profile.  
 Private Ask uses drafts and native Stop, groups/topics edit one progress message. Draft cadence is at least one second, group edits at least three seconds. OpenAI-compatible streams have a 120-second deadline and 32,768-character cap. A partial stream cannot restart paid generation, interrupted/stopped output receives an explicit acknowledgement. Other providers can return completed replies.  
 Rich output splits at logical boundaries and uses literal fallback after definite rich-format rejection. Ambiguous network failure does not create another possibly duplicated reply. Rate limits suppress previews, finalization waits at most ten seconds for an existing cooldown. A webhook restart can interrupt an acknowledged Ask, process-owned answer tasks are not durable jobs.  
 Connected startup clears the default command menu, manually typed commands and `/help` remain. Custom chat/language lists stay owner-managed and clients can cache menus, inspect the exact `getMyCommands` scope/language if an old list persists.
@@ -157,6 +158,7 @@ Connected startup clears the default command menu, manually typed commands and `
 ## Provider pool and vault recovery
 
 Providers shows active/cooldown/disabled counts, masked counters and sanitized alerts. Explicit constant-input credential checks can incur charges and test that selected credential, production calls follow bounded pool rotation. Authentication/permission/allowlisted exhausted-quota errors disable a key, transient errors and other rate limits use retry/cooldown. Invalid request/model errors and unknown exceptions leave key health unchanged.  
+Before disabling or deleting a provider, reassign runtime/scoped routes that reference it. A `profile_in_use` error names deployment settings that also need changing, `AI_PROVIDER_PROFILE` remains a startup dependency even with a runtime override. Removing a managed overlay can restore the same-name deployment profile when embedding dependencies permit it.  
 Correct/replace the credential, re-enable if appropriate, run a selected-key check and confirm production uses a healthy sticky key. Expired cooldown allows selection, subsequent success records recovery. Exhaustion returns a controlled error after at most ten sources. Alert delivery retries temporary failures, caps Telegram retry-after at one hour and records unreachable recipients. After fixing DM access, a bot admin can retry undelivered alerts.  
 `uv run chatterlore secrets status` reports referenced key IDs/counts. Follow [rotation](secrets.md#rotation) to add a key, back up, rewrap and verify before retiring one. Retain old recovery material while retained backups still need it.
 

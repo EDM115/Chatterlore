@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from chatterlore.db.models import (
@@ -12,6 +12,8 @@ from chatterlore.db.models import (
     AIProviderProfile,
     EmbeddingIndexJob,
     EmbeddingSpace,
+    RuntimeSetting,
+    ScopeSettings,
 )
 from chatterlore.db.repos.shared import normalize_profile_name
 
@@ -71,6 +73,39 @@ class ProviderProfileRepository:
             .limit(1)
         )
         return job is not None
+
+    async def has_settings_dependencies(self, name: str) -> bool:
+        clean = normalize_profile_name(name)
+        scoped = await self.session.scalar(
+            select(ScopeSettings.id)
+            .where(
+                or_(
+                    ScopeSettings.provider_profile == clean,
+                    ScopeSettings.chat_provider_profile == clean,
+                    ScopeSettings.summary_provider_profile == clean,
+                    ScopeSettings.embedding_provider_profile == clean,
+                )
+            )
+            .limit(1)
+        )
+        if scoped is not None:
+            return True
+        runtime = await self.session.scalar(
+            select(RuntimeSetting.id)
+            .where(
+                RuntimeSetting.key.in_(
+                    (
+                        "provider_profile",
+                        "chat_provider_profile",
+                        "summary_provider_profile",
+                        "embedding_provider_profile",
+                    )
+                ),
+                RuntimeSetting.value["value"].as_string() == clean,
+            )
+            .limit(1)
+        )
+        return runtime is not None
 
     async def get_by_id(self, profile_id: int) -> AIProviderProfile | None:
         return await self.session.get(AIProviderProfile, profile_id)

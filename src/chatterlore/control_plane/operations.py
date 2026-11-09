@@ -12,6 +12,7 @@ from chatterlore.ai.protocols import ChatMessage
 from chatterlore.config import Settings
 from chatterlore.db.repos.events import EventRepository
 from chatterlore.db.session import session_scope
+from chatterlore.memory.local_preparation import prepare_local_profile
 from chatterlore.memory.provider_operations import ProviderOperations
 from chatterlore.memory.service import MemoryService
 
@@ -70,7 +71,9 @@ class ControlPlaneOperationsService:
         elif name == "local-model-readiness":
             if profile_name is None:
                 raise ValueError("local provider profile is required")
-            result = await self._local_readiness(profile_name, allow_download=allow_download)
+            result = await self._local_readiness(
+                profile_name, allow_download=allow_download, actor_user_id=actor_user_id
+            )
         else:
             raise ValueError("operation check is invalid")
         async with session_scope(self.session_factory) as session:
@@ -82,7 +85,8 @@ class ControlPlaneOperationsService:
                     "ok": bool(result["ok"]),
                     "profile_name": profile_name,
                     "mode": mode,
-                    "download_attempted": bool(allow_download),
+                    "download_requested": bool(allow_download),
+                    "download_attempted": bool(result["details"].get("download_attempted")),
                 },
             )
         return {"check": name, **result}
@@ -170,33 +174,96 @@ class ControlPlaneOperationsService:
             "elapsed_ms": int((time.perf_counter() - started) * 1000),
         }
 
-    async def _local_readiness(self, profile_name: str, *, allow_download: bool) -> dict[str, Any]:
-        profile = self.secrets.registry.profile_by_name(profile_name)
+    async def _local_readiness(
+        self, profile_name: str, *, allow_download: bool, actor_user_id: int
+    ) -> dict[str, Any]:
+        registry = self.secrets.registry
+        profile = registry.profile_by_name(profile_name)
+        if profile.provider == "openai_compatible" and profile.local:
+            self.settings.validate_local_server_url(profile.openai_base_url)
+            return {
+                "ok": True,
+                "result": "configured",
+                "details": {
+                    "profile_name": profile.name,
+                    "dependency_available": True,
+                    "model_loaded": False,
+                    "server_configured": True,
+                    "download_attempted": False,
+                },
+                "warning": "Configuration checked without contacting the local server.",
+            }
         if profile.provider != "local":
             raise ValueError("provider profile is not local")
-        dependency_available = importlib.util.find_spec("sentence_transformers") is not None
-        selection = self.secrets.registry.select(profile.name)
-        loaded = bool(getattr(selection.embedding_provider, "loaded", False))
+        capabilities = registry.profile_capabilities(profile_name)
+        modes = [mode for mode in ("chat", "embedding") if mode in capabilities]
+        for mode in modes:
+            self.settings.validate_local_paths(
+                profile.chat_model if mode == "chat" else profile.embedding_model,
+                profile.local_chat_options if mode == "chat" else profile.local_embedding_options,
+            )
+        dependencies = {"chat": ("torch", "transformers"), "embedding": ("sentence_transformers",)}
+        dependency_available = all(
+            importlib.util.find_spec(name) is not None
+            for mode in modes
+            for name in dependencies[mode]
+        )
+        loaded = registry.local_state(profile.name)
         details: dict[str, Any] = {
             "profile_name": profile.name,
             "dependency_available": dependency_available,
-            "model_loaded": loaded,
+            "model_loaded": bool(modes) and all(loaded[f"{mode}_model_loaded"] for mode in modes),
             "download_attempted": False,
+            **loaded,
         }
         if allow_download and dependency_available:
-            tested = await self._provider_profile(profile.name, "embedding")
+            prepared = [
+                await prepare_local_profile(
+                    self.settings,
+                    self.session_factory,
+                    registry,
+                    self.secrets,
+                    profile.name,
+                    mode=mode,
+                    allow_download=True,
+                    actor_user_id=actor_user_id,
+                )
+                for mode in ("chat", "embedding")
+                if mode in capabilities
+            ]
+            if self.settings.local_max_loaded_models >= len(modes):
+                loaded = registry.local_state(profile.name)
+                for mode in ("chat", "embedding"):
+                    if mode in capabilities and not loaded[f"{mode}_model_loaded"]:
+                        await prepare_local_profile(
+                            self.settings,
+                            self.session_factory,
+                            registry,
+                            self.secrets,
+                            profile.name,
+                            mode=mode,
+                            allow_download=False,
+                            actor_user_id=actor_user_id,
+                        )
+            loaded = registry.local_state(profile.name)
             details.update(
-                model_loaded=bool(getattr(selection.embedding_provider, "loaded", False)),
-                download_attempted=True,
-                model=selection.embedding_model,
-                dimensions=tested["details"].get("dimensions"),
+                model_loaded=bool(modes) and all(loaded[f"{mode}_model_loaded"] for mode in modes),
+                download_attempted=any(item["downloaded"] for item in prepared),
+                preparations=prepared,
+                **loaded,
             )
-            ok = bool(tested["ok"])
+            ok = bool(prepared) and all(item["loaded"] for item in prepared)
         else:
-            ok = dependency_available
+            ok = bool(modes) and dependency_available
         return {
             "ok": ok,
-            "result": "ready" if ok else "dependency_unavailable",
+            "result": (
+                "prepared" if allow_download and ok else "ready" if ok else "dependency_unavailable"
+            ),
             "details": details,
-            "warning": ("Model loading may download files when allow_download is true."),
+            "warning": (
+                "Explicit preparation may download bounded artifacts when the profile permits it."
+                if allow_download
+                else "Dependencies and runtime state checked without loading models or inference."
+            ),
         }

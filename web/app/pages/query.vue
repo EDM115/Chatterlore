@@ -30,21 +30,11 @@ let activeController: AbortController | null = null;
 
 const embeddingProfiles = computed(
   () =>
-    catalog.value?.profiles.filter(
-      (profile) =>
-        profile.enabled &&
-        profile.availability === "ready" &&
-        profile.capabilities.includes("embedding"),
-    ) ?? [],
+    catalog.value?.profiles.filter((profile) => queryLegStatus(profile, "embedding") !== null) ??
+    [],
 );
 const chatProfiles = computed(
-  () =>
-    catalog.value?.profiles.filter(
-      (profile) =>
-        profile.enabled &&
-        profile.availability === "ready" &&
-        profile.capabilities.includes("chat"),
-    ) ?? [],
+  () => catalog.value?.profiles.filter((profile) => queryLegStatus(profile, "chat") !== null) ?? [],
 );
 const selectedRetrievalProfile = computed(() => profileByName(retrievalProfileName.value));
 const selectedChatProfile = computed(() => profileByName(chatProfileName.value));
@@ -140,10 +130,10 @@ async function runQuery() {
     scope: scope.value.trim(),
     memory_profile: memoryProfile.value.trim() || null,
     retrieval_provider_profile: retrievalProfileName.value,
-    chat_provider_profile: chatProfileName.value,
+    chat_provider_profile: mode.value === "ask" ? chatProfileName.value : null,
     embedding_model: embeddingModel.value,
-    chat_model: chatModel.value,
-    reasoning_level: reasoningLevel.value || null,
+    chat_model: mode.value === "ask" ? chatModel.value : null,
+    reasoning_level: mode.value === "ask" ? reasoningLevel.value || null : null,
     top_k: topK.value,
   };
   try {
@@ -180,6 +170,22 @@ function cancelQuery() {
 
 function profileByName(name: string): QueryProfile | null {
   return catalog.value?.profiles.find((profile) => profile.name === name) ?? null;
+}
+
+function queryLegStatus(
+  profile: QueryProfile,
+  leg: "chat" | "embedding",
+): "ready" | "configured" | "loaded" | "not loaded" | null {
+  if (!profile.enabled || !profile.capabilities.includes(leg)) return null;
+  const state = profile.local_state;
+  if (profile.provider_kind === "local") {
+    if (!state?.[`${leg}_dependency_available`]) return null;
+    return state[`${leg}_model_loaded`] ? "loaded" : "not loaded";
+  }
+  if (profile.provider_kind === "openai_compatible" && profile.local && state?.server_configured) {
+    return "configured";
+  }
+  return profile.availability === "ready" ? "ready" : null;
 }
 </script>
 
@@ -238,7 +244,7 @@ function profileByName(name: string): QueryProfile | null {
                 :key="profile.name"
                 :value="profile.name"
               >
-                {{ profile.name }} · {{ profile.availability }}
+                {{ profile.name }} · {{ queryLegStatus(profile, "embedding") }}
               </option>
             </select></label
           >
@@ -249,13 +255,24 @@ function profileByName(name: string): QueryProfile | null {
               </option>
             </select></label
           >
-          <small v-if="selectedRetrievalProfile?.local_state"
-            >Local dependency
+          <small
+            v-if="
+              selectedRetrievalProfile?.provider_kind === 'local' &&
+              selectedRetrievalProfile.local_state
+            "
+            >Embedding dependency
             {{
-              selectedRetrievalProfile.local_state.dependency_available ? "available" : "missing"
+              selectedRetrievalProfile.local_state.embedding_dependency_available
+                ? "available"
+                : "missing"
             }}
             · model
-            {{ selectedRetrievalProfile.local_state.model_loaded ? "loaded" : "not loaded" }}</small
+            {{
+              selectedRetrievalProfile.local_state.embedding_model_loaded ? "loaded" : "not loaded"
+            }}</small
+          >
+          <small v-else-if="selectedRetrievalProfile?.local_state?.server_configured"
+            >Local server configured. Reachability is checked when you run a query.</small
           >
         </fieldset>
         <fieldset>
@@ -263,7 +280,7 @@ function profileByName(name: string): QueryProfile | null {
           <label
             >Profile<select v-model="chatProfileName" data-testid="chat-profile">
               <option v-for="profile in chatProfiles" :key="profile.name" :value="profile.name">
-                {{ profile.name }} · {{ profile.availability }}
+                {{ profile.name }} · {{ queryLegStatus(profile, "chat") }}
               </option>
             </select></label
           >

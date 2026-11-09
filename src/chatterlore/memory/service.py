@@ -1390,8 +1390,9 @@ def format_settings_change_preview(preview: SettingsChangePreview) -> str:
     if preview.applied:
         lines.append("Applied and audited.")
     elif preview.token and preview.expires_at:
+        scope = "all" if preview.scope.is_global else preview.scope.key
         lines.append(
-            f"Preview only. Re-run /settings confirm={preview.token} before "
+            f"Preview only. Re-run /settings scope={scope} confirm={preview.token} before "
             f"{preview.expires_at.isoformat()} to apply."
         )
     return "\n".join(lines)

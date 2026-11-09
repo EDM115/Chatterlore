@@ -354,7 +354,7 @@ describe("useControlSession", () => {
     expect(wrapper.vm.status).toBe("authenticated");
     expect(wrapper.vm.session.user.telegram_user_id).toBe(887758628);
     expect(wrapper.vm.error).toBe(
-      "Telegram verification could not be completed in this Mini App. Open the control plane in a regular browser to retry securely.",
+      "Telegram verification could not be completed in this Mini App. Close this Mini App and reopen it from Telegram, then retry the action with a fresh launch. You can also sign in to the control plane in a regular browser.",
     );
   });
 });

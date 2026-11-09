@@ -124,6 +124,11 @@ class EnrollmentTelegramSession(RecordingTelegramSession):
         timeout: int | None = None,  # noqa: ASYNC109
     ) -> Any:
         api_method = method.__api_method__
+        if api_method == "getChatAdministrators":
+            self.calls.append(method)
+            return [
+                SimpleNamespace(status="administrator", user=SimpleNamespace(id=111, is_bot=False))
+            ]
         if api_method == "getChat":
             self.calls.append(method)
             return SimpleNamespace(
@@ -1178,8 +1183,9 @@ async def test_ingestion_update_edges_match_scope_and_skip_rules(context: AppCon
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("matching", [True, False])
+@pytest.mark.parametrize("requester_id", [111, 222])
 async def test_chat_shared_update_completes_the_matching_control_plane_enrollment(
-    test_settings, matching: bool
+    test_settings, matching: bool, requester_id: int
 ) -> None:
     settings = test_settings.model_copy(
         update={
@@ -1194,10 +1200,14 @@ async def test_chat_shared_update_completes_the_matching_control_plane_enrollmen
     context = await build_context(settings)
     assert context.control_plane is not None
     now = datetime.now(UTC)
+    if requester_id == 222:
+        await context.control_plane.management.grant_bot_admin(
+            telegram_user_id=222, actor_user_id=111, now=now
+        )
     async with session_scope(context.session_factory) as database:
         await ControlPlaneAccessRepository(database).add_enrollment_request(
             request_id=77,
-            requested_by=111,
+            requested_by=requester_id,
             delivery="mini_app",
             created_at=now,
             expires_at=now + timedelta(minutes=5),
@@ -1205,8 +1215,10 @@ async def test_chat_shared_update_completes_the_matching_control_plane_enrollmen
     session = EnrollmentTelegramSession()
     bot = Bot(context.settings.telegram_bot_token, session=session)
     dispatcher = build_dispatcher(context)
-    payload = message_update(update_id=901, message_id=901, chat_id=111, user_id=111)
-    payload["message"]["chat"] = {"id": 111, "type": "private", "first_name": "Owner"}
+    payload = message_update(
+        update_id=901, message_id=901, chat_id=requester_id, user_id=requester_id
+    )
+    payload["message"]["chat"] = {"id": requester_id, "type": "private", "first_name": "Owner"}
     payload["message"]["chat_shared"] = {
         "request_id": 77 if matching else 78,
         "chat_id": -1006,

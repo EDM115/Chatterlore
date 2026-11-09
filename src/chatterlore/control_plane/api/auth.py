@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlsplit
 
+import structlog
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 
@@ -42,6 +43,8 @@ from .common import (
 CONTROL_PLANE_DEV_AUTH_PATH = "/api/control/v1/auth/dev"
 
 CONTROL_PLANE_DEV_STEP_UP_PATH = "/api/control/v1/auth/dev/step-up"
+
+logger = structlog.get_logger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -563,3 +566,6 @@ async def _audit(
             user_id=user_id,
             payload={"method": method, "outcome": outcome, "reason": reason},
         )
+    logger.info(
+        "control_plane_auth", method=method, outcome=outcome, reason=reason, user_id=user_id
+    )

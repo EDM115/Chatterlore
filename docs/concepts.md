@@ -34,7 +34,7 @@ Manual `/remember` notes are durable knowledge without waiting for automatic sum
 
 Learning starts disabled. A topic rule overrides a chat rule, a chat rule overrides a global rule, and the environment/runtime learning default applies when no rule exists. `/deny_chat` therefore does not erase an existing topic allow rule. Check `/learn_status` in each relevant topic.
 
-Bot messages, commands, empty text and messages without an author are ineligible. An explicit user deny wins over an allow. Once a matching user allowlist exists, only listed users are eligible, with an optional chat-admin exception through `/allow_admins on`. Enabling that exception alone does not make learning admin-only.
+Bot messages, commands, empty text and messages without an author are ineligible. `/allow_user` and `/deny_user` replace the opposite user rule in the same scope, a broader chat/global deny still takes precedence and must be changed in its owning scope. Once a matching user allowlist exists, only listed users are eligible, with an optional chat-admin exception through `/allow_admins on`. Enabling that exception alone does not make learning admin-only.
 
 Turning learning off stops new learned ingestion, it does not delete previous memory. Existing same-scope memory remains queryable. Cross-chat memory profiles also require learning to remain enabled on their source scopes. Retention is disabled by default, raw-message and durable-knowledge retention are separate settings. Pruning old raw messages can remove the source text needed for later re-summarization, even if a durable summary remains.
 
@@ -65,9 +65,9 @@ An unset scoped field inherits its parent. Use `inherit` in supported command op
 | Delegated chat admin | CHATTERLORE UI and command-admin access granted by a bot owner for one active chat, cannot manage grants or global settings |
 | Ordinary participant | Regular ask/search/help use in the chat, cannot change admin settings |
 
-Delegation grants CHATTERLORE's scoped admin checks for an active managed chat, it does not change the person's Telegram platform membership or moderation rights. Browser login uses Telegram OIDC, Mini App login uses signed Telegram launch data. Sensitive control-plane actions require fresh verification for the exact action. Browser sign-out ends its browser session, other sessions and owner grants have separate lifecycles.
+Delegation grants CHATTERLORE's scoped admin checks for an active managed chat, it does not change the person's Telegram platform membership or moderation rights. Bot owners administer every application scope without needing a Telegram admin role in each group. Browser login uses Telegram OIDC, Mini App login uses signed Telegram launch data, both identify accounts by the verified numeric Telegram user ID. Names, usernames, language, photos and Premium status are display metadata, missing or unusable values do not prevent login. Sensitive control-plane actions require fresh verification for the exact action. Browser sign-out ends its browser session, other sessions and owner grants have separate lifecycles.
 
-When you enable the control plane, group membership alone is insufficient for ingestion. A bot owner must enroll the group in Chats and enable learning for the intended scope. Enrollment checks that the requester administers the group and the bot is a member. The requester must start the bot DM to receive a browser enrollment selection.
+When you enable the control plane, group membership alone is insufficient for ingestion. A bot owner must enroll the group in Chats and enable learning for the intended scope. The requester or another effective bot owner must be a current Telegram administrator of the selected group, and the bot must be a member. Enrollment checks the live group administrators and includes both configured and database-managed bot owners. The requester must start the bot DM to receive a browser enrollment selection.
 
 | Chat state/action | Effect |
 | --- | --- |

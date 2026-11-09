@@ -17,8 +17,8 @@ Ordinary participants can use `/start`, `/help`, `/ask`, `/memory_search`, `/lea
 - `/learn_on`, `/learn_off`, `/learn_status`: control learning for the current scope. Status also shows effective memory/settings values, including provider, model, reasoning and prompt choices.
 - `/allow_chat`, `/deny_chat`: enable or disable the whole chat scope.
 - `/allow_topic`, `/deny_topic`: enable or disable the current topic scope.
-- `/allow_user <id>` or reply with `/allow_user`: allow a user for this scope.
-- `/deny_user <id>` or reply with `/deny_user`: deny a user for this scope.
+- `/allow_user <id>` or reply with `/allow_user`: allow a user for this scope and replace an existing deny in the same scope, a broader chat/global deny must be changed in its owning scope.
+- `/deny_user <id>` or reply with `/deny_user`: deny a user for this scope and replace an existing allow in the same scope.
 - `/allow_admins on|off`: allow chat admins as learnable authors in this scope.
 
 ## Memory Management

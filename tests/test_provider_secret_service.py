@@ -78,7 +78,7 @@ async def test_managed_profile_overlay_preserves_environment_fallback_without_ca
             "name": "DEFAULT",
             "provider_kind": "openai_compatible",
             "base_url": "https://managed.example.test/v1",
-            "chat_model": "gpt-5.6-terra",
+            "chat_model": "gpt-6.1-terra",
             "embedding_model": "text-embedding-3-large",
             "chat_capable": True,
             "embedding_capable": True,
@@ -93,7 +93,7 @@ async def test_managed_profile_overlay_preserves_environment_fallback_without_ca
     )
     assert profile.name == "default"
     managed_without_key = registry.select("default")
-    assert managed_without_key.profile.chat_model == "gpt-5.6-terra"
+    assert managed_without_key.profile.chat_model == "gpt-6.1-terra"
     assert managed_without_key.profile.openai_api_key == "explicit-endpoint-secret"
     assert managed_without_key.profile.openai_api_key_env == "CHATTERLORE_MANAGED_TEST_API_KEY"
     assert managed_without_key is not environment
@@ -423,7 +423,7 @@ async def test_provider_profile_accepts_exactly_ten_credentials_and_rejects_the_
             "name": "bounded",
             "provider_kind": "openai_compatible",
             "base_url": "https://api.openai.com/v1",
-            "chat_model": "gpt-5.6-terra",
+            "chat_model": "gpt-6.1-terra",
             "embedding_model": "text-embedding-3-small",
             "chat_capable": True,
             "embedding_capable": True,

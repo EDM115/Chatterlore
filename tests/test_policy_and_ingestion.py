@@ -64,6 +64,53 @@ async def test_user_deny_overrides_learning(context: AppContext) -> None:
 
 
 @pytest.mark.asyncio
+async def test_user_policy_changes_replace_the_opposite_rule(context: AppContext) -> None:
+    scope = Scope(-100, 7)
+    await context.memory.set_learning(scope, True, updated_by=111)
+    await context.memory.set_user_policy(scope, 222, allowed=False, updated_by=111)
+    denied = await context.memory.ingest(incoming(scope, "Denied first.", message_id=1))
+    assert denied.learned is False
+    assert denied.reason == "user_denied"
+
+    await context.memory.set_user_policy(scope, 222, allowed=True, updated_by=111)
+    allowed = await context.memory.ingest(incoming(scope, "Allowed again.", message_id=2))
+    assert allowed.learned is True
+    assert allowed.reason == "allowed"
+
+    await context.memory.set_user_policy(scope, 222, allowed=False, updated_by=111)
+    denied_again = await context.memory.ingest(incoming(scope, "Denied again.", message_id=3))
+    assert denied_again.learned is False
+    assert denied_again.reason == "user_denied"
+
+    other_author = await context.memory.ingest(
+        incoming(scope, "Other authors remain allowed.", user_id=333, message_id=4)
+    )
+    assert other_author.learned is True
+    assert other_author.reason == "allowed"
+
+
+@pytest.mark.parametrize("ancestor", [Scope.global_scope(), Scope(-100)])
+@pytest.mark.asyncio
+async def test_user_policy_local_allow_preserves_ancestor_deny(
+    context: AppContext, ancestor: Scope
+) -> None:
+    scope = Scope(-100, 7)
+    await context.memory.set_learning(scope, True, updated_by=111)
+    await context.memory.set_user_policy(ancestor, 222, allowed=False, updated_by=111)
+    await context.memory.set_user_policy(scope, 222, allowed=False, updated_by=111)
+    await context.memory.set_user_policy(scope, 222, allowed=True, updated_by=111)
+
+    denied = await context.memory.ingest(incoming(scope, "Still denied by ancestor.", message_id=1))
+    assert denied.learned is False
+    assert denied.reason == "user_denied"
+
+    await context.memory.set_user_policy(ancestor, 222, allowed=True, updated_by=111)
+    allowed = await context.memory.ingest(incoming(scope, "All denials reversed.", message_id=2))
+    assert allowed.learned is True
+    assert allowed.reason == "allowed"
+
+
+@pytest.mark.asyncio
 async def test_policy_snapshot_preserves_precedence_allowlist_and_reason_semantics(
     context: AppContext,
 ) -> None:

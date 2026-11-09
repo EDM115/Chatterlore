@@ -18,7 +18,7 @@ def test_provider_credential_replace_is_atomic_versioned_and_secret_safe(tmp_pat
         "name": "primary",
         "provider_kind": "openai_compatible",
         "base_url": "https://api.openai.com/v1",
-        "chat_model": "gpt-5.6-terra",
+        "chat_model": "gpt-6.1-terra",
         "embedding_model": "text-embedding-3-small",
         "chat_capable": True,
         "embedding_capable": True,

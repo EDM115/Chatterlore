@@ -72,7 +72,7 @@ class ProviderProfileCreateRequest(BaseModel):
 
     name: str = Field(min_length=1, max_length=64)
     provider_kind: str
-    base_url: str = Field(min_length=1, max_length=512)
+    base_url: str = Field(max_length=512)
     chat_model: str = Field(default="", max_length=255)
     embedding_model: str = Field(default="", max_length=255)
     chat_capable: bool = True
@@ -93,7 +93,7 @@ class ProviderProfileUpdateRequest(BaseModel):
 
     version: int = Field(ge=1)
     provider_kind: str | None = None
-    base_url: str | None = Field(default=None, min_length=1, max_length=512)
+    base_url: str | None = Field(default=None, max_length=512)
     chat_model: str | None = Field(default=None, max_length=255)
     embedding_model: str | None = Field(default=None, max_length=255)
     chat_capable: bool | None = None

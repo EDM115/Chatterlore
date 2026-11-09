@@ -192,7 +192,7 @@ describe("Phase 8 settings and chat reconciliation", () => {
       if (input.endsWith("/query/catalog?scope=-1001"))
         return {
           scope: "-1001",
-          chat_models: ["gpt-5.6-terra", "gpt-5.4-mini"],
+          chat_models: ["gpt-6.1-terra", "gpt-5.4-mini"],
           embedding_models: ["text-embedding-3-small"],
           reasoning_levels: ["low", "medium", "high"],
           profiles: [],
@@ -201,7 +201,7 @@ describe("Phase 8 settings and chat reconciliation", () => {
     });
     vi.stubGlobal("$fetch", request);
     const wrapper = await mountSuspended(BotSettingsPage);
-    await vi.waitFor(() => expect(wrapper.text()).toContain("gpt-5.6-terra"));
+    await vi.waitFor(() => expect(wrapper.text()).toContain("gpt-6.1-terra"));
 
     expect(wrapper.text()).toContain("gpt-5.4-mini");
     expect(wrapper.text()).toContain("text-embedding-3-small");

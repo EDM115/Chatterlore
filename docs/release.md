@@ -58,9 +58,9 @@ Use disposable groups/topics, synthetic markers and prepared test accounts. Reco
 - [ ] General uses topic 1, sibling-topic questions cannot retrieve a private marker, explicit whole-chat scope includes permitted aggregate/topic memory
 - [ ] Enable/disable learning, inspect `/learn_status`, `/memory_status` and skip diagnostics, distinguish learning denial from stored raw-message retention
 - [ ] Exercise review approval/rejection, note/item maintenance, export parts and confirmed settings/forget on disposable content
-- [ ] Validate browser OIDC and signed Mini App login, session persistence, account switch, expiry, browser logout and owner/session revocation
+- [ ] Validate browser OIDC and signed Mini App login with sparse/blank optional profiles, session persistence, account switch, expiry, browser logout and owner/session revocation
 - [ ] Check bot-admin, native/delegated chat-admin and foreign/removed actors across read/write/settings/provider/audit/export paths, only bot admins manage delegated grants
-- [ ] Exercise requester-bound prepared Mini App and browser-DM group selection, expired/foreign selection must fail
+- [ ] Exercise requester-bound prepared Mini App and browser-DM group selection, including one bot owner enrolling a group administered by another configured/managed owner, expired/foreign selections and unrelated/revoked owner authority must fail
 - [ ] Check pause/resume/detach/reenroll/leave/confirmed forget differences, exact action verification and stale-version conflicts
 - [ ] Verify two-tab settings conflicts, reset-to-inherited behavior and restored test settings
 - [ ] Confirm forgetting/review rejection/retention leave no removed content in daily/canonical Markdown, retain only the intended audit and backup material

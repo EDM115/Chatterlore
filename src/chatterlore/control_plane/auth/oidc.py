@@ -10,7 +10,7 @@ import jwt
 
 from chatterlore.config import Settings
 
-from .identity import TelegramIdentity
+from .identity import TelegramIdentity, profile_string
 from .transactions import IssuedOIDCTransaction
 
 TELEGRAM_OIDC_ISSUER = "https://oauth.telegram.org"
@@ -206,11 +206,15 @@ def _identity_from_claims(
     telegram_user_id = _telegram_user_id(claims.get("id"))
     return TelegramIdentity(
         telegram_user_id=telegram_user_id,
-        first_name=_required_string(claims, "given_name", maximum=255),
-        last_name=_optional_string(claims, "family_name", maximum=255),
-        username=_optional_string(claims, "preferred_username", maximum=255),
+        first_name=(
+            profile_string(claims, "given_name")
+            or profile_string(claims, "name")
+            or f"Telegram user {telegram_user_id}"
+        ),
+        last_name=profile_string(claims, "family_name"),
+        username=profile_string(claims, "preferred_username"),
         language_code=None,
-        photo_url=_optional_string(claims, "picture", maximum=512),
+        photo_url=profile_string(claims, "picture"),
         is_bot=False,
         is_premium=None,
         authenticated_at=datetime.fromtimestamp(issued_at, tz=UTC),
@@ -236,22 +240,6 @@ def _numeric_date(claims: dict[str, Any], key: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise OIDCValidationError(f"OIDC {key} claim is invalid")
     return float(value)
-
-
-def _required_string(payload: dict[str, Any], key: str, *, maximum: int) -> str:
-    value = payload.get(key)
-    if not isinstance(value, str) or not value.strip() or len(value) > maximum:
-        raise OIDCValidationError(f"OIDC {key} claim is invalid")
-    return value
-
-
-def _optional_string(payload: dict[str, Any], key: str, *, maximum: int) -> str | None:
-    value = payload.get(key)
-    if value is None:
-        return None
-    if not isinstance(value, str) or not value.strip() or len(value) > maximum:
-        raise OIDCValidationError(f"OIDC {key} claim is invalid")
-    return value
 
 
 def _as_utc(value: datetime) -> datetime:

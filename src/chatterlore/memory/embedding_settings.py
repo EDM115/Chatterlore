@@ -38,7 +38,9 @@ async def validate_embedding_rebind(
 ) -> None:
     if embedding_route(before) == embedding_route(after):
         return
-    knowledge = await session.scalar(select(exists().where(scope_filter(KnowledgeItem, scope))))
+    knowledge = await session.scalar(
+        select(exists().select_from(KnowledgeItem).where(scope_filter(KnowledgeItem, scope)))
+    )
     messages = await session.scalar(
         select(exists().where(scope_filter(Message, scope), Message.learned.is_(True)))
     )

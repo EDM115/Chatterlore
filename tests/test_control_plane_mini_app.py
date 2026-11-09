@@ -66,6 +66,72 @@ def test_valid_mini_app_init_data_returns_typed_telegram_identity() -> None:
     assert result.authenticated_at == NOW
 
 
+@pytest.mark.parametrize("field", ["last_name", "username", "language_code", "photo_url"])
+@pytest.mark.parametrize("value", [None, "", " \t "])
+def test_mini_app_accepts_blank_optional_profile_fields(field: str, value: str | None) -> None:
+    fields = valid_fields(user_id=6_000_000_001)
+    user = json.loads(fields["user"])
+    user[field] = value
+    fields["user"] = json.dumps(user, separators=(",", ":"))
+
+    result = validate_mini_app_init_data(
+        sign_fields(fields), bot_token=BOT_TOKEN, now=NOW, max_age_seconds=300
+    )
+
+    assert result.telegram_user_id == 6_000_000_001
+    assert result.first_name == "Lu"
+    assert getattr(result, field) is None
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "expected"),
+    [
+        ("first_name", "", "Telegram user 6000000001"),
+        ("first_name", " \t ", "Telegram user 6000000001"),
+        ("first_name", None, "Telegram user 6000000001"),
+        ("first_name", 123, "Telegram user 6000000001"),
+        ("first_name", "Admin ☯️", "Admin ☯️"),
+        ("last_name", 123, None),
+        ("username", False, None),
+        ("language_code", [], None),
+        ("photo_url", {}, None),
+        ("is_premium", "true", None),
+        ("first_name", "x" * 256, "x" * 256),
+        ("last_name", "x" * 256, "x" * 256),
+        ("username", "x" * 256, "x" * 256),
+        ("language_code", "x" * 33, "x" * 33),
+        ("photo_url", "x" * 513, "x" * 513),
+    ],
+)
+def test_mini_app_profile_metadata_cannot_reject_a_verified_user(
+    field: str, value: object, expected: object
+) -> None:
+    fields = valid_fields(user_id=6_000_000_001)
+    user = json.loads(fields["user"])
+    user[field] = value
+    fields["user"] = json.dumps(user, separators=(",", ":"))
+
+    result = validate_mini_app_init_data(
+        sign_fields(fields), bot_token=BOT_TOKEN, now=NOW, max_age_seconds=300
+    )
+
+    assert result.telegram_user_id == 6_000_000_001
+    assert getattr(result, field) == expected
+
+
+def test_mini_app_login_needs_no_profile_fields_beyond_the_verified_user_id() -> None:
+    fields = valid_fields()
+    fields["user"] = '{"id":6000000001}'
+
+    result = validate_mini_app_init_data(
+        sign_fields(fields), bot_token=BOT_TOKEN, now=NOW, max_age_seconds=300
+    )
+
+    assert result.telegram_user_id == 6_000_000_001
+    assert result.first_name == "Telegram user 6000000001"
+    assert result.username is None
+
+
 @pytest.mark.parametrize(
     ("raw", "error"),
     [
@@ -112,7 +178,6 @@ def test_mini_app_validation_rejects_malformed_encoding_and_missing_hash(
             None,
             "user ID",
         ),
-        ({"user": json.dumps({"id": 887_758_628})}, None, "first_name"),
         (
             {"user": json.dumps({"id": 887_758_628, "first_name": "Lu", "is_bot": True})},
             None,

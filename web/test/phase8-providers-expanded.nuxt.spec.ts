@@ -40,7 +40,7 @@ describe("Phase 8 provider administration", () => {
       name: "primary",
       provider_kind: "openai_compatible",
       base_url: "https://api.openai.com/v1",
-      chat_model: "gpt-5.6-terra",
+      chat_model: "gpt-6.1-terra",
       embedding_model: "text-embedding-3-small",
       chat_capable: true,
       embedding_capable: true,
@@ -59,7 +59,7 @@ describe("Phase 8 provider administration", () => {
           expect(options.body).toMatchObject({
             name: "primary",
             base_url: "https://provider.test/v1",
-            chat_model: "gpt-5.6-terra",
+            chat_model: "gpt-6.1-terra",
             reasoning_capable: true,
           });
           profileCreated = true;

@@ -4,10 +4,10 @@ import hashlib
 import hmac
 import json
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Literal
 from urllib.parse import parse_qsl
 
-from .identity import TelegramIdentity
+from .identity import TelegramIdentity, profile_string
 
 MAX_INIT_DATA_BYTES = 16_384
 MAX_INIT_DATA_FIELDS = 64
@@ -149,40 +149,21 @@ def _telegram_identity(raw: str | None, *, authenticated_at: datetime) -> Telegr
         or telegram_user_id > 9_223_372_036_854_775_807
     ):
         raise MiniAppValidationError("Telegram user ID is invalid")
-    first_name = _required_string(user, "first_name", maximum=255)
     is_bot = user.get("is_bot", False)
     if not isinstance(is_bot, bool) or is_bot:
         raise MiniAppValidationError("Telegram user must be a human account")
     is_premium = user.get("is_premium")
-    if is_premium is not None and not isinstance(is_premium, bool):
-        raise MiniAppValidationError("Telegram user premium flag is invalid")
     return TelegramIdentity(
         telegram_user_id=telegram_user_id,
-        first_name=first_name,
-        last_name=_optional_string(user, "last_name", maximum=255),
-        username=_optional_string(user, "username", maximum=255),
-        language_code=_optional_string(user, "language_code", maximum=32),
-        photo_url=_optional_string(user, "photo_url", maximum=512),
+        first_name=profile_string(user, "first_name") or f"Telegram user {telegram_user_id}",
+        last_name=profile_string(user, "last_name"),
+        username=profile_string(user, "username"),
+        language_code=profile_string(user, "language_code"),
+        photo_url=profile_string(user, "photo_url"),
         is_bot=False,
-        is_premium=is_premium,
+        is_premium=is_premium if isinstance(is_premium, bool) else None,
         authenticated_at=authenticated_at,
     )
-
-
-def _required_string(payload: dict[str, Any], key: str, *, maximum: int) -> str:
-    value = payload.get(key)
-    if not isinstance(value, str) or not value.strip() or len(value) > maximum:
-        raise MiniAppValidationError(f"Telegram user {key} is invalid")
-    return value
-
-
-def _optional_string(payload: dict[str, Any], key: str, *, maximum: int) -> str | None:
-    value = payload.get(key)
-    if value is None:
-        return None
-    if not isinstance(value, str) or not value.strip() or len(value) > maximum:
-        raise MiniAppValidationError(f"Telegram user {key} is invalid")
-    return value
 
 
 def _as_utc(value: datetime) -> datetime:

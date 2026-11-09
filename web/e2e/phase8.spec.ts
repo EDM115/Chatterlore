@@ -58,7 +58,7 @@ const overview = {
 };
 const catalog = {
   scope: "-1001",
-  chat_models: ["gpt-5.6-terra"],
+  chat_models: ["gpt-6.1-terra"],
   embedding_models: ["text-embedding-3-small", "all-MiniLM-L6-v2"],
   reasoning_levels: ["low", "medium", "high"],
   profiles: [
@@ -67,7 +67,7 @@ const catalog = {
       provider_kind: "openai_compatible",
       source: "managed",
       enabled: true,
-      chat_model: "gpt-5.6-terra",
+      chat_model: "gpt-6.1-terra",
       embedding_model: "text-embedding-3-small",
       capabilities: ["chat", "embedding", "reasoning"],
       availability: "ready",
@@ -178,7 +178,7 @@ async function stubPhase8Api(page: Page): Promise<string[]> {
         retrieval_provider_profile: "local",
         embedding_model: "all-MiniLM-L6-v2",
         chat_provider_profile: "primary",
-        chat_model: "gpt-5.6-terra",
+        chat_model: "gpt-6.1-terra",
         reasoning_level: "high",
       });
       return fulfillJson(route, {
@@ -189,7 +189,7 @@ async function stubPhase8Api(page: Page): Promise<string[]> {
           retrieval_provider_profile: "local",
           embedding_model: "all-MiniLM-L6-v2",
           chat_provider_profile: "primary",
-          chat_model: "gpt-5.6-terra",
+          chat_model: "gpt-6.1-terra",
           reasoning_level: "high",
         },
         results: [
@@ -330,7 +330,7 @@ async function stubPhase8Api(page: Page): Promise<string[]> {
         check: "provider-profile",
         ok: true,
         result: "ready",
-        details: { profile_name: "primary", model: "gpt-5.6-terra" },
+        details: { profile_name: "primary", model: "gpt-6.1-terra" },
         warning: "This explicit manual check may incur provider usage charges.",
         elapsed_ms: 220,
       });
@@ -412,7 +412,7 @@ test("explicit operational checks stay separate from cached health", async ({ pa
   await expect(page.getByText("db-integrity · ok")).toBeVisible();
   await page.getByTestId("check-provider-profile").click();
   await expect(page.getByText("provider-profile · ready")).toBeVisible();
-  await expect(page.getByText("gpt-5.6-terra")).toBeVisible();
+  await expect(page.getByText("gpt-6.1-terra")).toBeVisible();
   expect(unexpected).toEqual([]);
 });
 

@@ -65,7 +65,7 @@ const overview = {
 
 const catalog = {
   scope: "-1001",
-  chat_models: ["gpt-5.6-terra"],
+  chat_models: ["gpt-6.1-terra"],
   embedding_models: ["text-embedding-3-small"],
   reasoning_levels: ["low", "medium", "high"],
   profiles: [],
@@ -332,7 +332,7 @@ test("provider profile and credential lifecycle stays secret-safe through reveal
     name: "phase10",
     provider_kind: "openai_compatible",
     base_url: "https://api.openai.com/v1",
-    chat_model: "gpt-5.6-terra",
+    chat_model: "gpt-6.1-terra",
     embedding_model: "text-embedding-3-small",
     chat_capable: true,
     embedding_capable: true,
@@ -375,7 +375,7 @@ test("provider profile and credential lifecycle stays secret-safe through reveal
     if (path === "/providers" && request.method() === "POST") {
       expect(request.postDataJSON()).toMatchObject({
         name: "phase10",
-        chat_model: "gpt-5.6-terra",
+        chat_model: "gpt-6.1-terra",
         embedding_model: "text-embedding-3-small",
       });
       profileCreated = true;
@@ -435,7 +435,7 @@ test("provider profile and credential lifecycle stays secret-safe through reveal
       return fulfillJson(route, {
         mode,
         provider_profile: "phase10",
-        model: mode === "chat" ? "gpt-5.6-terra" : "text-embedding-3-small",
+        model: mode === "chat" ? "gpt-6.1-terra" : "text-embedding-3-small",
         attempted_credentials: 1,
         rotation_count: 0,
         final_classification: "success",
@@ -486,7 +486,7 @@ test("provider profile and credential lifecycle stays secret-safe through reveal
   await expect(page.getByText("sk-e2e-rotated")).toHaveCount(0);
 
   await page.getByTestId("test-chat-42").click();
-  await expect(page.getByText("gpt-5.6-terra passed · success")).toBeVisible();
+  await expect(page.getByText("gpt-6.1-terra passed · success")).toBeVisible();
   await page.getByTestId("test-embedding-42").click();
   await expect(page.getByText("text-embedding-3-small passed · success")).toBeVisible();
 

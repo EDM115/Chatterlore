@@ -132,7 +132,7 @@ To opt into Telegram-connected development, configure a valid bot token, complet
 
 Follow [Deployment](deployment.md) for a public HTTPS origin, DNS/ports, Caddy, persistent volumes and Telegram OIDC/Mini App configuration. Production requires `CONTROL_PLANE_ENABLED=true`, a token, OIDC client credentials and a valid vault master-key ring. Development identity settings do not relax production authentication.
 
-Sign in as a bootstrap owner, open Chats and enroll a group before expecting its messages to enter memory. Enrollment also requires that you administer the selected group and that the bot is a member. Then enable learning for the desired chat/topic. Adding the bot to Telegram and enabling learning alone do not enroll it when managed-chat enforcement is active.
+Sign in as a bot owner, open Chats and enroll a group before expecting its messages to enter memory. You or another effective bot owner must administer the selected Telegram group, and the bot must be a member. Then enable learning for the desired chat/topic. Adding the bot to Telegram and enabling learning alone do not enroll it when managed-chat enforcement is active.
 
 ## Troubleshooting
 
@@ -146,4 +146,5 @@ Sign in as a bootstrap owner, open Chats and enroll a group before expecting its
 | Provider authorization/quota error | Correct endpoint, supported models, process-exported custom key references and provider account quota, `doctor` does not make a paid test call |
 | UI has no owner pages | Development ID matches `BOT_ADMINS`, or the production Telegram identity has a current owner grant |
 | UI API requests fail | Backend is running, exact browser origin and proxy port match, production webhook/OIDC configuration is complete |
+| Telegram sign-in is rejected | Inspect the `control_plane_auth` reason in backend logs, reopen the Mini App for fresh launch data when it has expired. Optional profile details are not required |
 | `.env` edits appear ineffective | Restart after environment edits, remove overriding process variables, inspect persisted runtime and scoped overlays through settings |

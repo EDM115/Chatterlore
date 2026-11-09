@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from datetime import timedelta
 from secrets import token_urlsafe
@@ -138,7 +138,12 @@ def validate_scope_settings(
         raise ValueError("review_before_compact must be true or false")
 
 
-def validate_runtime_settings_values(values: dict[str, Any], settings: Settings) -> dict[str, Any]:
+def validate_runtime_settings_values(
+    values: dict[str, Any],
+    settings: Settings,
+    *,
+    provider_profile_names: Collection[str] | None = None,
+) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for key, value in values.items():
         if key not in SAFE_RUNTIME_SETTING_TYPES:
@@ -177,8 +182,22 @@ def validate_runtime_settings_values(values: dict[str, Any], settings: Settings)
             if not clean_str:
                 raise ValueError(f"{key} cannot be empty")
             out[key] = clean_str
-    if "provider_profile" in out:
-        settings.provider_profile_by_name(str(out["provider_profile"]))
+    available_profiles = (
+        settings.provider_profiles.keys()
+        if provider_profile_names is None
+        else provider_profile_names
+    )
+    for key in (
+        "provider_profile",
+        "chat_provider_profile",
+        "summary_provider_profile",
+        "embedding_provider_profile",
+    ):
+        if key in out and out[key] is not None:
+            name = normalize_profile_name(str(out[key]))
+            if name not in available_profiles:
+                raise ValueError(f"provider profile {name!r} was not found or is disabled")
+            out[key] = name
     if "chat_model" in out:
         settings.validate_chat_model(str(out["chat_model"]))
     if "summary_model" in out:
@@ -378,13 +397,17 @@ class MemorySettingsService:
     async def refresh_runtime_settings(self) -> dict[str, Any]:
         async with session_scope(self.session_factory) as session:
             values = await RuntimeSettingRepository(session).values()
-        self._runtime_overrides = validate_runtime_settings_values(values, self.settings)
+        self._runtime_overrides = validate_runtime_settings_values(
+            values, self.settings, provider_profile_names=self.profile_models().keys()
+        )
         return dict(self._runtime_overrides)
 
     async def set_runtime_settings(
         self, updates: dict[str, Any], *, updated_by: int | None = None
     ) -> list[RuntimeSettingPreview]:
-        validated = validate_runtime_settings_values(updates, self.settings)
+        validated = validate_runtime_settings_values(
+            updates, self.settings, provider_profile_names=self.profile_models().keys()
+        )
         async with session_scope(self.session_factory) as session:
             await self._validate_runtime_embedding_change(session, validated)
             repo = RuntimeSettingRepository(session)
@@ -402,7 +425,9 @@ class MemorySettingsService:
     async def set_runtime_setting_versioned(
         self, updates: dict[str, Any], *, expected_version: int, updated_by: int | None = None
     ) -> VersionedSettingsMutation:
-        validated = validate_runtime_settings_values(updates, self.settings)
+        validated = validate_runtime_settings_values(
+            updates, self.settings, provider_profile_names=self.profile_models().keys()
+        )
         if len(validated) != 1:
             raise ValueError("exactly one runtime setting must be updated")
         key, value = next(iter(validated.items()))

@@ -98,7 +98,7 @@ uv run chatterlore polling
 | `local_chat_options`, `local_embedding_options` | Embedded model options below |
 | `fake_embedding_dimensions` | Fake-provider vector size |
 
-The JSON may also be a list of objects with `name`. Names are lowercase, use `a-z`, digits, `_` and `-` within 64 characters for managed profiles. Bootstrap profiles without an explicit credential can inherit the default key only at the same default endpoint, foreign endpoints require an explicit credential source. No-auth local servers never inherit the remote key.
+The JSON may also be a list of objects with `name`. Names are lowercase, use `a-z`, digits, `_` and `-` within 64 characters for managed profiles. HTTP profiles require a base URL, embedded `local` and `fake` profiles can leave it empty. Runtime provider selections accept enabled profiles from deployment configuration or the managed catalog. Bootstrap profiles without an explicit credential can inherit the default key only at the same default endpoint, foreign endpoints require an explicit credential source. No-auth local servers never inherit the remote key.
 
 Chatterlore uses the OpenAI-compatible Chat Completions and embeddings paths. The OpenAI dialect adapts recognized reasoning models, the DeepSeek dialect maps requested medium reasoning to high, and the generic local-server dialect omits unsupported reasoning fields. Verify model capability with the Providers page's explicit test action, ordinary page loads do not run inference or paid checks.
 
